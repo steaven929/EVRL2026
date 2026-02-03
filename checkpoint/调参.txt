@@ -1,0 +1,261 @@
+=======0723
+ 参数表 "diaodu_min": 0.1--》0.05--》0.0001,    #对应reward 的re
+ util
+ 折扣因子 0.99==》0.5
+
+
+ ======0726
+ 各车辆用电量-时间 热力图
+ train.py  --->   def train  -->  加入电量相关数据画图 battery_logs
+ util.py  --->   def plot_vehicle_battery_heatmap（新增）
+
+ --------------------建立副本后改动
+ 环境.py   --》 充电桩改成唯一标识了def find_preferred_charger(self, current_zone, charge_pref):
+环境.py   --》 self._last_rld = rel  #0729 计算trb论文指标加入
+
+---------------------修改4区域到5区域
+
+
+
+
+---------------------1118注释掉elec的，取消独爱看util里的plot.show注释
+        # print(">>> 调用 solveproblem 前尺寸：")
+        # print("dist", len(self.dist), len(self.dist[0]))
+        # #print("demand", len(self.demand), len(self.demand[0]))
+        # print("avail0/1", len(self.available[0]), len(self.available[1]))
+        # print("pre_avail", len(pre_avail))
+        # print("real_reward", len(real_reward))
+
+---------------------
+def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_reward, detail, revise, pre_avail):
+
+    available = copy.deepcopy(avail[1])
+    x = len(available)
+    m = len(car)
+    real_reward_back = np.array([0] * x)
+    prev_soc = [c[1] for c in car]
+
+    # ===========================
+    # Reward weights in:
+    #   R = w1 * R_task + w2 * R_charging + w3 * R_penalty
+    # ===========================
+    w1 = 1.0   # weight for task completion reward R_task
+    w2 = 1.0   # weight for charging-related reward R_charging
+    w3 = 1.0   # weight for penalty R_penalty (battery depletion / relocation cost)
+
+    # 创建问题实例
+    model = gp.Model("Vehicle_Assignment")
+
+    # 设置输出标志，关闭求解输出
+    model.setParam('OutputFlag', 0)
+
+    # 创建变量
+    car_assignment = [[model.addVar(vtype=GRB.BINARY, name=f'car_assignment_{i}_{j}') for j in range(x)] for i in range(m)]
+    zone_assignment = [[model.addVar(lb=0, vtype=GRB.INTEGER, name=f'zone_assignment_{i}_{j}') for j in range(x)] for i in range(x)]
+    available_assignment = [model.addVar(lb=0, vtype=GRB.INTEGER, name=f'zone_assignment_{i}') for i in range(x)]
+    # 更新模型以添加变量
+    model.update()
+
+    # 目标函数（保持不变）
+    # if re > 0 and revise >= 2:
+    model.setObjective(
+        gp.quicksum(car_assignment[i][j] * car_mem[i][2] for i in range(m) for j in range(x)) +
+        gp.quicksum(zone_assignment[i][j] for i in range(x) for j in range(x) if i != j),
+        GRB.MAXIMIZE
+    )
+    # else:
+    #     model.setObjective(gp.quicksum(zone_assignment[i][j] for i in range(x) for j in range(x) if i != j), GRB.MAXIMIZE)
+
+    # 约束
+    for i in range(x):
+        model.addConstr(available_assignment[i] >= 0)
+        for j in range(x):
+            # 分配不能超过需求
+            model.addConstr(zone_assignment[i][j] <= demand[i][j])
+            for k in range(m):
+                # 起点 i 的车 k，如果到不了 j 或 i==j，则 car_assignment[k][j] 必须为 0
+                if car[k][0] == i and (dist[i][j] > car[k][1] or i == j):
+                    model.addConstr(car_assignment[k][j] == 0)
+
+    for i in range(m):
+        if car[i][2] <= 0:
+            # 不在路上的可以分配一个目的区
+            model.addConstr(gp.quicksum(car_assignment[i]) <= 1)
+        else:
+            # 在路上的不能再分配
+            model.addConstr(gp.quicksum(car_assignment[i]) == 0)
+
+    for i in range(x):
+        model.addConstr(
+            available_assignment[i] ==
+            available[i]
+            + gp.quicksum(zone_assignment[i][j] for j in range(x) if i != j)
+            - gp.quicksum(zone_assignment[j][i] for j in range(x) if i != j)
+        )
+        for j in range(x):
+            if i != j:
+                model.addConstr(
+                    zone_assignment[i][j] ==
+                    gp.quicksum(car_assignment[kk][j] for kk in range(m) if car[kk][0] == i)
+                )
+
+    # 求解问题
+    model.optimize()
+
+    # 处理解
+    zone_assignment_np = np.zeros((x, x), dtype=int)
+
+    # 更新可用车位 avail[1]
+    avail[1] = np.array([var.X for var in available_assignment])
+
+    # 额外奖励相关（保持原逻辑）
+    if re > 0 and revise >= 3:
+        reward_zone = available - avail[1] - pre_avail
+        reward_zone_num = np.array([0] * x)
+        reward_zone_value = np.array([0.0] * x)
+        if detail:
+            print(available)
+            print(avail[1])
+            print(pre_avail)
+            print("额外奖励")
+            print(reward_zone)
+
+    # ===========================
+    # 主循环：车辆调度 + 奖励计算
+    # ===========================
+    for i in range(m):  # 车
+        for j in range(x):  # 区域
+            if car_assignment[i][j].x > 0.5 and car[i][0] != j:
+                origin_zone = car[i][0]
+                dest_zone = j
+                print(
+                    f"[t={timestep}] 调度：车辆{i} 从 {origin_zone} → {dest_zone} (距离={dist[origin_zone][dest_zone]})")
+
+                avail[0][origin_zone] -= 1
+                zone_assignment_np[origin_zone][dest_zone] += 1
+
+                # 行驶时间（或距离）
+                car[i][2] = dist[origin_zone][dest_zone]
+                travel_value = re * car[i][2]   # 统一用 travel_value 表示 re * dist
+                real_reward_back[origin_zone] += travel_value
+
+                # -----------------------------
+                # (A) re < 0 ：惩罚项 R_penalty
+                # -----------------------------
+                if re < 0:
+                    # 这里原来是：reward[timestep][origin_zone] += re * car[i][2]
+                    # 现在按公式 R = w1*R_task + w2*R_charging + w3*R_penalty
+                    R_penalty = travel_value    # 通常为负
+                    reward[timestep][origin_zone] += w3 * R_penalty
+
+                    # 记录车辆被调度的来源与时间
+                    car_mem[i][0] = origin_zone
+                    car_mem[i][1] = timestep
+                    car_mem[i][2] = 0
+
+                    if detail:
+                        print("%.1f 车辆%d调度%d -> %d，时间片%d" %
+                              (travel_value, i, origin_zone, dest_zone, timestep))
+
+                # -----------------------------
+                # (B) re > 0 ：任务奖励 R_task + 充电奖励 R_charging
+                # -----------------------------
+                else:
+                    # revise>=3 时，统计释放车位带来的区域奖励（可视为“充电/服务能力提升奖励”）
+                    if revise >= 3:
+                        if reward_zone[dest_zone] > 0:
+                            reward_zone_num += 1
+                            reward_zone_value += travel_value
+
+                    if car_mem[i][0] != -1:
+                        # 车辆是之前某次调度来的：奖励计入当时调度的区域和时间
+                        src_zone = car_mem[i][0]
+                        src_time = car_mem[i][1]
+
+                        # 原始：reward[src_time][src_zone] += re * car[i][2]
+                        # 现在：记作 R_task
+                        R_task = travel_value
+                        reward[src_time][src_zone] += w1 * R_task
+
+                        if detail:
+                            print("%.1f 车辆%d完成%d -> %d，车辆来自调度区域%d 时间%d" %
+                                  (travel_value, i, origin_zone, dest_zone, src_zone, src_time))
+
+                        # 清空 car_mem
+                        car_mem[i][0] = -1
+                        # car_mem[i][2] = 2   # 你之前注释掉的逻辑
+
+                    else:
+                        # 车辆不是调度来的，直接从当前区域接单
+                        if revise >= 2:
+                            # 原始：reward[timestep][origin_zone] += re * car[i][2]
+                            R_task = travel_value
+                            reward[timestep][origin_zone] += w1 * R_task
+
+                        if detail:
+                            print("%.1f 车辆%d完成%d -> %d" %
+                                  (travel_value, i, origin_zone, dest_zone))
+
+                # 更新 SOC 和区域
+                car[i][1] -= car[i][2]
+                car[i][0] = dest_zone
+
+    # 汇总真实 reward
+    real_reward += real_reward_back
+
+    # revise == 0 时，直接用 real_reward_back 作为 reward[timestep]
+    if revise == 0:
+        reward[timestep] = real_reward_back
+
+    # -----------------------------
+    # (C) 区域额外奖励：R_charging 部分
+    # -----------------------------
+    if re > 0 and revise == 3:
+        for i in range(x):
+            if reward_zone[i] > 0:
+                # 原始：rrr = reward_zone_value[i]/reward_zone_num[i]*reward_zone[i]
+                R_charging = reward_zone_value[i] / reward_zone_num[i] * reward_zone[i]
+                # 原来是 reward[timestep][i] += rrr
+                reward[timestep][i] += w2 * R_charging
+
+                if detail:
+                    print("区域%d让出%d个位置，额外奖励%.1f" %
+                          (i, reward_zone[i], w2 * R_charging))
+    # ============================
+    #     NEW RL Reward
+    # ============================
+
+    w1 = 1.0  # task
+    w2 = 0.5  # charging
+    w3 = -2.0  # low SOC penalty
+
+    R_task = np.zeros(x)
+    R_charging = np.zeros(x)
+    R_penalty = np.zeros(x)
+
+    # 遍历所有车辆
+    for vid in range(m):
+        zone = car[vid][0]
+
+        # ---- 任务奖励 (OD完成) ----
+        # real_reward_back 是各区域的总“行驶距离”
+        R_task[zone] += max(real_reward_back[zone], 0)
+
+        # ---- 充电奖励 (SOC提升) ----
+        soc_gain = max(car[vid][1] - prev_soc[vid], 0)
+        R_charging[zone] += soc_gain
+
+        # ---- 电量惩罚 ----
+        if car[vid][1] <= 0:
+            R_penalty[zone] -= 1.0
+        elif car[vid][1] < 100:
+            R_penalty[zone] -= 0.1
+
+    # ---- 最终 Reward ----
+    reward[timestep] = (
+            w1 * R_task +
+            w2 * R_charging +
+            w3 * R_penalty
+    )
+
+    return car, avail, car_mem, reward, real_reward, zone_assignment_np

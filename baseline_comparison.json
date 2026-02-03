@@ -1,0 +1,60 @@
+{
+  "executed_policies": [
+    {
+      "policy_name": "Random",
+      "reward_mean": -4789.75,
+      "reward_std": 1056.6982480822044,
+      "svc_mean": 138.49007431498242,
+      "svc_std": 12.483735757570017,
+      "rld_mean": 1.8416666666666663,
+      "rld_std": 0.32371540999258386,
+      "srd_mean": 138.49007431498242,
+      "srd_std": 12.483735757570017,
+      "avg_soc_mean": 1052.638888888889,
+      "avg_soc_std": 122.3624423632407
+    },
+    {
+      "policy_name": "Greedy",
+      "reward_mean": -4070.0,
+      "reward_std": 0.0,
+      "svc_mean": 86.30952380952382,
+      "svc_std": 1.4210854715202004e-14,
+      "rld_mean": 0.8333333333333334,
+      "rld_std": 0.0,
+      "srd_mean": 86.30952380952382,
+      "srd_std": 1.4210854715202004e-14,
+      "avg_soc_mean": 1591.666666666667,
+      "avg_soc_std": 2.2737367544323206e-13
+    },
+    {
+      "policy_name": "RL-DDPG",
+      "reward_mean": -3275.0,
+      "reward_std": 0.0,
+      "svc_mean": 116.04370915032682,
+      "svc_std": 0.0,
+      "rld_mean": 0.33333333333333326,
+      "rld_std": 5.551115123125783e-17,
+      "srd_mean": 116.04370915032682,
+      "srd_std": 0.0,
+      "avg_soc_mean": 1510.6481481481483,
+      "avg_soc_std": 2.2737367544323206e-13
+    }
+  ],
+  "theoretical_bounds": {
+    "global_optimal": {
+      "name": "Global-Optimal (MILP)",
+      "reward": 469.7960067283484,
+      "method": "Global Optimal MILP",
+      "status": "TIME_LIMIT",
+      "solve_time": 600.0929999351501,
+      "mip_gap": 0.4335132543167333
+    },
+    "rolling_horizon": {
+      "name": "Rolling-Horizon",
+      "reward": 60447.90000000001,
+      "method": "Rolling Horizon",
+      "horizon": 4,
+      "solve_time": 0
+    }
+  }
+}

@@ -1,0 +1,348 @@
+1. 项目概述
+本项目是一个基于深度强化学习（DDPG）与混合整数规划（MIP/Gurobi）结合的电动汽车车队调度与充电管理系统。 主要解决在时变小路网下，考虑固定停车位约束、即时充电逻辑以及低廉固定电费场景下的车辆调度与能量管理问题。
+
+核心特性：
+
+混合决策架构：RL (DDPG) 负责高层决策（区域调度倾向、充电倾向），Gurobi 负责底层具体的车辆-订单匹配与路径规划。
+
+物理约束增强：引入了具体的“充电桩”与“普通车位”概念，严格限制物理占用，防止“幽灵停车”。
+
+SOC 软约束优化：在底层优化器中加入了 SOC（电量）惩罚项，强制调度器避免使用低电量车辆。
+
+2. 代码结构说明
+核心入口
+main.py: 项目主入口。负责加载配置、初始化环境 (dclily)、加载数据、训练/测试 Agent、以及绘图（Reward/Battery Heatmap）。
+
+Specific (环境与业务逻辑核心)
+这是本项目修改幅度最大的部分，位于 /specific/ 目录下。
+
+1. config.json (路网配置)
+定义了路网的拓扑结构和物理资源限制。
+
+关键更新：不再使用单一的 NUM_CHARGERS，而是通过 ZONES 列表详细定义每个区域的资源。
+
+JSON
+
+"ZONES": [
+  {
+    "zone_id": 0,
+    "num_parking_slots": 5,    // 该区域总停车位
+    "charging_slots": [0, 1, 2] // 其中哪些编号是配备充电桩的
+  },
+  ...
+]
+2. dclily_elec.py (Gym 环境)
+实现了具体的车辆状态流转、充电逻辑和物理占用判定。
+
+状态空间 (Observation Space):
+
+展平的一维向量，包含：[OD需求(In/Out) + 充电桩占用状态 + 充电桩配置数量]。
+
+动作空间 (Action Space):
+
+维度：3 * ZONE_NUM (连续值 0~1)
+
+[0 : ZONE_NUM]: 发车倾向 (Departure Preference)
+
+[ZONE_NUM : 2*ZONE_NUM]: 目的地倾向 (Destination Preference)
+
+[2*ZONE_NUM : 3*ZONE_NUM]: 充电倾向 (Charging Preference) —— (New!) RL 显式输出是否希望车辆去充电。
+
+核心逻辑 (step):
+
+车辆移动与到达：更新车辆位置与剩余里程。
+
+物理占用同步：到达车辆会根据 charger_id 锁定 charging_stations 中的物理资源，实现“人车桩合一”。
+
+空闲车辆充电决策 (check_idle_vehicles):
+
+结合 RL 输出的 charge_pref、车辆当前 SOC、距离最近充电站距离，计算充电概率。
+
+若决定充电，自动规划前往有桩区域，并预占充电位。
+
+调度与匹配: 调用 optim.solveproblem。
+
+能量更新: 简单的线性/非线性充电函数模拟电池回充。
+
+3. optim.py (Gurobi 优化器)
+负责在 RL 给出的宏观指令下，进行微观的订单匹配。
+
+目标函数更新:
+
+Maximize: (订单收益) - (调度成本) - (SOC惩罚)
+
+SOC 惩罚机制 (New!):
+
+Python
+
+# 当电量低于 SOC_THRESHOLD (如600) 时，施加巨大的 PENALTY_FACTOR
+penalty = (SOC_THRESHOLD - car[i][1]) * PENALTY_FACTOR
+这确保了优化器不会指派低电量车辆去执行长距离任务，间接实现了“低电量保护”。
+
+3. 关键逻辑详解 (Attention for AI Analysis)
+如果你（AI 助手）需要分析代码逻辑，请特别关注以下流程：
+
+A. 充电决策流程
+RL 触发: 在 dclily_elec.py 的 check_idle_vehicles 中，根据 step 传入的 Action 后 1/3 部分（充电倾向）计算概率。
+
+位置寻找: find_preferred_charger 或 find_nearest_charger 寻找有空闲桩的区域。
+
+预占位: 调用 assign_parking_slot(..., is_charging_order=True)。
+
+如果目标区域没桩了，车辆会被标记为 charger_id = -1（排队或普通停车）。
+
+如果有桩，charger_id 被赋值，且在该车到达前，该桩逻辑上被“预订”。
+
+B. 幽灵停车 (Ghost Parking) 防护
+在 assign_parking_slot 中包含了一套兜底逻辑：如果区域内普通车位已满但充电桩有空，普通车辆（非充电任务）会被迫占用充电桩（occupied_by 置位），这模拟了燃油车占位或资源挤兑的现实情况。
+
+C. Gurobi 交互
+环境 (dclily) 将车辆列表 self.car 和资源表 self.available 传给 optim.solveproblem。
+
+重要: 只有 charger_id == -1 (未在充电/未锁定桩) 的车辆，才会将其计入 available 传给 Gurobi 进行调度。正在充电的车对调度器是不可见的。
+
+4. 数据与参数 (Data & Config)
+capacity.csv:
+
+Row 1: Zone ID
+
+Row 2: 初始车辆数 (Initial Fleet Size per Zone)
+
+Row 3: 区域总容量 (Total Parking Capacity)
+
+cong.csv: 拥堵系数，影响 TIME_LENGTH 内的行驶距离。
+
+od_demand_xx.csv: 具体的订单需求矩阵。
+
+5. 快速开始 (Quick Start)
+配置环境（已经完成了）: 确保安装 gym, numpy, pandas, gurobipy (需 License)。
+
+数据准备: 确保 data/toy_network/ 下包含必要的 CSV 文件。
+
+运行训练:
+
+Bash
+
+python main.py
+结果查看:
+
+训练曲线：output/rewards_train.png
+
+电池热力图：output/Battery Heatmap.png
+
+车辆行为日志：vehicle_action_log.csv (记录了每一步 RL 的充电打分与决策)
+
+6. 待优化/已知问题
+SOC 曲线: 目前使用了简化的充电函数 f(t)，未来可替换为真实的锂电池 CC-CV 曲线。
+
+多智能体扩展: 当前为单智能体控制全域（通过 Action 切片），未来可扩展为 MARL。
+
+7. 项目文档 (checkpoint/ 目录)
+本项目在 checkpoint/ 目录下维护了完整的开发文档，用于记录项目演进、调试经验和配置指南。
+
+7.1 claude.md (项目规范与训练经验)
+记录了项目的代码修改规范和训练经验总结。
+
+主要内容：
+- 代码修改规范：所有修改必须标注 "# 修改"
+- 核心逻辑保护：禁止删除 Gurobi 代码，禁止擅自修改 Reward 公式
+- 训练指标理解：详细解释 Actor Loss、Q Value、Reward 的关系和正常趋势
+- 超参数调优经验：记录了成功的参数调整案例（critic_lr, batch_size, tau）
+
+关键发现（2026-01-30）：
+- 解决了 Reward 不改进的问题
+- 通过降低 critic_lr (1e-3 → 5e-4) 和增加 batch_size (32 → 64)
+- 700轮训练后 Reward 改进 14.5%
+
+7.2 reward_tuning_guide.md (奖励函数调整指南)
+提供了系统化的奖励函数调整方法和实验流程。
+
+主要内容：
+- 当前奖励函数分析：reward = sum(real_reward) / 10 - 500
+- 调整策略：移除固定惩罚、调整缩放因子、添加额外奖励项
+- 安全修改 vs 需谨慎的修改
+- 实验记录模板
+
+推荐的调整流程：
+1. 简化奖励函数（移除固定惩罚）
+2. 根据结果调整缩放
+3. 可选：添加额外奖励项（如服务率奖励）
+
+7.3 reward_analysis.md (奖励函数组成分析)
+深入分析当前奖励函数的计算过程和各组成部分的作用。
+
+主要内容：
+- real_reward 的计算过程：Gurobi 优化器 → 累积收益/成本 → 最终 reward
+- 组成部分详解：
+  * 订单收益（re * distance，re > 0）
+  * 调度成本（re * distance，re < 0）
+  * SOC 惩罚（间接影响，在 Gurobi 目标函数中）
+  * 缩放因子（/10）
+  * 固定惩罚（-500）
+
+关键发现：
+- 这是成本最小化问题（real_reward 为负）
+- 固定惩罚 -500 占总 reward 的 25%
+- 700轮训练：real_reward 改进约 18%（-21830 → -17940）
+
+7.4 debugging_plan.md (调试计划)
+记录了 Reward 不改进问题的诊断和解决方案。
+
+主要内容：
+- 问题诊断：Q 值上升但 Reward 不变
+- 假设验证：Critic 估计偏差、探索不足、环境限制
+- 解决方案：降低 critic_lr、增加 batch_size、降低 tau
+- 实验步骤：短期诊断 → 参数调优 → 长期训练
+
+7.5 baseline_testing_guide.md (基准测试指南)
+提供了系统化的方法来找到场景的最优解，并与 RL 训练结果对比。
+
+主要内容：
+- 测试策略：随机、贪心、理论最优、RL
+- 对比指标：Reward、SVC、RLD、AvgSOC
+- 使用方法：运行 baseline_comparison.py
+- 结果分析：性能差距分析和改进建议
+
+测试脚本：
+- baseline_comparison.py：自动化基准测试脚本
+- 输出：baseline_comparison.json（详细结果）
+
+7.6 使用建议
+- 修改代码前先查看 claude.md 了解规范
+- 调整奖励函数前先阅读 reward_tuning_guide.md 和 reward_analysis.md
+- 遇到训练问题时参考 debugging_plan.md 的系统化调试方法
+- 评估训练效果时使用 baseline_comparison.py 对比基准策略
+- 所有重要修改都应记录到相应文档中- 所有重要修改都应记录到相应文档中
+
+8. Python 文件调用方式 (Quick Start Guide)
+
+8.1 基础训练流程
+# 训练 RL 模型（默认 10 轮，建议改为 700 轮）
+python main.py --train_eps 700
+
+# 输出文件：
+# - rewards.npy: Episode Reward 历史
+# - critic1_losses.npy: Critic 损失
+# - actor_losses.npy: Actor 损失
+# - rewards_train.png: 训练曲线图
+
+8.2 全局最优解求解
+# 运行 MILP 求解器（需要 Gurobi License）
+python optimal_solver.py
+
+# 输出文件：
+# - global_optimal_solution.json: 包含全局最优 Reward 和决策方案
+
+8.3 算法对比流程
+# 步骤 1: 运行基准对比（对比 Random、Greedy、RL-DDPG、Global-Optimal）
+python baseline_comparison.py
+
+# 输出文件：
+# - baseline_comparison.json: 4 种算法的详细性能指标
+
+# 步骤 2: 生成对比图表
+python plot_comparison.py
+
+# 输出文件：
+# - comparison_reward.png: Reward 对比柱状图
+# - comparison_svc.png: 服务率对比柱状图
+# - comparison_rld.png: 调度损失对比柱状图
+# - comparison_relative.png: 相对性能对比
+# - comparison_table.png: 综合对比表格
+
+8.4 完整实验流程（推荐）
+# 1. 训练 RL 模型（会自动保存到 trained_model.pth）
+python main.py --train_eps 700
+
+# 2. 求解全局最优（可选，耗时较长，可在后台运行）
+python optimal_solver.py
+
+# 3. 运行算法对比（会自动加载 trained_model.pth）
+python baseline_comparison.py
+
+# 4. 生成对比图表
+python plot_comparison.py
+
+# 5. 查看结果
+# - 打开 comparison_*.png 查看对比图表
+# - 打开 baseline_comparison.json 查看详细数据
+
+注意事项：
+- 步骤 1 必须先完成，否则步骤 3 会使用随机网络
+- 步骤 2 可以与步骤 1 并行运行（在不同终端）
+- 如果 trained_model.pth 不存在，baseline_comparison.py 会警告并使用随机网络
+
+8.5 重要说明
+✅ 已完成的改进（2026-01-31）：
+- 已在 core/algorithm.py 的 TD3 类中添加 save_model() 和 load_model() 方法
+- 已在 main.py 训练完成后自动保存模型到 trained_model.pth
+- 已在 baseline_comparison.py 中自动加载训练好的模型
+
+⚠️ 使用说明：
+1. 首次运行 baseline_comparison.py 时，如果没有 trained_model.pth，会使用随机网络
+2. 运行 main.py 训练后，会自动生成 trained_model.pth
+3. 再次运行 baseline_comparison.py 时，会自动加载训练好的模型
+
+📊 预期性能对比：
+- 未训练网络：Reward ≈ -2940
+- 训练 700 轮后：Reward ≈ -2294（改进 22%）
+- 全局最优（MILP）：Reward ≈ -1850（理论上界）
+
+8.6 训练参数调整
+# 方法 1: 命令行参数（推荐）
+python main.py --train_eps 700 --critic_lr 5e-4 --batch_size 64
+
+# 方法 2: 修改 core/util.py 中的默认值
+# 第 20 行: parser.add_argument('--train_eps',default=700,...)
+
+# 关键参数说明：
+# --train_eps: 训练轮数（默认 10，建议 700）
+# --critic_lr: Critic 学习率（默认 5e-4，已优化）
+# --actor_lr: Actor 学习率（默认 1e-4，已优化）
+# --batch_size: 批量大小（默认 64，已优化）
+# --tau: 软更新参数（默认 1e-3）
+# --gamma: 折扣因子（默认 0.5）
+
+8.7 查看结果文件
+# 查看训练后的 Reward
+import numpy as np
+rewards = np.load('rewards.npy')
+print(f"最终 Reward: {rewards[-10:].mean()}")  # 最后 10 轮平均
+
+# 查看算法对比结果
+import json
+with open('baseline_comparison.json', 'r') as f:
+    results = json.load(f)
+for r in results:
+    print(f"{r['policy_name']}: {r['reward_mean']:.2f}")
+
+# 查看全局最优解
+with open('global_optimal_solution.json', 'r') as f:
+    optimal = json.load(f)
+print(f"全局最优 Reward: {optimal['total_reward']:.2f}")
+
+8.8 生成的文件说明
+训练后生成的文件：
+- trained_model.pth: 训练好的 RL 模型权重（重要！）
+- rewards.npy: Episode Reward 历史
+- critic1_losses.npy: Critic 损失历史
+- actor_losses.npy: Actor 损失历史
+- q_values.npy: Q 值历史
+- target_q_values.npy: Target Q 值历史
+- rld_history.npy: 调度损失历史
+- svc_history.npy: 服务率历史
+- srd_history.npy: 服务距离历史
+- rewards_train.png: 训练曲线图
+- critic_loss_curve.png: Critic 损失曲线
+- 综合指标图.png: 8 个子图的综合分析
+
+对比后生成的文件：
+- baseline_comparison.json: 4 种算法的详细性能指标
+- comparison_reward.png: Reward 对比柱状图
+- comparison_svc.png: 服务率对比柱状图
+- comparison_rld.png: 调度损失对比柱状图
+- comparison_relative.png: 相对性能对比
+- comparison_table.png: 综合对比表格
+
+MILP 求解生成的文件：
+- global_optimal_solution.json: 全局最优 Reward 和决策方案
