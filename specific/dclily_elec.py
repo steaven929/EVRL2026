@@ -1105,7 +1105,10 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        charging_bonus = 50 * charging_count
+        # =========2026.2.4修改，增加充电奖励系数==========
+        # 原值: 50，新值: 200，使充电更有吸引力
+        charging_bonus = 200 * charging_count
+        # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
         soc_penalty = 0
