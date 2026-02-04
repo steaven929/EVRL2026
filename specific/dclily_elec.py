@@ -1110,19 +1110,19 @@ class dclily(gym.Env):
         charging_bonus = 200 * charging_count
         # ======修改结束
 
-        # =========2026.2.4修改，增强低电量惩罚==========
-        # 3. 低电量惩罚：分段惩罚（增强力度）
+        # =========2026.2.4修改，温和低电量惩罚==========
+        # 3. 低电量惩罚：分段惩罚（温和力度）
         soc_penalty = 0
         for i in range(self.CAR_NUM):
             soc = self.car[i][1]
             if soc >= 600:
                 penalty = 0
-            elif soc >= 400:  # 修改：从200提高到400
-                penalty = 1.0 * (600 - soc)  # 修改：从0.5增加到1.0
+            elif soc >= 400:  # 阈值400，早期预警
+                penalty = 0.3 * (600 - soc)  # 温和惩罚
             elif soc >= 200:
-                penalty = 1.0 * 200 + 3.0 * (400 - soc)  # 新增中间档
+                penalty = 0.3 * 200 + 1.0 * (400 - soc)  # 中等惩罚
             else:
-                penalty = 1.0 * 200 + 3.0 * 200 + 10.0 * (200 - soc)  # 修改：从5.0增加到10.0
+                penalty = 0.3 * 200 + 1.0 * 200 + 3.0 * (200 - soc)  # 严重惩罚
             soc_penalty += penalty
         # ======修改结束
 
