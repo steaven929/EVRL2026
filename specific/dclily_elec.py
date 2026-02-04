@@ -450,8 +450,12 @@ class dclily(gym.Env):
         """
         # 若 self.config 存在则使用权重，否则使用默认
         cfg = getattr(self, "config", None)
+        # =========2026.2.4修改，调整充电决策权重==========
+        # 原值: {"soc": -3.0, "pref": 2.0} - SOC权重过大，压制RL意图
+        # 新值: {"soc": -1.0, "pref": 5.0} - 增强RL控制权
         w = (cfg.get("RL_CHARGE_WEIGHTS") if cfg else None) or \
-            {"bias": 0.0, "soc": -3.0, "pref": 2.0, "queue": -1.5, "dist": -0.5}   #权重
+            {"bias": 0.0, "soc": -1.0, "pref": 5.0, "queue": -1.5, "dist": -0.5}
+        # ======修改结束
 
         # 车辆状态
         zone = self.car[vehicle_id][0]
@@ -468,8 +472,12 @@ class dclily(gym.Env):
         if nearest_zone != -1:
             dist_term = float(self.dist[zone][nearest_zone]) / (DIST_MAX + 1e-5)
         
-        if soc > 0.6:
-          #  print(f"[t={self.episode_timestep}] 车辆{vehicle_id} soc={soc:.3f} > 0.6，强制不充电")
+        # =========2026.2.4修改，提高硬阈值==========
+        # 原值: 0.6 - 过早限制充电
+        # 新值: 0.8 - 允许更多充电机会
+        if soc > 0.8:
+        # ======修改结束
+          #  print(f"[t={self.episode_timestep}] 车辆{vehicle_id} soc={soc:.3f} > 0.8，强制不充电")
             return False
 
         # 综合打分 + Sigmoid 转概率
