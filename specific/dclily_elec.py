@@ -1110,17 +1110,21 @@ class dclily(gym.Env):
         charging_bonus = 200 * charging_count
         # ======修改结束
 
-        # 3. 低电量惩罚：分段惩罚
+        # =========2026.2.4修改，增强低电量惩罚==========
+        # 3. 低电量惩罚：分段惩罚（增强力度）
         soc_penalty = 0
         for i in range(self.CAR_NUM):
             soc = self.car[i][1]
             if soc >= 600:
                 penalty = 0
+            elif soc >= 400:  # 修改：从200提高到400
+                penalty = 1.0 * (600 - soc)  # 修改：从0.5增加到1.0
             elif soc >= 200:
-                penalty = 0.5 * (600 - soc)
+                penalty = 1.0 * 200 + 3.0 * (400 - soc)  # 新增中间档
             else:
-                penalty = 0.5 * 400 + 5.0 * (200 - soc)
+                penalty = 1.0 * 200 + 3.0 * 200 + 10.0 * (200 - soc)  # 修改：从5.0增加到10.0
             soc_penalty += penalty
+        # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
         # 注意：第一次solveproblem的real_reward包含调度成本（负值）
