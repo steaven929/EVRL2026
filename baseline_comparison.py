@@ -139,7 +139,7 @@ def load_theoretical_bounds():
 # ======修改结束
 
 
-def evaluate_policy(env, policy, num_episodes=10, policy_name="Unknown"):
+def evaluate_policy(env, policy, num_episodes=10, policy_name="Unknown", save_actions=False):
     """评估策略性能"""
     print(f"\n{'='*60}")
     print(f"评估策略: {policy_name}")
@@ -150,6 +150,9 @@ def evaluate_policy(env, policy, num_episodes=10, policy_name="Unknown"):
     all_rld = []
     all_srd = []
     all_avg_soc = []
+
+    # 新增：记录第一个episode的动作
+    first_ep_actions = [] if save_actions else None
 
     for ep in range(num_episodes):
         state = env.reset()
@@ -168,6 +171,14 @@ def evaluate_policy(env, policy, num_episodes=10, policy_name="Unknown"):
                 action = policy.predict_action(state)
             else:
                 action = policy.get_action(state)
+
+            # 新增：记录第一个episode的动作
+            if save_actions and ep == 0:
+                first_ep_actions.append({
+                    'step': step,
+                    'action': action.tolist() if hasattr(action, 'tolist') else list(action),
+                    'state': state.tolist() if hasattr(state, 'tolist') else list(state)
+                })
 
             # 执行动作
             next_state, reward, done, info = env.step(action)
@@ -219,6 +230,24 @@ def evaluate_policy(env, policy, num_episodes=10, policy_name="Unknown"):
     print(f"  RLD:    {results['rld_mean']:.2f} ± {results['rld_std']:.2f}")
     print(f"  SRD:    {results['srd_mean']:.3f} ± {results['srd_std']:.3f}")
     print(f"  AvgSOC: {results['avg_soc_mean']:.1f} ± {results['avg_soc_std']:.1f}")
+
+    # 新增：保存动作到文件
+    if save_actions and first_ep_actions:
+        action_file = f'{policy_name}_actions.txt'
+        with open(action_file, 'w', encoding='utf-8') as f:
+            f.write("="*80 + "\n")
+            f.write(f"{policy_name} 策略 - 动作记录（第1个episode）\n")
+            f.write("="*80 + "\n\n")
+            f.write(f"总奖励: {all_rewards[0]:.2f}\n")
+            f.write(f"总步数: {len(first_ep_actions)}\n\n")
+
+            for action_data in first_ep_actions:
+                f.write(f"{'='*80}\n")
+                f.write(f"时间步 {action_data['step']}\n")
+                f.write(f"{'='*80}\n")
+                f.write(f"动作向量: {action_data['action']}\n\n")
+
+        print(f"  动作已保存到: {action_file}")
 
     return results
 
@@ -272,7 +301,7 @@ def main():
             print(f"[WARNING] 未找到训练好的模型: {e}")
             print("[WARNING] 使用随机初始化网络")
         # ======修改结束
-        rl_results = evaluate_policy(env, agent, num_test_episodes, "RL-DDPG")
+        rl_results = evaluate_policy(env, agent, num_test_episodes, "RL-DDPG", save_actions=True)
         all_results.append(rl_results)
     except Exception as e:
         print(f"无法加载 RL 模型: {e}")
