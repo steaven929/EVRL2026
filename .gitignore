@@ -1,0 +1,13 @@
+# 屏蔽 AI 工具的临时文件
+.claude/
+.env
+
+# 屏蔽 Windows 可能会产生的怪异文件
+nul
+
+# 屏蔽 Python 缓存
+__pycache__/
+*.py[cod]
+
+# 屏蔽 PyCharm 自己的配置 (可选，团队开发建议屏蔽)
+.idea/

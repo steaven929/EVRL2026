@@ -20,7 +20,7 @@ def get_args():
     parser.add_argument('--train_eps',default=700,type=int,help="episodes of training") #训练轮数  # 修改为700
     parser.add_argument('--test_eps',default=100,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
-    parser.add_argument('--gamma',default=0.5,type=float,help="discounted factor")  #折扣因子
+    parser.add_argument('--gamma',default=0.85,type=float,help="discounted factor")  #折扣因子  # 2026.2.4修改：从0.5提升至0.85，增强长期规划能力
     parser.add_argument('--critic_lr',default=5e-4,type=float,help="learning rate of critic")  #critic学习率
     parser.add_argument('--actor_lr',default=5e-5,type=float,help="learning rate of actor")  #actor学习率
     parser.add_argument('--memory_capacity',default=8000,type=int,help="memory capacity")  #经验池容量
