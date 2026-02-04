@@ -448,81 +448,40 @@ class dclily(gym.Env):
         使用 RL 输出来决定是否充电（替换固定阈值法）
         charge_pref: 动作向量中充电倾向部分
         """
-        # 若 self.config 存在则使用权重，否则使用默认
-        cfg = getattr(self, "config", None)
-        # =========2026.2.4修改，调整充电决策权重==========
-        # 原值: {"soc": -3.0, "pref": 2.0} - SOC权重过大，压制RL意图
-        # 新值: {"soc": -1.0, "pref": 5.0} - 增强RL控制权
-        w = (cfg.get("RL_CHARGE_WEIGHTS") if cfg else None) or \
-            {"bias": 0.0, "soc": -1.0, "pref": 5.0, "queue": -1.5, "dist": -0.5}
-        # ======修改结束
+        # =========2026.2.4修改，方案一：简化充电决策逻辑==========
+        # 问题: 复杂权重打分系统导致3次修复失败，架构性缺陷
+        # 方案: 移除所有权重计算，直接使用RL的pref值作为充电概率
+        # 目标: 让RL完全控制充电决策，无中间层干扰
 
-        # 车辆状态
+        cfg = getattr(self, "config", None)
         zone = self.car[vehicle_id][0]
         soc = max(0.0, min(1.0, self.car[vehicle_id][1] / BATTERY_CAPACITY))
         pref = float(charge_pref[zone])
 
-        # 区域车位紧张度（空余越少，queue_term 越大）
-        used_ratio = 1.0 - (self.available[0][zone] / (self.mem_available[0][zone] + 1e-5))
-        queue_term = used_ratio
-
-        # 距离最近充电区（越远越抑制充电意愿）
-        nearest_zone, _  = self.find_nearest_charger(zone)
-        dist_term = 0.0
-        if nearest_zone != -1:
-            dist_term = float(self.dist[zone][nearest_zone]) / (DIST_MAX + 1e-5)
-        
-        # =========2026.2.4修改，提高硬阈值==========
-        # 原值: 0.6 - 过早限制充电
-        # 新值: 0.8 - 允许更多充电机会
-        if soc > 0.8:
-        # ======修改结束
-          #  print(f"[t={self.episode_timestep}] 车辆{vehicle_id} soc={soc:.3f} > 0.8，强制不充电")
-            return False
-
-        # 综合打分 + Sigmoid 转概率
-        
-        score = (w["bias"]
-                 + w["soc"] * soc
-                 + w["pref"] * pref
-                 #+ w["queue"] * queue_term
-                 + w["dist"] * dist_term)
-        p = self._sigmoid(score)
-        
-        # 判断是否去充电的测试  dist:当前区域距离最近区域的 距离，归一化后的结果dist
-        # print(
-        #     f"[t={self.episode_timestep}] 车辆{vehicle_id} RL充电打分： "
-        #     f"soc={soc:.3f}, pref={pref:.3f}, dist={dist_term:.3f}, "
-        #     f"score={score:.3f}, p={p:.3f}"
-        # )
-        
-        # 裁剪范围，防极端 0/1
+        # 直接使用RL输出的pref作为充电概率
+        # 仅做基本裁剪，防止极端值
         lo, hi = (cfg.get("RL_CHARGE_DECISION_CLIP", [0.05, 0.95]) if cfg else [0.05, 0.95])
-
-        p = min(max(p, lo), hi)
-        r = random.random()
-        # print(f"车辆{vehicle_id}: soc={soc:.2f}, pref={pref:.2f}, dist={dist_term:.2f}, "
-        #      f"score={score:.2f}, p={p:.3f}, random={r:.3f}, training={self.training}")
+        p = min(max(pref, lo), hi)
 
         # 训练期：随机采样探索；推理期：按概率阈值决策
-        decision = False
+        r = random.random()
         if self.training:
             decision = (r < p)
         else:
             decision = (p >= 0.5)
-            
+
         # Log the details for this vehicle
         if vehicle_id not in self.current_step_logs:
             self.current_step_logs[vehicle_id] = {}
-        
+
         self.current_step_logs[vehicle_id].update({
             "soc": soc,
             "pref": pref,
-            "score": score,
             "prob": p,
             "decision_charge": decision
         })
-        
+        # ======修改结束
+
         return decision
     
     def handle_vehicle_charging(self, vehicle_id, target_zone):
