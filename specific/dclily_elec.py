@@ -617,10 +617,15 @@ class dclily(gym.Env):
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[0][0]
     
-    def check_idle_vehicles(self, charge_pref):
+    def check_idle_vehicles(self, charge_pref, charging_actions=None):
         """检查空闲车辆状态（由 RL 决定是否充电；再决定去哪儿充）"""
         # 创建一个临时列表来存储需要扣除available的区域，避免在循环中直接修改影响逻辑
         cars_to_hide = []
+
+        # =========2026.2.4修改，记录充电动作==========
+        if charging_actions is None:
+            charging_actions = {}
+        # ======修改结束
         
         for i in range(len(self.car)):
             # 仅检查未执行任务的车辆
@@ -654,7 +659,15 @@ class dclily(gym.Env):
                 
                 # ③ 规划停车位
                 self.assign_parking_slot(i, is_charging_order=True)
-                
+
+                # =========2026.2.4修改，记录充电动作==========
+                # 记录充电动作：如果成功分配了充电桩
+                if self.car[i][3] != -1:
+                    if target_charger not in charging_actions:
+                        charging_actions[target_charger] = 0
+                    charging_actions[target_charger] += 1
+                # ======修改结束
+
                 # ④ 立即物理锁桩
                 planned_id = self.car[i][3]
                 if planned_id != -1:
@@ -835,12 +848,17 @@ class dclily(gym.Env):
         #     print(f"车辆 {i}: zone={self.car[i][0]}, SOC={self.car[i][1]}, remain={self.car[i][2]}, chargerid={self.car[i][3]}")
         # print("================================\n")
         t = self.episode_timestep
-        
+
         # Reset logs for current step
         self.current_step_logs = {}
-        
+
+        # =========2026.2.4修改，记录充电动作==========
+        # 记录本时间步的充电动作（zone_id: count）
+        charging_actions = {}
+        # ======修改结束
+
         #self.print_vehicle_status(t)
-        
+
         # 实现一步的逻辑
         e = 1  # 一个trick
 
@@ -913,7 +931,10 @@ class dclily(gym.Env):
                     # target_zone = self.handle_vehicle_charging(i, target_zone1)
             
             i += 1
-        self.check_idle_vehicles(charge_pref)
+
+        # =========2026.2.4修改，传递charging_actions参数==========
+        self.check_idle_vehicles(charge_pref, charging_actions)
+        # ======修改结束
 
         # 多区域OD分配，为每个区域的车辆分配目的地
 
@@ -1109,13 +1130,17 @@ class dclily(gym.Env):
         reward_value = (service_revenue + charging_bonus - soc_penalty) / 10 - fixed_penalty
         # ======修改结束
 
+        # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
         info = {            ##0729 计算trb论文指标加入
             "rld": self._last_rld,          ##0729 计算trb论文指标加入
             "svc": self._last_svc,
             "srd": self._last_srd,  # 修改
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
-            "demand_orders": rel_demand  # 需求订单矩阵
+            "demand_orders": rel_demand,  # 需求订单矩阵
+            "charging_actions": charging_actions,  # 充电动作记录
+            "action_table_true": action_table_true  # RL调度倾向矩阵
         }           ##0729 计算trb论文指标加入
+        # ======修改结束
 
         if self.terminal:
             # 如果采用平均reward，是否需要计算还剩下的油费和租费

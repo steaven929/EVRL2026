@@ -232,6 +232,7 @@ python optimal_solver.py
 
 # 输出文件：
 # - global_optimal_solution.json: 包含全局最优 Reward 和决策方案
+# - RL-DDPG_actions.txt: 最优解的动作输出
 
 8.3 算法对比流程
 # 步骤 1: 运行基准对比（对比 Random、Greedy、RL-DDPG、Global-Optimal）
@@ -239,6 +240,7 @@ python baseline_comparison.py
 
 # 输出文件：
 # - baseline_comparison.json: 4 种算法的详细性能指标
+# - global_optimal_solution_actions.txt: rl的动作输出
 
 # 步骤 2: 生成对比图表
 python plot_comparison.py

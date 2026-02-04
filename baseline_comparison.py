@@ -233,7 +233,7 @@ def evaluate_policy(env, policy, num_episodes=10, policy_name="Unknown", save_ac
 
     # 新增：保存动作到文件
     if save_actions and first_ep_actions:
-        action_file = f'{policy_name}_actions.txt'
+        action_file = f'action/{policy_name}_actions.txt'
         with open(action_file, 'w', encoding='utf-8') as f:
             f.write("="*80 + "\n")
             f.write(f"{policy_name} 策略 - 动作记录（第1个episode）\n")
@@ -287,25 +287,169 @@ def main():
     greedy_results = evaluate_policy(env, greedy_policy, num_test_episodes, "Greedy")
     all_results.append(greedy_results)
 
-    # 3. 测试 RL 策略（如果有训练好的模型）
+    # =========2026.2.4修改，读取main.py训练保存的数据作为RL结果==========
+    # 3. 读取 RL 策略训练结果（从main.py保存的数据）
     print("\n" + "="*60)
-    print("3. RL 策略 (DDPG Policy)")
+    print("3. RL 策略 (DDPG Policy) - 从训练数据读取")
     print("="*60)
     try:
-        _, agent = env_agent_config(cfg)
-        # =========2026.1.31修改，加载训练好的模型==========
-        try:
-            agent.load_model('trained_model.pth')
-            print("[INFO] 成功加载训练好的模型")
-        except Exception as e:
-            print(f"[WARNING] 未找到训练好的模型: {e}")
-            print("[WARNING] 使用随机初始化网络")
+        # 读取main.py保存的训练数据
+        rewards = np.load('rewards.npy')
+        svc_history = np.load('svc_history.npy')
+        rld_history = np.load('rld_history.npy')
+        srd_history = np.load('srd_history.npy')
+
+        # =========2026.2.4修改，使用最后N轮的平均reward==========
+        # 使用最后100轮或最后20%的数据（取较小值）
+        n_last = min(100, int(len(rewards) * 0.2))
+        if n_last < 10:  # 如果训练轮数太少，至少用最后10轮
+            n_last = min(10, len(rewards))
+
+        last_rewards = rewards[-n_last:]
+        last_svc = svc_history[-n_last:]
+        last_rld = rld_history[-n_last:]
+        last_srd = srd_history[-n_last:]
         # ======修改结束
-        rl_results = evaluate_policy(env, agent, num_test_episodes, "RL-DDPG", save_actions=True)
+
+        # 计算统计信息（使用训练后期数据）
+        rl_results = {
+            'policy_name': 'RL-DDPG',
+            'reward_mean': np.mean(last_rewards),
+            'reward_std': np.std(last_rewards),
+            'svc_mean': np.mean(last_svc),
+            'svc_std': np.std(last_svc),
+            'rld_mean': np.mean(last_rld),
+            'rld_std': np.std(last_rld),
+            'srd_mean': np.mean(last_srd),
+            'srd_std': np.std(last_srd),
+            'avg_soc_mean': 0.0,  # 训练数据中没有保存SOC，设为0
+            'avg_soc_std': 0.0,
+        }
         all_results.append(rl_results)
+
+        print(f"[INFO] 成功读取训练数据")
+        print(f"  总训练轮数: {len(rewards)}")
+        print(f"  使用最后 {n_last} 轮数据计算统计")
+        print(f"  平均Reward: {rl_results['reward_mean']:.2f} ± {rl_results['reward_std']:.2f}")
+        print(f"  平均SVC:    {rl_results['svc_mean']:.3f} ± {rl_results['svc_std']:.3f}")
+        print(f"  平均RLD:    {rl_results['rld_mean']:.2f} ± {rl_results['rld_std']:.2f}")
+
+        # =========2026.2.4修改，输出详细的RL动作解析==========
+        # 输出RL动作（使用训练好的模型）
+        print("\n[INFO] 生成RL动作文件...")
+        _, agent = env_agent_config(cfg)
+        agent.load_model('trained_model.pth')
+
+        # 创建测试环境并输出第一个episode的动作
+        test_env = gym.make('dclily')
+        test_env.set_training_mode(0)
+
+        state = test_env.reset()
+        done = False
+        step = 0
+        actions_list = []
+
+        # 记录每个时间步的详细动作
+        detailed_actions = []
+
+        while not done:
+            action = agent.predict_action(state)
+
+            # =========2026.2.4修改，使用环境返回的真实动作==========
+            next_state, reward, done, info = test_env.step(action)
+
+            # 从info中提取真实动作
+            dispatch_orders = info.get('dispatch_orders', None)  # 调度矩阵
+            demand_orders = info.get('demand_orders', None)  # 需求矩阵
+            charging_actions = info.get('charging_actions', {})  # 充电动作
+
+            # 解析调度动作（从矩阵转换为列表）
+            reposition_actions = []
+            if dispatch_orders is not None:
+                for i in range(len(dispatch_orders)):
+                    for j in range(len(dispatch_orders[i])):
+                        count = int(dispatch_orders[i][j])
+                        if count > 0:
+                            for _ in range(count):
+                                reposition_actions.append((i, j))
+
+            # 解析服务订单（从矩阵转换为列表）
+            served_orders = []
+            if demand_orders is not None:
+                for i in range(len(demand_orders)):
+                    for j in range(len(demand_orders[i])):
+                        count = int(demand_orders[i][j])
+                        if count > 0:
+                            for _ in range(count):
+                                served_orders.append((i, j))
+
+            detailed_actions.append({
+                'step': step,
+                'action': action.tolist() if hasattr(action, 'tolist') else list(action),
+                'served_orders': served_orders,
+                'reposition_actions': reposition_actions,
+                'charging_actions': charging_actions,
+                'reward': reward
+            })
+            # ======修改结束
+
+            state = next_state
+            step += 1
+
+        # 保存动作到文件
+        action_file = 'action/RL-DDPG_actions.txt'
+        with open(action_file, 'w', encoding='utf-8') as f:
+            f.write("="*80 + "\n")
+            f.write("RL-DDPG 策略 - 详细动作记录（测试episode）\n")
+            f.write("="*80 + "\n\n")
+            f.write(f"总步数: {len(detailed_actions)}\n")
+            f.write(f"总奖励: {sum([a['reward'] for a in detailed_actions]):.2f}\n\n")
+
+            for action_data in detailed_actions:
+                f.write(f"{'='*80}\n")
+                f.write(f"时间步 {action_data['step']}\n")
+                f.write(f"{'='*80}\n\n")
+
+                # =========2026.2.4修改，添加服务订单输出==========
+                # 写入服务订单
+                f.write("【服务订单】\n")
+                if action_data['served_orders']:
+                    for from_zone, to_zone in action_data['served_orders']:
+                        f.write(f"  区域{from_zone} → 区域{to_zone}: 1辆\n")
+                else:
+                    f.write("  无\n")
+                f.write("\n")
+                # ======修改结束
+
+                # 写入调度动作
+                f.write("【调度动作】\n")
+                if action_data['reposition_actions']:
+                    for from_zone, to_zone in action_data['reposition_actions']:
+                        f.write(f"  区域{from_zone} → 区域{to_zone}: 1辆\n")
+                else:
+                    f.write("  无\n")
+                f.write("\n")
+
+                # 写入充电动作
+                f.write("【充电动作】\n")
+                if action_data['charging_actions']:
+                    for zone, count in sorted(action_data['charging_actions'].items()):
+                        f.write(f"  区域{zone}: {count}辆\n")
+                else:
+                    f.write("  无\n")
+                f.write("\n")
+
+                # 写入动作向量（供调试用）
+                f.write("【动作向量】\n")
+                f.write(f"  {action_data['action']}\n\n")
+
+        print(f"[INFO] 动作文件已保存到: {action_file}")
+        # ======修改结束
+
     except Exception as e:
-        print(f"无法加载 RL 模型: {e}")
-        print("跳过 RL 策略测试")
+        print(f"[WARNING] 无法读取训练数据: {e}")
+        print("跳过 RL 策略")
+    # ======修改结束
 
     # =========2026.2.3修改，读取MILP理论上界（不参与实际执行对比）==========
     # 读取理论上界

@@ -274,7 +274,7 @@ class OptimalSolver:
             json.dump(result, f, indent=2)  # 修改
 
         # 新增：输出详细动作到文本文件
-        txt_output_path = output_path.replace('.json', '_actions.txt')
+        txt_output_path = 'action/' + output_path.replace('.json', '_actions.txt')
         with open(txt_output_path, 'w', encoding='utf-8') as f:
             f.write("="*80 + "\n")
             f.write("全局最优解 - 详细动作分析\n")
