@@ -1105,26 +1105,19 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # =========2026.2.4修改，增加充电奖励系数==========
-        # 原值: 50，新值: 200，使充电更有吸引力
-        charging_bonus = 200 * charging_count
-        # ======修改结束
+        charging_bonus = 50 * charging_count
 
-        # =========2026.2.4修改，温和低电量惩罚==========
-        # 3. 低电量惩罚：分段惩罚（温和力度）
+        # 3. 低电量惩罚：分段惩罚
         soc_penalty = 0
         for i in range(self.CAR_NUM):
             soc = self.car[i][1]
             if soc >= 600:
                 penalty = 0
-            elif soc >= 400:  # 阈值400，早期预警
-                penalty = 0.3 * (600 - soc)  # 温和惩罚
             elif soc >= 200:
-                penalty = 0.3 * 200 + 1.0 * (400 - soc)  # 中等惩罚
+                penalty = 0.5 * (600 - soc)
             else:
-                penalty = 0.3 * 200 + 1.0 * 200 + 3.0 * (200 - soc)  # 严重惩罚
+                penalty = 0.5 * 400 + 5.0 * (200 - soc)
             soc_penalty += penalty
-        # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
         # 注意：第一次solveproblem的real_reward包含调度成本（负值）
