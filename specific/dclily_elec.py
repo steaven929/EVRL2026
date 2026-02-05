@@ -1061,7 +1061,7 @@ class dclily(gym.Env):
         self.write_od_now()
         done = self.terminal##0729 计算trb论文指标加入
 
-        # =========2026.2.2修改，新奖励函数==========
+        # =========2026.2.5修改，方案1：添加即时充电奖励==========
         # 1. 服务订单收益（已在real_reward中）
         service_revenue = sum(real_reward)
 
@@ -1072,7 +1072,8 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        charging_bonus = 50 * charging_count
+        # 即时充电奖励：每辆充电车辆+100（从50提升到100，增强信号）
+        charging_bonus = 100 * charging_count
 
         # 3. 低电量惩罚：分段惩罚
         soc_penalty = 0
@@ -1094,6 +1095,7 @@ class dclily(gym.Env):
         fixed_penalty = 500
 
         # 新奖励函数（添加缩放因子/10以控制波动）
+        # 每步都给予即时奖励，包括充电奖励
         reward_value = (service_revenue + charging_bonus - soc_penalty) / 10 - fixed_penalty
         # ======修改结束
 
@@ -1111,7 +1113,7 @@ class dclily(gym.Env):
 
         if self.terminal:
             # 如果采用平均reward，是否需要计算还剩下的油费和租费
-            # =========2026.2.2修改，使用新奖励函数==========
+            # =========2026.2.5修改，终止时也使用即时奖励逻辑==========
             # 计算新奖励函数的各个部分
             service_revenue = sum(real_reward)
 
@@ -1119,7 +1121,7 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            charging_bonus = 50 * charging_count
+            charging_bonus = 100 * charging_count  # 与即时奖励保持一致
 
             soc_penalty = 0
             for i in range(self.CAR_NUM):
