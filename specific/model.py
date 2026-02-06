@@ -36,6 +36,10 @@ TIME_NUM = config['TIME_NUM']
 TIME_LENGTH = config['TIME_LENGTH']  
 TIME_SLICE = config['TIME_SLICE']  
 od_max = config['OD_MAX'] * (ZONE_NUM-1)
+# =========2026.2.6修改，状态空间增强：更新Embedding词汇表==========
+soc_max = 10  # SOC 离散化为 0-9，需要 10 个词汇
+vocab_size = max(od_max, soc_max)  # 取最大值作为词汇表大小
+# ======修改结束
 DIST_MAX = config['DIST_MAX']  
 car_speed_min = config['car_speed_min']  
 manzu_min = config['manzu_min']  
@@ -50,7 +54,9 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
         
         # 嵌入层，适用于 MultiDiscrete 状态空间
-        self.embedding = nn.Embedding(od_max, embedding_dims)
+        # =========2026.2.6修改，状态空间增强：使用新词汇表大小==========
+        self.embedding = nn.Embedding(vocab_size, embedding_dims)
+        # ======修改结束
         
         # 全连接层定义
         self.linear1 = nn.Linear(n_states * embedding_dims, hidden_dim)
@@ -84,7 +90,9 @@ class Critic(nn.Module):
         super(Critic, self).__init__()
 
         # 嵌入层，适用于 MultiDiscrete 状态空间
-        self.embeddings = nn.Embedding(od_max, embedding_dims)
+        # =========2026.2.6修改，状态空间增强：使用新词汇表大小==========
+        self.embeddings = nn.Embedding(vocab_size, embedding_dims)
+        # ======修改结束
         self.linearmod = nn.Linear(n_actions, embedding_dims * n_states)
 
         # 全连接层定义，输入状态和动作拼接后的向量

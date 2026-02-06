@@ -88,7 +88,12 @@ ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
 
 # 当前动作为：发车倾向、目的地倾向、充电倾向
 
-OBS_SPACE = spaces.MultiDiscrete((TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX,CHARGER_STATES, NUM_CHARGERS])
+# =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
+OBS_SPACE = spaces.MultiDiscrete(
+    (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES, NUM_CHARGERS] +
+    ZONE_NUM * [10]  # 新增：4个区域的SOC (0-9)
+)
+# ======修改结束
 
 
 # 当前状态为：od_in与od_out，观察未来TIME_SLICE个时间片，多维离散状态空间
@@ -425,12 +430,31 @@ class dclily(gym.Env):
                 installed = 0
             num_chargers_feat.extend([installed] * TIME_SLICE)
         num_chargers_feat = np.array(num_chargers_feat, dtype=np.int64)
-        
-        # 4) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS] * (TIME_SLICE*ZONE_NUM)
-        state = np.concatenate([od_part, charger_states, num_chargers_feat])
-        # 保险断言：长度必须满足 4 * ZONE_NUM * TIME_SLICE
-        assert state.shape[0] == 4 * ZONE_NUM * TIME_SLICE, \
-            f"state dim {state.shape[0]} != 4*ZONE_NUM*TIME_SLICE"
+
+        # =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
+        # 4) 区域平均 SOC (新增)
+        avg_soc_per_zone = []
+        for zone in range(ZONE_NUM):
+            # 计算该区域所有静止车辆的平均 SOC
+            zone_vehicles = [self.car[i][1] for i in range(len(self.car))
+                             if self.car[i][0] == zone and self.car[i][2] == 0]
+            if zone_vehicles:
+                avg_soc = np.mean(zone_vehicles) / BATTERY_CAPACITY  # 归一化到 0-1
+            else:
+                avg_soc = 0.5  # 默认值（区域无静止车辆时）
+
+            # 离散化为 10 档 (0-9)
+            soc_discrete = int(np.clip(avg_soc * 10, 0, 9))
+            avg_soc_per_zone.append(soc_discrete)
+
+        avg_soc_per_zone = np.array(avg_soc_per_zone, dtype=np.int64)
+        # ======修改结束
+
+        # 5) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC] * (TIME_SLICE*ZONE_NUM + ZONE_NUM)
+        state = np.concatenate([od_part, charger_states, num_chargers_feat, avg_soc_per_zone])
+        # 保险断言：长度必须满足 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM
+        assert state.shape[0] == 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM, \
+            f"state dim {state.shape[0]} != 4*ZONE_NUM*TIME_SLICE + ZONE_NUM (expected {4 * ZONE_NUM * TIME_SLICE + ZONE_NUM})"
         return state
         
         # return np.concatenate([od_part, np.array(charger_states)])
@@ -1072,8 +1096,10 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # 即时充电奖励：每辆充电车辆+100（从50提升到100，增强信号）
-        charging_bonus = 100 * charging_count
+        # =========2026.2.5修改，实验2：大幅增加充电奖励==========
+        # 即时充电奖励：每辆充电车辆+500（从100提升到500，强化充电信号）
+        charging_bonus = 500 * charging_count
+        # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
         soc_penalty = 0
@@ -1091,8 +1117,10 @@ class dclily(gym.Env):
         # 注意：第一次solveproblem的real_reward包含调度成本（负值）
         # 这里不需要额外减去，因为已经在real_reward中了
 
-        # 5. 固定惩罚
-        fixed_penalty = 500
+        # =========2026.2.5修改，实验2：移除固定惩罚==========
+        # 5. 固定惩罚（移除以避免掩盖充电奖励信号）
+        fixed_penalty = 0  # 原500改为0
+        # ======修改结束
 
         # 新奖励函数（添加缩放因子/10以控制波动）
         # 每步都给予即时奖励，包括充电奖励
@@ -1121,7 +1149,9 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            charging_bonus = 100 * charging_count  # 与即时奖励保持一致
+            # =========2026.2.5修改，实验2：终止时也使用新的充电奖励==========
+            charging_bonus = 500 * charging_count  # 与即时奖励保持一致（500）
+            # ======修改结束
 
             soc_penalty = 0
             for i in range(self.CAR_NUM):
@@ -1134,8 +1164,10 @@ class dclily(gym.Env):
                     penalty = 0.5 * 400 + 5.0 * (200 - soc)
                 soc_penalty += penalty
 
-            fixed_penalty = 500
+            # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
+            fixed_penalty = 0  # 原500改为0
             final_reward = (service_revenue + charging_bonus - soc_penalty) / 10 - fixed_penalty
+            # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info
         else:
