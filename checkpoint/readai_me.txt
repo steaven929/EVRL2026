@@ -36,7 +36,9 @@ JSON
 
 状态空间 (Observation Space):
 
-展平的一维向量，包含：[OD需求(In/Out) + 充电桩占用状态 + 充电桩配置数量]。
+展平的一维向量，包含：[OD需求(In/Out) + 充电桩占用状态 + 充电桩配置数量 + 区域平均SOC]。
+维度：4*ZONE_NUM*TIME_SLICE + ZONE_NUM = 36 (原32维 + 新增4维SOC)
+SOC特征：各区域平均电量，离散化为10档(0-9)
 
 动作空间 (Action Space):
 
