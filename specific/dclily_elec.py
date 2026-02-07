@@ -109,6 +109,10 @@ class dclily(gym.Env):
         self.action_space = ACTION_SPACE  # 1环境的动作空间
         self.observation_space = OBS_SPACE  # 1一个观测空间的对象
 
+        # =========2026.2.7修改，方案D2：添加epoch追踪==========
+        self.current_epoch = 0  # 当前训练轮数（用于探索策略衰减）
+        # ======修改结束
+
         # 自行定义
 
         self._last_episode_timestep = 0  # 1上一回合的时间步数
@@ -469,7 +473,10 @@ class dclily(gym.Env):
 
     def rl_should_charge(self, vehicle_id, charge_pref):
         """
-        使用 RL 输出来决定是否充电（替换固定阈值法）
+        [已废弃 - 2026.2.6方案C] 使用 RL 输出来决定是否充电（替换固定阈值法）
+        方案C改为基于数量的充电决策，不再使用此函数
+        保留此函数以便回滚或对比实验
+
         charge_pref: 动作向量中充电倾向部分
         """
         # =========2026.2.4修改，方案一：简化充电决策逻辑==========
@@ -608,77 +615,174 @@ class dclily(gym.Env):
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[0][0]
     
-    def check_idle_vehicles(self, charge_pref, charging_actions=None):
-        """检查空闲车辆状态（由 RL 决定是否充电；再决定去哪儿充）"""
-        # 创建一个临时列表来存储需要扣除available的区域，避免在循环中直接修改影响逻辑
-        cars_to_hide = []
+    def check_idle_vehicles(self, charge_pref, charging_actions=None, epoch=0):
+        """检查空闲车辆状态（由 RL 决定充电数量；再决定去哪儿充）
 
-        # =========2026.2.4修改，记录充电动作==========
+        参数:
+            charge_pref: RL输出的充电比例 [zone0, zone1, zone2, zone3]
+            charging_actions: 充电动作记录字典
+            epoch: 当前训练轮数（用于方案D2的探索衰减）
+        """
+        # =========2026.2.6修改，方案C：从充电倾向改为充电数量==========
+        # 原逻辑：逐车判断，基于概率决策（charge_pref作为概率）
+        # 新逻辑：按区域分配充电数量，选择最需要充电的车辆
+        # 优势：更直接的控制，避免概率随机性导致的不稳定
+
         if charging_actions is None:
             charging_actions = {}
-        # ======修改结束
-        
+
+        # =========2026.2.7修改，方案D2-层次2：ε-greedy充电探索==========
+        # 前30轮，10%概率随机选择一个区域进行充电，打破局部最优
+        if epoch < 30 and random.random() < 0.1:
+            random_zone = random.randint(0, ZONE_NUM-1)
+            idle_vehicles_in_zone = []
+
+            for i in range(len(self.car)):
+                if self.car[i][2] == 0:  # 静止车辆
+                    if self.car[i][0] == random_zone:  # 在目标区域
+                        idle_vehicles_in_zone.append((i, self.car[i][1]))  # (车辆ID, SOC)
+
+            if idle_vehicles_in_zone:
+                # 随机充电1-3辆车
+                charge_count = random.randint(1, min(3, len(idle_vehicles_in_zone)))
+                # 按SOC升序排序，优先充电低电量车辆
+                idle_vehicles_in_zone.sort(key=lambda x: x[1])
+
+                for vehicle_id, soc in idle_vehicles_in_zone[:charge_count]:
+                    current_zone = self.car[vehicle_id][0]
+
+                    # 找到最优充电站（复用原有逻辑）
+                    target_charger = self.find_preferred_charger(current_zone, charge_pref)
+
+                    if target_charger != -1:
+                        # 释放旧充电桩（如果有）
+                        old_charger_id = self.car[vehicle_id][3]
+                        if old_charger_id != -1:
+                            self.release_charger(current_zone, old_charger_id)
+                            self.car[vehicle_id][3] = -1
+
+                        # 设置新的目标区域
+                        self.car[vehicle_id][0] = target_charger
+
+                        # 设置行驶距离
+                        dist_to_charge = self.dist[current_zone][target_charger]
+                        self.car[vehicle_id][2] = dist_to_charge
+
+                        # 规划停车位
+                        self.assign_parking_slot(vehicle_id, is_charging_order=True)
+
+                        # 记录充电动作
+                        if self.car[vehicle_id][3] != -1:
+                            if target_charger not in charging_actions:
+                                charging_actions[target_charger] = 0
+                            charging_actions[target_charger] += 1
+
+                        # 立即物理锁桩
+                        planned_id = self.car[vehicle_id][3]
+                        if planned_id != -1:
+                            if target_charger in self.charging_stations:
+                                for station in self.charging_stations[target_charger]:
+                                    if station['charger_id'] == planned_id:
+                                        station['occupied_by'] = vehicle_id
+                                        break
+
+                        # 如果是本地充电，从调度池移除
+                        if dist_to_charge == 0:
+                            self.available[0][current_zone] -= 1
+
+                # 确保 available 不会变成负数
+                for z in range(self.ZONE_NUM):
+                    if self.available[0][z] < 0:
+                        self.available[0][z] = 0
+
+                return  # 本步使用随机策略，跳过RL决策
+        # ======探索逻辑结束
+
+        # 步骤1：按区域收集空闲车辆（未执行任务的车辆）
+        idle_vehicles_by_zone = {z: [] for z in range(ZONE_NUM)}
         for i in range(len(self.car)):
-            # 仅检查未执行任务的车辆
-            if self.car[i][2] != 0:
+            if self.car[i][2] == 0:  # 仅检查未执行任务的车辆
+                zone = self.car[i][0]
+                soc = self.car[i][1]
+                idle_vehicles_by_zone[zone].append((i, soc))
+
+        # 步骤2：对每个区域，根据RL输出的充电数量决策
+        for zone in range(ZONE_NUM):
+            idle_vehicles = idle_vehicles_by_zone[zone]
+            if len(idle_vehicles) == 0:
                 continue
-            
-            # RL 概率决策：是否要充电
-            want_charge = self.rl_should_charge(i, charge_pref)
-            # print(f"[t={self.episode_timestep}] 车辆{i} want_charge = {want_charge}")
-            
-            if not want_charge:
-                continue  # 不充电则保持待命
-            
-            # 若决定充电 → 调用现有的“去哪充”逻辑
-            current_zone = self.car[i][0]
-            target_charger = self.find_preferred_charger(current_zone, charge_pref)
-            
-            if target_charger != -1:
-                # print(f"[t={self.episode_timestep}] 车辆{i} 前往充电站 zone={target_charger}")
-                # === 【新增修复 1】: 车要走了，如果手里有桩，必须先释放！===
-                old_charger_id = self.car[i][3]
-                if old_charger_id != -1:
-                    self.release_charger(current_zone, old_charger_id)
-                    self.car[i][3] = -1  # 清除身上的标记
-                # ① 设置新的目标区域
-                self.car[i][0] = target_charger
-                
-                # ② 设置行驶距离
-                dist_to_charge = self.dist[current_zone][target_charger]
-                self.car[i][2] = dist_to_charge
-                
-                # ③ 规划停车位
-                self.assign_parking_slot(i, is_charging_order=True)
 
-                # =========2026.2.4修改，记录充电动作==========
-                # 记录充电动作：如果成功分配了充电桩
-                if self.car[i][3] != -1:
-                    if target_charger not in charging_actions:
-                        charging_actions[target_charger] = 0
-                    charging_actions[target_charger] += 1
-                # ======修改结束
+            # RL输出的充电倾向值（0-1）映射为充电数量
+            # charge_pref[zone] ∈ [0, 1] → 充电数量 ∈ [0, len(idle_vehicles)]
+            pref_value = float(charge_pref[zone])
+            max_chargeable = len(idle_vehicles)
 
-                # ④ 立即物理锁桩
-                planned_id = self.car[i][3]
-                if planned_id != -1:
-                    if target_charger in self.charging_stations:
-                        for station in self.charging_stations[target_charger]:
-                            if station['charger_id'] == planned_id:
-                                station['occupied_by'] = i
-                                break
-                
-                # === 【核心修复】 ===
-                # 如果是本地充电 (距离为0)，必须从 available 中移除该车，
-                # 防止 Gurobi 在随后的 solveproblem 中将其调度走。
-                if dist_to_charge == 0:
-                    self.available[0][current_zone] -= 1
-                    # print(f"[System] 车辆{i} 在区域{current_zone}本地充电，已从调度池移除。")
-        
-        # 确保 available 不会变成负数 (理论上逻辑正确不会发生，但为了安全)
+            # 训练期：使用连续值映射（保留梯度）
+            # 测试期：四舍五入为整数
+            if self.training:
+                # 训练期：使用概率采样，保持探索性
+                charge_count = int(pref_value * max_chargeable + 0.5)  # 四舍五入
+            else:
+                # 测试期：直接映射为整数
+                charge_count = int(pref_value * max_chargeable + 0.5)
+
+            charge_count = max(0, min(charge_count, max_chargeable))
+
+            if charge_count == 0:
+                continue
+
+            # 步骤3：选择该区域最需要充电的N辆车（按SOC升序排序）
+            idle_vehicles.sort(key=lambda x: x[1])  # 按SOC升序（电量低的优先）
+            vehicles_to_charge = idle_vehicles[:charge_count]
+
+            # 步骤4：为选中的车辆分配充电任务
+            for vehicle_id, soc in vehicles_to_charge:
+                current_zone = self.car[vehicle_id][0]
+
+                # 找到最优充电站（考虑距离和充电桩可用性）
+                target_charger = self.find_preferred_charger(current_zone, charge_pref)
+
+                if target_charger != -1:
+                    # 释放旧充电桩（如果有）
+                    old_charger_id = self.car[vehicle_id][3]
+                    if old_charger_id != -1:
+                        self.release_charger(current_zone, old_charger_id)
+                        self.car[vehicle_id][3] = -1
+
+                    # 设置新的目标区域
+                    self.car[vehicle_id][0] = target_charger
+
+                    # 设置行驶距离
+                    dist_to_charge = self.dist[current_zone][target_charger]
+                    self.car[vehicle_id][2] = dist_to_charge
+
+                    # 规划停车位
+                    self.assign_parking_slot(vehicle_id, is_charging_order=True)
+
+                    # 记录充电动作
+                    if self.car[vehicle_id][3] != -1:
+                        if target_charger not in charging_actions:
+                            charging_actions[target_charger] = 0
+                        charging_actions[target_charger] += 1
+
+                    # 立即物理锁桩
+                    planned_id = self.car[vehicle_id][3]
+                    if planned_id != -1:
+                        if target_charger in self.charging_stations:
+                            for station in self.charging_stations[target_charger]:
+                                if station['charger_id'] == planned_id:
+                                    station['occupied_by'] = vehicle_id
+                                    break
+
+                    # 如果是本地充电，从调度池移除
+                    if dist_to_charge == 0:
+                        self.available[0][current_zone] -= 1
+
+        # 确保 available 不会变成负数
         for z in range(self.ZONE_NUM):
             if self.available[0][z] < 0:
                 self.available[0][z] = 0
+        # ======修改结束
     
     def release_charger(self, zone_id, charger_id):
         """释放指定区域的指定充电桩,清除车辆离开时的占用记录。"""
@@ -923,8 +1027,10 @@ class dclily(gym.Env):
             
             i += 1
 
-        # =========2026.2.4修改，传递charging_actions参数==========
-        self.check_idle_vehicles(charge_pref, charging_actions)
+        # =========2026.2.6修改，方案4B：延后充电决策，避免充电-调度冲突==========
+        # 注释掉原位置的充电决策（在调度前）
+        # 原因：此时调用会导致空闲车辆优先被Gurobi调度走，充电决策时无车可充
+        # self.check_idle_vehicles(charge_pref, charging_actions)
         # ======修改结束
 
         # 多区域OD分配，为每个区域的车辆分配目的地
@@ -1034,7 +1140,14 @@ class dclily(gym.Env):
                                                                                             self.episode_timestep,
                                                                                             real_reward, 0, 0,
                                                                                             pre_avail)
-        
+
+        # =========2026.2.6修改，方案4B：在调度完成后执行充电决策==========
+        # 移到这里：两次 solveproblem 之后，让调度后剩余的空闲车辆去充电
+        # 优势：避免充电-调度冲突，确保充电决策基于调度后的真实空闲车辆
+        # =========2026.2.7修改，方案D2：使用self.current_epoch而不是参数==========
+        self.check_idle_vehicles(charge_pref, charging_actions, epoch=self.current_epoch)
+        # ======修改结束
+
         for vid in range(len(self.car)):
             # 目标区域发生变化 → 说明是新订单
             if self.car[vid][0] != prev_car[vid][0]:
@@ -1221,6 +1334,12 @@ class dclily(gym.Env):
 
     def set_training_mode(self, training):
         self.training = training
+
+    # =========2026.2.7修改，方案D2：添加set_epoch方法==========
+    def set_epoch(self, epoch):
+        """设置当前训练轮数（用于探索策略衰减）"""
+        self.current_epoch = epoch
+    # ======修改结束
 
     def reset(self):
         # 重置环境并返回初始状态

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 小场景最优解求解器
 场景：4区域，18辆车
@@ -8,8 +9,12 @@
 3. 穷举搜索（小场景可行）
 """
 
-import numpy as np
 import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+import numpy as np
 import os
 import gym
 from gym.envs.registration import register
@@ -135,13 +140,15 @@ class OptimalSolver:
             for j in range(zone_num)
         )
 
-        # 3. 充电加分：每步统计充电车辆数
+        # =========2026.2.5修改，实验2：同步RL的充电奖励提升==========
+        # 3. 充电加分：每步统计充电车辆数（从50提升到500，与RL保持一致）
         charging_bonus = gp.quicksum(
-            50 * c[v, t, i]
+            500 * c[v, t, i]  # 原50改为500
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)
         )
+        # ======修改结束
 
         # 4. 低电量惩罚：分段惩罚
         # 使用辅助变量来实现分段惩罚
@@ -164,8 +171,10 @@ class OptimalSolver:
 
         soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(used_time + 1))
 
-        # 5. 固定惩罚
-        fixed_penalty = 500 * used_time
+        # =========2026.2.5修改，实验2：同步RL移除固定惩罚==========
+        # 5. 固定惩罚（移除以与RL保持一致）
+        fixed_penalty = 0  # 原500 * used_time改为0
+        # ======修改结束
 
         # 新目标函数（添加缩放因子/10）
         model.setObjective(
@@ -420,13 +429,15 @@ class OptimalSolver:
                 for j in range(zone_num)
             )
 
-            # 3. 充电加分
+            # =========2026.2.5修改，实验2：Rolling Horizon同步充电奖励==========
+            # 3. 充电加分（从50提升到500，与RL保持一致）
             charging_bonus = gp.quicksum(
-                50 * c[v, t, i]
+                500 * c[v, t, i]  # 原50改为500
                 for v in range(car_num)
                 for t in range(actual_horizon)
                 for i in range(zone_num)
             )
+            # ======修改结束
 
             # 4. 低电量惩罚
             soc_penalty_vars = model.addVars(car_num, actual_horizon + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_penalty")
@@ -437,8 +448,10 @@ class OptimalSolver:
 
             soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(actual_horizon + 1))
 
-            # 5. 固定惩罚
-            fixed_penalty = 500 * actual_horizon
+            # =========2026.2.5修改，实验2：Rolling Horizon移除固定惩罚==========
+            # 5. 固定惩罚（移除以与RL保持一致）
+            fixed_penalty = 0  # 原500 * actual_horizon改为0
+            # ======修改结束
 
             # 新目标函数（添加缩放因子/10）
             model.setObjective(

@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 """
 基准测试脚本 - 对比不同策略的性能
 用于对比真实执行的策略性能，并单独展示MILP理论上界

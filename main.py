@@ -4,6 +4,14 @@ Created on Tue Sep  3 19:29:48 2024
 
 @author: TLab
 """
+# =========2026.2.5修改，修复Windows中文编码问题==========
+import sys
+import io
+# 设置标准输出为 UTF-8 编码
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+# ======修改结束
+
 from matplotlib import pyplot as plt
 
 from core.util import get_args, plot_rewards,plot_vehicle_battery_heatmap,plot_vehicle_battery, cp, plot_critic_losses, smooth
@@ -11,7 +19,6 @@ import core.environment as dclilyenv
 import core.training as dclilytrain
 import numpy as np
 import os
-import sys
 
 from gym.envs.registration import register
 

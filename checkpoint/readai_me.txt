@@ -48,7 +48,13 @@ SOC特征：各区域平均电量，离散化为10档(0-9)
 
 [ZONE_NUM : 2*ZONE_NUM]: 目的地倾向 (Destination Preference)
 
-[2*ZONE_NUM : 3*ZONE_NUM]: 充电倾向 (Charging Preference) —— (New!) RL 显式输出是否希望车辆去充电。
+[2*ZONE_NUM : 3*ZONE_NUM]: 充电数量比例 (Charging Count Ratio) —— (Updated 2026.2.6!) RL 输出充电数量比例（0-1），映射为实际充电车辆数。
+
+充电决策逻辑（方案C - 2026.2.6更新）:
+- 旧逻辑（已废弃）: 充电倾向作为概率，逐车判断是否充电
+- 新逻辑: 充电比例映射为数量，选择SOC最低的N辆车充电
+- 映射公式: charge_count = int(charge_pref[zone] * idle_vehicles_count + 0.5)
+- 优先级: 自动按SOC升序排序，优先充电低电量车辆
 
 核心逻辑 (step):
 
@@ -56,11 +62,14 @@ SOC特征：各区域平均电量，离散化为10档(0-9)
 
 物理占用同步：到达车辆会根据 charger_id 锁定 charging_stations 中的物理资源，实现“人车桩合一”。
 
-空闲车辆充电决策 (check_idle_vehicles):
+空闲车辆充电决策 (check_idle_vehicles - 方案C更新):
 
-结合 RL 输出的 charge_pref、车辆当前 SOC、距离最近充电站距离，计算充电概率。
-
-若决定充电，自动规划前往有桩区域，并预占充电位。
+【2026.2.6更新】充电决策逻辑重构：
+- 按区域收集空闲车辆（未执行任务的车辆）
+- 根据RL输出的充电比例计算充电数量：charge_count = int(pref * idle_count + 0.5)
+- 按SOC升序排序，选择电量最低的N辆车充电
+- 为选中车辆分配最优充电站（考虑距离和充电桩可用性）
+- 执行顺序：在Gurobi调度完成后执行（方案4B），避免充电-调度冲突
 
 调度与匹配: 调用 optim.solveproblem。
 
