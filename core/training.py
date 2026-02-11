@@ -67,10 +67,19 @@ def train(cfg, env, agent):
 
     battery_log = []  # 修改：在所有episode之前初始化，用于存储所有episode的电池数据  # 修改
 
+    # =========2026.2.7修改：保存探索期动作==========
+    exploration_actions_saved = False  # 标记是否已保存探索期动作
+    # ======修改结束
+
     for i_ep in range(cfg['train_eps']):
         env.set_training_mode(1)
         # =========2026.2.7修改，方案D2：设置当前epoch==========
         env.set_epoch(i_ep)  # 设置当前轮数，用于探索策略衰减
+
+        # 在探索期（第10轮）保存详细动作
+        if i_ep == 10 and not exploration_actions_saved:
+            env.set_training_mode(2)  # 设置为探索期记录模式
+            exploration_actions_saved = True
         # ======修改结束
         state = env.reset()
         ou_noise.reset()
@@ -86,8 +95,8 @@ def train(cfg, env, agent):
             #action = encode_custom_action(zone_to_counts)  #0723修改，用来自定义action 来测试
             action = ou_noise.get_action(action, i_step+1)
 
-            # =========2026.2.7修改，方案D2-层次1：充电维度噪声增强==========
-            # 前20轮训练，对充电维度 [8:12] 添加额外噪声，打破"不充电"局部最优
+            # =========2026.2.7修改，方案D2：充电维度噪声增强==========
+            # 前20轮训练，对充电维度 [8:12] 添加额外噪声
             if i_ep < 20:
                 charging_noise = np.random.uniform(-0.3, 0.3, size=4)
                 action[8:12] = np.clip(action[8:12] + charging_noise, 0, 1)

@@ -631,8 +631,8 @@ class dclily(gym.Env):
         if charging_actions is None:
             charging_actions = {}
 
-        # =========2026.2.7修改，方案D2-层次2：ε-greedy充电探索==========
-        # 前30轮，10%概率随机选择一个区域进行充电，打破局部最优
+        # =========2026.2.7修改，方案D2：ε-greedy充电探索==========
+        # 前30轮，10%概率随机选择一个区域进行充电
         if epoch < 30 and random.random() < 0.1:
             random_zone = random.randint(0, ZONE_NUM-1)
             idle_vehicles_in_zone = []
@@ -712,19 +712,30 @@ class dclily(gym.Env):
             if len(idle_vehicles) == 0:
                 continue
 
-            # RL输出的充电倾向值（0-1）映射为充电数量
-            # charge_pref[zone] ∈ [0, 1] → 充电数量 ∈ [0, len(idle_vehicles)]
+            # =========2026.2.7修改，方案E1-C：分段映射优化==========
+            # 旧逻辑：charge_count = int(pref * idle + 0.5)
+            # 问题：当pref=1.0但idle=0时，无法充电；当idle很少时，映射非线性严重
+            # 新逻辑：分段映射，提升充电触发概率
             pref_value = float(charge_pref[zone])
             max_chargeable = len(idle_vehicles)
 
-            # 训练期：使用连续值映射（保留梯度）
-            # 测试期：四舍五入为整数
-            if self.training:
-                # 训练期：使用概率采样，保持探索性
-                charge_count = int(pref_value * max_chargeable + 0.5)  # 四舍五入
+            # 分段映射策略
+            if pref_value > 0.8:
+                # 高偏好（>0.8）：充电所有空闲车辆
+                charge_count = max_chargeable
+            elif pref_value > 0.5:
+                # 中高偏好（0.5-0.8）：充电70%的空闲车辆
+                charge_count = max(1, int(max_chargeable * 0.7))
+            elif pref_value > 0.3:
+                # 中等偏好（0.3-0.5）：充电40%的空闲车辆
+                charge_count = max(1, int(max_chargeable * 0.4))
+            elif pref_value > 0.01:
+                # 低偏好（0.01-0.3）：充电20%的空闲车辆
+                charge_count = int(max_chargeable * 0.2)
             else:
-                # 测试期：直接映射为整数
-                charge_count = int(pref_value * max_chargeable + 0.5)
+                # 极低偏好（<0.01）：不充电
+                charge_count = 0
+            # ======修改结束
 
             charge_count = max(0, min(charge_count, max_chargeable))
 
@@ -1209,22 +1220,33 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # =========2026.2.5修改，实验2：大幅增加充电奖励==========
-        # 即时充电奖励：每辆充电车辆+500（从100提升到500，强化充电信号）
-        charging_bonus = 500 * charging_count
+        # =========2026.2.11修改，实验3：进一步增加充电奖励==========
+        # 即时充电奖励：每辆充电车辆+1500（从500提升到1500，进一步强化充电信号）
+        charging_bonus = 1500 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
+        # =========2026.2.11修改，实验5：调整SOC惩罚力度（降低50%）==========
         soc_penalty = 0
+        low_soc_count = 0  # 统计低电量车辆数
         for i in range(self.CAR_NUM):
             soc = self.car[i][1]
             if soc >= 600:
                 penalty = 0
+            elif soc >= 400:  # 修改：从200提升到400，扩大惩罚范围
+                penalty = 1.0 * (600 - soc)  # 修改：从2.0降低到1.0（实验4的50%）
             elif soc >= 200:
-                penalty = 0.5 * (600 - soc)
+                penalty = 1.0 * 200 + 5.0 * (400 - soc)  # 修改：从10.0降低到5.0（实验4的50%）
+                low_soc_count += 1  # 统计低电量车辆
             else:
-                penalty = 0.5 * 400 + 5.0 * (200 - soc)
+                penalty = 1.0 * 200 + 5.0 * 200 + 25.0 * (200 - soc)  # 从50.0降低到25.0（实验4的50%）
+                low_soc_count += 1
             soc_penalty += penalty
+
+        # 额外惩罚：低电量车辆数惩罚（让Actor直接感知到低SOC的危险）
+        low_soc_vehicle_penalty = low_soc_count * 250  # 从500降低到250（实验4的50%）
+        soc_penalty += low_soc_vehicle_penalty
+        # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
         # 注意：第一次solveproblem的real_reward包含调度成本（负值）
@@ -1262,20 +1284,30 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            # =========2026.2.5修改，实验2：终止时也使用新的充电奖励==========
-            charging_bonus = 500 * charging_count  # 与即时奖励保持一致（500）
+            # =========2026.2.11修改，实验3：终止时也使用新的充电奖励==========
+            charging_bonus = 1500 * charging_count  # 与即时奖励保持一致（1500）
             # ======修改结束
 
+            # =========2026.2.11修改，实验5：终止时也使用调整后的SOC惩罚（降低50%）==========
             soc_penalty = 0
+            low_soc_count = 0
             for i in range(self.CAR_NUM):
                 soc = self.car[i][1]
                 if soc >= 600:
                     penalty = 0
+                elif soc >= 400:
+                    penalty = 1.0 * (600 - soc)  # 从2.0降低到1.0
                 elif soc >= 200:
-                    penalty = 0.5 * (600 - soc)
+                    penalty = 1.0 * 200 + 5.0 * (400 - soc)  # 从10.0降低到5.0
+                    low_soc_count += 1
                 else:
-                    penalty = 0.5 * 400 + 5.0 * (200 - soc)
+                    penalty = 1.0 * 200 + 5.0 * 200 + 25.0 * (200 - soc)  # 从50.0降低到25.0
+                    low_soc_count += 1
                 soc_penalty += penalty
+
+            low_soc_vehicle_penalty = low_soc_count * 250  # 从500降低到250
+            soc_penalty += low_soc_vehicle_penalty
+            # ======修改结束
 
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
             fixed_penalty = 0  # 原500改为0
@@ -1333,6 +1365,12 @@ class dclily(gym.Env):
             return 0
 
     def set_training_mode(self, training):
+        """
+        设置训练模式
+        training = 0: 测试模式（保存到 RL-DDPG_actions.txt）
+        training = 1: 训练模式（不保存）
+        training = 2: 探索期记录模式（保存到 RL-DDPG_actions_exploration.txt）
+        """
         self.training = training
 
     # =========2026.2.7修改，方案D2：添加set_epoch方法==========
