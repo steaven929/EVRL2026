@@ -150,3 +150,16 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 **目标**:
 * 提升 RL 与最优解在动作统计上的可比性。
 * 提高服务/调度动作激活率，降低欠激活。
+
+### 2.8 [2026-02-12] 服务优先优化（冲刺85%）
+**问题现象**: 调度动作接近最优后，服务动作与充电决策日志仍不足，限制最终Reward提升。
+
+**代码修复点**:
+* `specific/dclily_elec.py`
+  1. 在每个时间步开始时为所有车辆初始化 `current_step_logs`，默认 `decision_charge=False`，避免 `Decision_Charge` 出现 `NaN`。
+  2. 奖励函数新增服务优先项：`service_bonus = 1200 * served_count`（`served_count = sum(rel_demand)`）。
+  3. 终止步奖励与中间步保持一致，同步加入 `service_bonus`。
+
+**目标**:
+* 提升服务订单执行量，缩小 RL 与最优解在服务维度的差距。
+* 提高日志可观测性，便于后续多种子筛选。
