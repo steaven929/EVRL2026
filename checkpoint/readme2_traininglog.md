@@ -135,3 +135,18 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 **目标**:
 * 降低策略目标漂移。
 * 缩小 Q/TD 目标尺度，提升训练稳定性。
+
+### 2.7 [2026-02-12] 动作对齐最优解（统计口径 + 发车预算）
+**问题现象**: RL 动作统计中的充电数量与最优解口径不一致，且服务/调度总量偏低。
+
+**代码修复点**:
+* `specific/dclily_elec.py`
+  1. 新增 `_collect_active_charging_actions()`，按“当前真实在充电车辆数（zone聚合）”输出 `charging_actions`，与最优解的每步充电动作口径对齐。
+  2. 发车预算从 `available * action` 改为需求感知映射：
+     - `depart_ratio = 0.2 + 0.8 * action[i]`
+     - `limit_now = max(round(available*depart_ratio), round(0.25*out_demand_now))`
+     - 再裁剪到 `[0, available]`
+
+**目标**:
+* 提升 RL 与最优解在动作统计上的可比性。
+* 提高服务/调度动作激活率，降低欠激活。

@@ -481,6 +481,15 @@ class dclily(gym.Env):
     def _sync_dispatchable_available(self):
         """同步 available[0]，防止充电侧重复扣减导致调度预算漂移。"""
         self.available[0] = self._compute_dispatchable_counts().astype(self.available[0].dtype, copy=False)
+
+    def _collect_active_charging_actions(self):
+        """统计当前时刻真实在充电的车辆数（按区域）。"""
+        actions = {}
+        for i in range(len(self.car)):
+            if self.car[i][2] == 0 and self.car[i][3] != -1:
+                zone = int(self.car[i][0])
+                actions[zone] = actions.get(zone, 0) + 1
+        return actions
     # ======修改结束
 
     def _sigmoid(self, x):
@@ -1090,8 +1099,14 @@ class dclily(gym.Env):
             # 上面那个是TRE的
             # =========2026.2.12修改，方案F2：避免 int 截断导致后期全零==========
             available_now = max(0, int(dispatchable_available[i]))
-            raw_limit = available_now * float(action[i])
+            # =========2026.2.12修改，方案F8：需求感知的发车预算映射==========
+            # 对齐目标：提升动作总量，减少后期服务/调度欠激活
+            depart_ratio = 0.2 + 0.8 * float(action[i])
+            raw_limit = available_now * depart_ratio
             limit_now = int(round(raw_limit))
+            out_demand_now = int(np.sum(self.od_demand_now[0][i]))
+            demand_floor = int(min(available_now, round(0.25 * out_demand_now)))
+            limit_now = max(limit_now, demand_floor)
             if available_now > 0 and float(action[i]) > 0.5:
                 limit_now = max(1, limit_now)
             limit_now = max(0, min(limit_now, available_now))
@@ -1298,13 +1313,15 @@ class dclily(gym.Env):
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
+        active_charging_actions = self._collect_active_charging_actions()
+
         info = {            ##0729 计算trb论文指标加入
             "rld": self._last_rld,          ##0729 计算trb论文指标加入
             "svc": self._last_svc,
             "srd": self._last_srd,  # 修改
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
             "demand_orders": rel_demand,  # 需求订单矩阵
-            "charging_actions": charging_actions,  # 充电动作记录
+            "charging_actions": active_charging_actions,  # 当前真实充电动作（按区域计数）
             "action_table_true": action_table_true  # RL调度倾向矩阵
         }           ##0729 计算trb论文指标加入
         # ======修改结束
