@@ -1,0 +1,18 @@
+{
+  "experiment_name": "high_gamma_large_batch",
+  "description": "高gamma+大批量，增强长期规划",
+  "timestamp": "2026-02-10 21:57:04",
+  "hyperparameters": {
+    "train_eps": "600",
+    "gamma": "0.5",
+    "critic_lr": "1e-4",
+    "actor_lr": "1e-5",
+    "batch_size": "64",
+    "memory_capacity": "8000",
+    "target_update": "2",
+    "tau": "5e-3",
+    "critic_hidden_dim": "256",
+    "actor_hidden_dim": "256",
+    "seed": "2"
+  }
+}

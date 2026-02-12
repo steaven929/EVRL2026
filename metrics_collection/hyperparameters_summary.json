@@ -1,0 +1,110 @@
+[
+  {
+    "commit": "8c13a6d",
+    "message": "即时充电奖励+eps=400+reward=-3700",
+    "hyperparameters": {
+      "train_eps": "400",
+      "gamma": "0.85",
+      "critic_lr": "5e-4",
+      "actor_lr": "5e-5",
+      "batch_size": "64",
+      "memory_capacity": "8000",
+      "target_update": "2",
+      "tau": "5e-3",
+      "critic_hidden_dim": "256",
+      "actor_hidden_dim": "256",
+      "seed": "2"
+    },
+    "image_path": "metrics_collection/8c13a6d_final_metrics.png"
+  },
+  {
+    "commit": "fe61c47",
+    "message": "移除充电权重+gamma=0.85",
+    "hyperparameters": {
+      "train_eps": "700",
+      "gamma": "0.85",
+      "critic_lr": "5e-4",
+      "actor_lr": "5e-5",
+      "batch_size": "64",
+      "memory_capacity": "8000",
+      "target_update": "2",
+      "tau": "5e-3",
+      "critic_hidden_dim": "256",
+      "actor_hidden_dim": "256",
+      "seed": "2"
+    },
+    "image_path": "metrics_collection/fe61c47_final_metrics.png"
+  },
+  {
+    "commit": "914201b",
+    "message": "移除环境充电权重+修改充电阈值",
+    "hyperparameters": {
+      "train_eps": "700",
+      "gamma": "0.5",
+      "critic_lr": "5e-4",
+      "actor_lr": "5e-5",
+      "batch_size": "64",
+      "memory_capacity": "8000",
+      "target_update": "2",
+      "tau": "5e-3",
+      "critic_hidden_dim": "256",
+      "actor_hidden_dim": "256",
+      "seed": "2"
+    },
+    "image_path": "metrics_collection/914201b_final_metrics.png"
+  },
+  {
+    "commit": "265e729",
+    "message": "最优解版本",
+    "hyperparameters": {
+      "train_eps": "10",
+      "gamma": "0.5",
+      "critic_lr": "5e-4",
+      "actor_lr": "5e-5",
+      "batch_size": "64",
+      "memory_capacity": "8000",
+      "target_update": "2",
+      "tau": "5e-3",
+      "critic_hidden_dim": "256",
+      "actor_hidden_dim": "256",
+      "seed": "2"
+    },
+    "image_path": "metrics_collection/265e729_final_metrics.png"
+  },
+  {
+    "commit": "cbe40fc",
+    "message": "最优解版本",
+    "hyperparameters": {
+      "train_eps": "2000",
+      "gamma": "0.5",
+      "critic_lr": "5e-4",
+      "actor_lr": "5e-5",
+      "batch_size": "64",
+      "memory_capacity": "8000",
+      "target_update": "2",
+      "tau": "5e-3",
+      "critic_hidden_dim": "256",
+      "actor_hidden_dim": "256",
+      "seed": "2"
+    },
+    "image_path": "metrics_collection/cbe40fc_final_metrics.png"
+  },
+  {
+    "commit": "18fc161",
+    "message": "最优解版本",
+    "hyperparameters": {
+      "train_eps": "700",
+      "gamma": "0.5",
+      "critic_lr": "5e-4",
+      "actor_lr": "5e-5",
+      "batch_size": "64",
+      "memory_capacity": "8000",
+      "target_update": "2",
+      "tau": "5e-3",
+      "critic_hidden_dim": "256",
+      "actor_hidden_dim": "256",
+      "seed": "2"
+    },
+    "image_path": "metrics_collection/18fc161_final_metrics.png"
+  }
+]

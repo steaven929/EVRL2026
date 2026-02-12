@@ -1,0 +1,78 @@
+============================================================
+超参数自动调优系统
+============================================================
+计划运行 5 组实验
+
+[Backup] util.py backed up to util.py.backup
+
+============================================================
+实验 1/5: baseline_600eps
+描述: 基线配置，train_eps=600
+============================================================
+[Modified] util.py updated with new parameters
+[Training] Starting training...
+[Training] Training completed
+[Collected] final_metrics.png -> tuning_results/baseline_600eps/
+[Collected] Hyperparameters saved to tuning_results/baseline_600eps/config.json
+[Logged] Experiment logged to tuning_log.md
+
+[完成] 实验 1/5 完成
+
+============================================================
+实验 2/5: high_gamma_large_batch
+描述: 高gamma+大批量，增强长期规划
+============================================================
+[Modified] util.py updated with new parameters
+[Training] Starting training...
+[Training] Training completed
+[Collected] final_metrics.png -> tuning_results/high_gamma_large_batch/
+[Collected] Hyperparameters saved to tuning_results/high_gamma_large_batch/config.json
+[Logged] Experiment logged to tuning_log.md
+
+[完成] 实验 2/5 完成
+
+============================================================
+实验 3/5: low_lr_stable
+描述: 低学习率，追求稳定收敛
+============================================================
+[Modified] util.py updated with new parameters
+[Training] Starting training...
+[Training] Training completed
+[Collected] final_metrics.png -> tuning_results/low_lr_stable/
+[Collected] Hyperparameters saved to tuning_results/low_lr_stable/config.json
+[Logged] Experiment logged to tuning_log.md
+
+[完成] 实验 3/5 完成
+
+============================================================
+实验 4/5: high_lr_fast
+描述: 高学习率，加速学习
+============================================================
+[Modified] util.py updated with new parameters
+[Training] Starting training...
+[Training] Training completed
+[Collected] final_metrics.png -> tuning_results/high_lr_fast/
+[Collected] Hyperparameters saved to tuning_results/high_lr_fast/config.json
+[Logged] Experiment logged to tuning_log.md
+
+[完成] 实验 4/5 完成
+
+============================================================
+实验 5/5: fast_target_update
+描述: 快速目标网络更新+中等gamma
+============================================================
+[Modified] util.py updated with new parameters
+[Training] Starting training...
+[Training] Training completed
+[Collected] final_metrics.png -> tuning_results/fast_target_update/
+[Collected] Hyperparameters saved to tuning_results/fast_target_update/config.json
+[Logged] Experiment logged to tuning_log.md
+
+[完成] 实验 5/5 完成
+[Restore] util.py restored from backup
+
+============================================================
+所有实验完成！
+结果保存在: tuning_results/
+日志文件: tuning_log.md
+============================================================

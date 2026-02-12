@@ -1,0 +1,18 @@
+{
+  "experiment_name": "baseline_600eps",
+  "description": "基线配置，train_eps=600",
+  "timestamp": "2026-02-10 21:43:59",
+  "hyperparameters": {
+    "train_eps": "600",
+    "gamma": "0.85",
+    "critic_lr": "5e-4",
+    "actor_lr": "5e-5",
+    "batch_size": "128",
+    "memory_capacity": "8000",
+    "target_update": "2",
+    "tau": "5e-3",
+    "critic_hidden_dim": "256",
+    "actor_hidden_dim": "256",
+    "seed": "2"
+  }
+}

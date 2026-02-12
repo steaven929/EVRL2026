@@ -1,0 +1,18 @@
+{
+  "experiment_name": "fast_target_update",
+  "description": "快速目标网络更新+中等gamma",
+  "timestamp": "2026-02-10 22:27:37",
+  "hyperparameters": {
+    "train_eps": "600",
+    "gamma": "0.5",
+    "critic_lr": "5e-4",
+    "actor_lr": "5e-5",
+    "batch_size": "64",
+    "memory_capacity": "8000",
+    "target_update": "2",
+    "tau": "5e-3",
+    "critic_hidden_dim": "256",
+    "actor_hidden_dim": "256",
+    "seed": "2"
+  }
+}
