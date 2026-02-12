@@ -163,3 +163,21 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 **目标**:
 * 提升服务订单执行量，缩小 RL 与最优解在服务维度的差距。
 * 提高日志可观测性，便于后续多种子筛选。
+
+### 2.9 [2026-02-12] 调度-服务转化优化（减少空转调度）
+**问题现象**: RL 调度总量高于最优解，但服务总量偏低，存在调度空转。
+
+**代码修复点**:
+* `specific/dclily_elec.py`
+  1. 发车预算映射从 `0.2+0.8*action` 调整为 `0.05+0.9*action`，并加入调度上限：
+     - `dispatch_cap = min(available_now, out_demand_now + 0.2*available_now)`
+     - `limit_now = min(limit_now, dispatch_cap)`
+  2. 奖励函数新增调度效率惩罚：
+     - `dispatch_ineff_penalty = 180 * max(0, dispatch_count - served_count)`
+  3. 对后5个时间步加入无服务惩罚：
+     - `late_service_penalty = 1200`（当该步 `served_count == 0`）
+  4. 中间步与终止步奖励保持同样结构，统一加入上述两项惩罚。
+
+**目标**:
+* 抑制“高调度低服务”的空转行为。
+* 提升后期服务动作密度与转化率。

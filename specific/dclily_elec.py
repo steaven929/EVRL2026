@@ -1115,12 +1115,17 @@ class dclily(gym.Env):
             available_now = max(0, int(dispatchable_available[i]))
             # =========2026.2.12修改，方案F8：需求感知的发车预算映射==========
             # 对齐目标：提升动作总量，减少后期服务/调度欠激活
-            depart_ratio = 0.2 + 0.8 * float(action[i])
+            depart_ratio = 0.05 + 0.9 * float(action[i])
             raw_limit = available_now * depart_ratio
             limit_now = int(round(raw_limit))
             out_demand_now = int(np.sum(self.od_demand_now[0][i]))
             demand_floor = int(min(available_now, round(0.25 * out_demand_now)))
             limit_now = max(limit_now, demand_floor)
+            # =========2026.2.12修改，方案F11：限制过调度，保留充电与服务弹性==========
+            reserve_for_service_and_charge = int(round(0.20 * available_now))
+            dispatch_cap = min(available_now, out_demand_now + reserve_for_service_and_charge)
+            limit_now = min(limit_now, dispatch_cap)
+            # ======修改结束
             if available_now > 0 and float(action[i]) > 0.5:
                 limit_now = max(1, limit_now)
             limit_now = max(0, min(limit_now, available_now))
@@ -1274,6 +1279,7 @@ class dclily(gym.Env):
         # 1. 服务订单收益（已在real_reward中）
         service_revenue = sum(real_reward)
         served_count = int(np.sum(rel_demand))
+        dispatch_count = int(np.sum(rel_dispatch))
 
         # 2. 充电加分：统计正在充电的车辆数
         charging_bonus = 0
@@ -1289,6 +1295,8 @@ class dclily(gym.Env):
 
         # =========2026.2.12修改，方案F10：服务优先奖励，提升服务动作强度==========
         service_bonus = 1200 * served_count
+        dispatch_ineff_penalty = 180 * max(0, dispatch_count - served_count)
+        late_service_penalty = 1200 if self.episode_timestep >= (TIME_NUM - 5) and served_count == 0 else 0
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1328,7 +1336,7 @@ class dclily(gym.Env):
         # =========2026.2.12修改，实验19：充电奖励不缩放==========
         # 新奖励函数：充电奖励单独计算，不除以10
         # 这样充电奖励的信号更强
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + service_bonus - fixed_penalty
+        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + service_bonus - dispatch_ineff_penalty - late_service_penalty - fixed_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
@@ -1351,6 +1359,7 @@ class dclily(gym.Env):
             # 计算新奖励函数的各个部分
             service_revenue = sum(real_reward)
             served_count = int(np.sum(rel_demand))
+            dispatch_count = int(np.sum(rel_dispatch))
 
             charging_count = 0
             for i in range(self.CAR_NUM):
@@ -1362,6 +1371,8 @@ class dclily(gym.Env):
 
             # =========2026.2.12修改，方案F10：终止步保持同样服务优先奖励==========
             service_bonus = 1200 * served_count
+            dispatch_ineff_penalty = 180 * max(0, dispatch_count - served_count)
+            late_service_penalty = 1200 if self.episode_timestep >= (TIME_NUM - 5) and served_count == 0 else 0
             # ======修改结束
 
             # =========2026.2.12修改，方案F7：终止步使用同一固定惩罚==========
@@ -1390,7 +1401,7 @@ class dclily(gym.Env):
 
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
             fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus + service_bonus - fixed_penalty
+            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus + service_bonus - dispatch_ineff_penalty - late_service_penalty - fixed_penalty
             # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info
