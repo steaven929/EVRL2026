@@ -150,6 +150,37 @@ class OptimalSolver:
         )
         # ======修改结束
 
+        # =========2026.2.12修改，方案F12：与RL奖励结构对齐==========
+        # 服务动作计数奖励
+        service_bonus = gp.quicksum(
+            1200 * x[v, t, i, j]
+            for v in range(car_num)
+            for t in range(used_time)
+            for i in range(zone_num)
+            for j in range(zone_num)
+        )
+
+        # 调度空转惩罚：max(0, dispatch_count - served_count)
+        dispatch_over_service = model.addVars(used_time, lb=0.0, vtype=GRB.CONTINUOUS, name="dispatch_over_service")
+        for t in range(used_time):
+            served_count_t = gp.quicksum(x[v, t, i, j] for v in range(car_num) for i in range(zone_num) for j in range(zone_num))
+            dispatch_count_t = gp.quicksum(r[v, t, i, j] for v in range(car_num) for i in range(zone_num) for j in range(zone_num))
+            model.addConstr(dispatch_over_service[t] >= dispatch_count_t - served_count_t)
+
+        dispatch_ineff_penalty = gp.quicksum(180.0 * dispatch_over_service[t] for t in range(used_time))
+
+        # 后5步无服务惩罚：served_count_t == 0 -> penalty 1200
+        has_service = model.addVars(used_time, vtype=GRB.BINARY, name="has_service")
+        for t in range(used_time):
+            served_count_t = gp.quicksum(x[v, t, i, j] for v in range(car_num) for i in range(zone_num) for j in range(zone_num))
+            model.addConstr(served_count_t <= car_num * has_service[t])
+
+        late_service_penalty = gp.quicksum(
+            1200.0 * (1 - has_service[t])
+            for t in range(max(0, used_time - 5), used_time)
+        )
+        # ======修改结束
+
         # 4. 低电量惩罚：高惩罚
         soc_penalty_vars = model.addVars(car_num, used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_penalty")
 
@@ -170,7 +201,12 @@ class OptimalSolver:
         # =========2026.2.12修改，实验19：充电奖励不参与缩放==========
         # 新目标函数（充电奖励不除以10）
         model.setObjective(
-            (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus - fixed_penalty,
+            (service_revenue - soc_penalty - dispatch_cost) / 10
+            + charging_bonus
+            + service_bonus
+            - dispatch_ineff_penalty
+            - late_service_penalty
+            - fixed_penalty,
             GRB.MAXIMIZE
         )
         # ======修改结束
@@ -422,13 +458,43 @@ class OptimalSolver:
                 for j in range(zone_num)
             )
 
-            # =========2026.2.5修改，实验2：Rolling Horizon同步充电奖励==========
-            # 3. 充电加分（从50提升到500，与RL保持一致）
+            # =========2026.2.12修改，方案F12：Rolling Horizon与RL奖励结构对齐==========
+            # 3. 充电加分
             charging_bonus = gp.quicksum(
-                500 * c[v, t, i]  # 原50改为500
+                3000 * c[v, t, i]
                 for v in range(car_num)
                 for t in range(actual_horizon)
                 for i in range(zone_num)
+            )
+
+            # 服务动作计数奖励
+            service_bonus = gp.quicksum(
+                1200 * x[v, t, i, j]
+                for v in range(car_num)
+                for t in range(actual_horizon)
+                for i in range(zone_num)
+                for j in range(zone_num)
+            )
+
+            # 调度空转惩罚
+            dispatch_over_service = model.addVars(actual_horizon, lb=0.0, vtype=GRB.CONTINUOUS, name="dispatch_over_service")
+            for t in range(actual_horizon):
+                served_count_t = gp.quicksum(x[v, t, i, j] for v in range(car_num) for i in range(zone_num) for j in range(zone_num))
+                dispatch_count_t = gp.quicksum(r[v, t, i, j] for v in range(car_num) for i in range(zone_num) for j in range(zone_num))
+                model.addConstr(dispatch_over_service[t] >= dispatch_count_t - served_count_t)
+
+            dispatch_ineff_penalty = gp.quicksum(180.0 * dispatch_over_service[t] for t in range(actual_horizon))
+
+            # 后5步无服务惩罚（按全局时间索引）
+            has_service = model.addVars(actual_horizon, vtype=GRB.BINARY, name="has_service")
+            for t in range(actual_horizon):
+                served_count_t = gp.quicksum(x[v, t, i, j] for v in range(car_num) for i in range(zone_num) for j in range(zone_num))
+                model.addConstr(served_count_t <= car_num * has_service[t])
+
+            late_service_penalty = gp.quicksum(
+                1200.0 * (1 - has_service[t])
+                for t in range(actual_horizon)
+                if (current_step + t) >= max(0, total_time - 5)
             )
             # ======修改结束
 
@@ -446,9 +512,14 @@ class OptimalSolver:
             fixed_penalty = 0  # 原500 * actual_horizon改为0
             # ======修改结束
 
-            # 新目标函数（添加缩放因子/10）
+            # 新目标函数（与全局求解和RL口径一致）
             model.setObjective(
-                (service_revenue + charging_bonus - soc_penalty - dispatch_cost) / 10 - fixed_penalty,
+                (service_revenue - soc_penalty - dispatch_cost) / 10
+                + charging_bonus
+                + service_bonus
+                - dispatch_ineff_penalty
+                - late_service_penalty
+                - fixed_penalty,
                 GRB.MAXIMIZE
             )
             # ======修改结束

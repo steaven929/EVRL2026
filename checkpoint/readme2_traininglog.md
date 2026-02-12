@@ -181,3 +181,17 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 **目标**:
 * 抑制“高调度低服务”的空转行为。
 * 提升后期服务动作密度与转化率。
+
+### 2.10 [2026-02-12] 最优解目标函数对齐RL口径
+**问题现象**: RL 奖励函数已加入服务奖励、调度空转惩罚、后5步无服务惩罚，但最优解求解目标未同步，导致对比口径不一致。
+
+**代码修复点**:
+* `optimal_solver.py`
+  1. 全局优化 `solve_global_optimal()` 目标中加入：
+     - `service_bonus = 1200 * served_count`
+     - `dispatch_ineff_penalty = 180 * max(0, dispatch_count - served_count)`（线性化变量）
+     - `late_service_penalty = 1200 * I(served_count_t==0)`（后5步，二元变量线性化）
+  2. 滚动时域 `solve_rolling_horizon()` 同步上述三项，并将 `charging_bonus` 从 500 调整为 3000，与RL口径一致。
+
+**目标**:
+* 统一 RL 与 MILP 的奖励定义，确保 baseline 对比公平。
