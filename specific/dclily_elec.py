@@ -467,6 +467,22 @@ class dclily(gym.Env):
     def state(self):
         return self.get_micro_state()
 
+    # =========2026.2.12修改，方案F5：统一可调度车辆口径==========
+    def _compute_dispatchable_counts(self):
+        """按车辆真实状态重算各区域可调度车辆数（remain==0 且未占充电桩）。"""
+        counts = np.zeros(self.ZONE_NUM, dtype=int)
+        for i in range(len(self.car)):
+            if self.car[i][2] == 0 and self.car[i][3] == -1:
+                zone = int(self.car[i][0])
+                if 0 <= zone < self.ZONE_NUM:
+                    counts[zone] += 1
+        return counts
+
+    def _sync_dispatchable_available(self):
+        """同步 available[0]，防止充电侧重复扣减导致调度预算漂移。"""
+        self.available[0] = self._compute_dispatchable_counts().astype(self.available[0].dtype, copy=False)
+    # ======修改结束
+
     def _sigmoid(self, x):
         """标准 Sigmoid 激活"""
         return 1.0 / (1.0 + math.exp(-x))
@@ -638,7 +654,7 @@ class dclily(gym.Env):
             idle_vehicles_in_zone = []
 
             for i in range(len(self.car)):
-                if self.car[i][2] == 0:  # 静止车辆
+                if self.car[i][2] == 0 and self.car[i][3] == -1:  # 静止且可调度车辆
                     if self.car[i][0] == random_zone:  # 在目标区域
                         idle_vehicles_in_zone.append((i, self.car[i][1]))  # (车辆ID, SOC)
 
@@ -698,96 +714,81 @@ class dclily(gym.Env):
                 return  # 本步使用随机策略，跳过RL决策
         # ======探索逻辑结束
 
-        # 步骤1：按区域收集空闲车辆（未执行任务的车辆）
-        idle_vehicles_by_zone = {z: [] for z in range(ZONE_NUM)}
+        # =========2026.2.12修改，方案F1：全局充电预算 + 跨区回填==========
+        # 目标：减少后期“有动作但执行为0”的塌缩，改为全局分配可充电车辆
+        pref_arr = np.clip(np.asarray(charge_pref, dtype=float), 0.0, 1.0)
+
+        idle_vehicles_all = []
         for i in range(len(self.car)):
-            if self.car[i][2] == 0:  # 仅检查未执行任务的车辆
-                zone = self.car[i][0]
-                soc = self.car[i][1]
-                idle_vehicles_by_zone[zone].append((i, soc))
+            if self.car[i][2] == 0 and self.car[i][3] == -1:
+                zone = int(self.car[i][0])
+                soc = float(self.car[i][1])
+                idle_vehicles_all.append((i, zone, soc))
+                # 为日志提供稳定观测，避免 N/A
+                if i not in self.current_step_logs:
+                    self.current_step_logs[i] = {}
+                self.current_step_logs[i].update({
+                    "soc": max(0.0, min(1.0, soc / BATTERY_CAPACITY)),
+                    "pref": float(pref_arr[zone]),
+                    "prob": float(pref_arr[zone]),
+                    "score": float(pref_arr[zone]),
+                    "decision_charge": False
+                })
 
-        # 步骤2：对每个区域，根据RL输出的充电数量决策
-        for zone in range(ZONE_NUM):
-            idle_vehicles = idle_vehicles_by_zone[zone]
-            if len(idle_vehicles) == 0:
-                continue
+        total_idle = len(idle_vehicles_all)
+        if total_idle > 0 and float(pref_arr.max()) > 1e-6:
+            global_ratio = float(np.clip(0.6 * pref_arr.max() + 0.4 * pref_arr.mean(), 0.0, 1.0))
+            charge_budget = int(round(global_ratio * total_idle))
+            if pref_arr.max() > 0.8:
+                charge_budget = max(charge_budget, int(round(0.6 * total_idle)))
+            charge_budget = max(0, min(charge_budget, total_idle))
 
-            # =========2026.2.7修改，方案E1-C：分段映射优化==========
-            # 旧逻辑：charge_count = int(pref * idle + 0.5)
-            # 问题：当pref=1.0但idle=0时，无法充电；当idle很少时，映射非线性严重
-            # 新逻辑：分段映射，提升充电触发概率
-            pref_value = float(charge_pref[zone])
-            max_chargeable = len(idle_vehicles)
+            # 优先充电低SOC车辆
+            idle_vehicles_all.sort(key=lambda x: x[2])
 
-            # 分段映射策略
-            if pref_value > 0.8:
-                # 高偏好（>0.8）：充电所有空闲车辆
-                charge_count = max_chargeable
-            elif pref_value > 0.5:
-                # 中高偏好（0.5-0.8）：充电70%的空闲车辆
-                charge_count = max(1, int(max_chargeable * 0.7))
-            elif pref_value > 0.3:
-                # 中等偏好（0.3-0.5）：充电40%的空闲车辆
-                charge_count = max(1, int(max_chargeable * 0.4))
-            elif pref_value > 0.01:
-                # 低偏好（0.01-0.3）：充电20%的空闲车辆
-                charge_count = int(max_chargeable * 0.2)
-            else:
-                # 极低偏好（<0.01）：不充电
-                charge_count = 0
-            # ======修改结束
+            charged_count = 0
+            for vehicle_id, current_zone, _soc in idle_vehicles_all:
+                if charged_count >= charge_budget:
+                    break
 
-            charge_count = max(0, min(charge_count, max_chargeable))
+                target_charger = self.find_preferred_charger(current_zone, pref_arr)
+                if target_charger == -1:
+                    # 回填策略：首选最近可用充电桩，避免偏好区无车/无桩时直接归零
+                    target_charger, _nearest_charger_id = self.find_nearest_charger(current_zone)
+                if target_charger == -1:
+                    continue
 
-            if charge_count == 0:
-                continue
+                old_charger_id = self.car[vehicle_id][3]
+                if old_charger_id != -1:
+                    self.release_charger(current_zone, old_charger_id)
+                    self.car[vehicle_id][3] = -1
 
-            # 步骤3：选择该区域最需要充电的N辆车（按SOC升序排序）
-            idle_vehicles.sort(key=lambda x: x[1])  # 按SOC升序（电量低的优先）
-            vehicles_to_charge = idle_vehicles[:charge_count]
+                self.car[vehicle_id][0] = target_charger
+                dist_to_charge = self.dist[current_zone][target_charger]
+                self.car[vehicle_id][2] = dist_to_charge
+                self.assign_parking_slot(vehicle_id, is_charging_order=True)
 
-            # 步骤4：为选中的车辆分配充电任务
-            for vehicle_id, soc in vehicles_to_charge:
-                current_zone = self.car[vehicle_id][0]
+                if self.car[vehicle_id][3] != -1:
+                    charging_actions[target_charger] = charging_actions.get(target_charger, 0) + 1
 
-                # 找到最优充电站（考虑距离和充电桩可用性）
-                target_charger = self.find_preferred_charger(current_zone, charge_pref)
+                planned_id = self.car[vehicle_id][3]
+                if planned_id != -1 and target_charger in self.charging_stations:
+                    for station in self.charging_stations[target_charger]:
+                        if station['charger_id'] == planned_id:
+                            station['occupied_by'] = vehicle_id
+                            break
 
-                if target_charger != -1:
-                    # 释放旧充电桩（如果有）
-                    old_charger_id = self.car[vehicle_id][3]
-                    if old_charger_id != -1:
-                        self.release_charger(current_zone, old_charger_id)
-                        self.car[vehicle_id][3] = -1
+                if dist_to_charge == 0:
+                    self.available[0][current_zone] -= 1
 
-                    # 设置新的目标区域
-                    self.car[vehicle_id][0] = target_charger
-
-                    # 设置行驶距离
-                    dist_to_charge = self.dist[current_zone][target_charger]
-                    self.car[vehicle_id][2] = dist_to_charge
-
-                    # 规划停车位
-                    self.assign_parking_slot(vehicle_id, is_charging_order=True)
-
-                    # 记录充电动作
-                    if self.car[vehicle_id][3] != -1:
-                        if target_charger not in charging_actions:
-                            charging_actions[target_charger] = 0
-                        charging_actions[target_charger] += 1
-
-                    # 立即物理锁桩
-                    planned_id = self.car[vehicle_id][3]
-                    if planned_id != -1:
-                        if target_charger in self.charging_stations:
-                            for station in self.charging_stations[target_charger]:
-                                if station['charger_id'] == planned_id:
-                                    station['occupied_by'] = vehicle_id
-                                    break
-
-                    # 如果是本地充电，从调度池移除
-                    if dist_to_charge == 0:
-                        self.available[0][current_zone] -= 1
+                # 记录已执行充电决策
+                self.current_step_logs[vehicle_id].update({
+                    "decision_charge": True,
+                    "prob": global_ratio,
+                    "score": float(charge_budget)
+                })
+                charged_count += 1
+        # ======修改结束
 
         # 确保 available 不会变成负数
         for z in range(self.ZONE_NUM):
@@ -1038,6 +1039,11 @@ class dclily(gym.Env):
             
             i += 1
 
+        # =========2026.2.12修改，方案F5：动作解码前同步可调度车辆数==========
+        # 目的：调度预算应基于车辆真实状态，而非历史扣减残值
+        self._sync_dispatchable_available()
+        # ======修改结束
+
         # =========2026.2.6修改，方案4B：延后充电决策，避免充电-调度冲突==========
         # 注释掉原位置的充电决策（在调度前）
         # 原因：此时调用会导致空闲车辆优先被Gurobi调度走，充电决策时无车可充
@@ -1063,11 +1069,22 @@ class dclily(gym.Env):
                     real_act[j][i] = 0
 
 
+        # =========2026.2.12修改，方案F5：使用统一口径的可调度预算==========
+        dispatchable_available = self._compute_dispatchable_counts()
+        # ======修改结束
+
         for i in range(0, ZONE_NUM):
             # 先对可发出的车进行一次限制
             # limit_now=int(max(0,(self.available[0][i]-self.od_out[i][self.episode_timestep]/e)*float(action[i])))
             # 上面那个是TRE的
-            limit_now = int(max(0, (self.available[0][i]) * float(action[i])))
+            # =========2026.2.12修改，方案F2：避免 int 截断导致后期全零==========
+            available_now = max(0, int(dispatchable_available[i]))
+            raw_limit = available_now * float(action[i])
+            limit_now = int(round(raw_limit))
+            if available_now > 0 and float(action[i]) > 0.5:
+                limit_now = max(1, limit_now)
+            limit_now = max(0, min(limit_now, available_now))
+            # ======修改结束
             action_table = real_act[i]
 
             while limit_now > 0:
@@ -1157,6 +1174,7 @@ class dclily(gym.Env):
         # 优势：避免充电-调度冲突，确保充电决策基于调度后的真实空闲车辆
         # =========2026.2.7修改，方案D2：使用self.current_epoch而不是参数==========
         self.check_idle_vehicles(charge_pref, charging_actions, epoch=self.current_epoch)
+        self._sync_dispatchable_available()
         # ======修改结束
 
         for vid in range(len(self.car)):
@@ -1170,8 +1188,11 @@ class dclily(gym.Env):
                     self.release_charger(old_zone, old_charger_id)
                 # ===============================================
                 
-                # 调度 / OD 订单 → 非充电订单
-                self.assign_parking_slot(vid, is_charging_order=False)    # is_charging_order=False表示表示充电订单 规划调度和od需求后停车的具体位置
+                # =========2026.2.12修改，方案F3：避免覆盖本步已分配的充电任务==========
+                # 若车辆已经拥有充电桩计划，不再按普通订单覆盖停车位规划
+                if self.car[vid][3] == -1:
+                    self.assign_parking_slot(vid, is_charging_order=False)    # is_charging_order=False表示表示充电订单 规划调度和od需求后停车的具体位置
+                # ======修改结束
         
         total_demand = np.sum(demand)##0729 计算trb论文指标加入
         self._last_svc = np.sum(real_reward) / total_demand if total_demand > 0 else 0#0729 计算trb论文指标加入
@@ -1304,8 +1325,8 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            # =========2026.2.11修改，实验4：回滚到1500充电奖励==========
-            charging_bonus = 1500 * charging_count
+            # =========2026.2.12修改，方案F4：终止步奖励与中间步完全一致==========
+            charging_bonus = 3000 * charging_count
             # ======修改结束
 
             # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
@@ -1344,7 +1365,7 @@ class dclily(gym.Env):
 
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
             fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue + charging_bonus - soc_penalty) / 10 - fixed_penalty
+            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty
             # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info

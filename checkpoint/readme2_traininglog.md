@@ -71,3 +71,35 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 * `reward_tuning_guide.md`: 调整 Reward 缩放因子或惩罚项的指南。
 * `debugging_plan.md`: 训练不收敛（Q值发散）时的排查步骤。
 * `reward_analysis.md`: 详细的数学公式拆解与 Real Reward 构成。
+
+---
+
+### 2.3 [2026-02-12] 后期动作塌缩修复（实验19后续）
+**问题现象**: 后期时间步出现“服务/调度/充电全零”，与最优解逐步有动作不一致。
+
+**代码修复点**:
+* `specific/dclily_elec.py`
+  1. 调度发车预算从 `int(available * action)` 改为 `round` + 最小保留策略，减少截断归零。
+  2. 充电分配从“按区硬阈值映射”改为“全局充电预算 + 低SOC优先 + 跨区回填最近充电桩”。
+  3. 充电车辆写入 `current_step_logs`，避免日志长期 `N/A/-1` 难以诊断。
+  4. 后处理阶段避免用普通订单停车位覆盖本步已分配的充电任务。
+  5. 终止步奖励与中间步统一：`(service_revenue - soc_penalty)/10 + charging_bonus`，并统一 `charging_bonus=3000*count`。
+
+**目标**:
+* 降低后期动作塌缩概率。
+* 提高充电决策可执行率与日志可观测性。
+* 保持训练/终止步奖励一致性，减少学习信号冲突。
+
+### 2.4 [2026-02-12] 后期零动作架构修复（可调度口径统一）
+**问题现象**: 后期需求仍存在，但 RL 在若干时间步出现服务/调度/充电全零。
+
+**代码修复点**:
+* `specific/dclily_elec.py`
+  1. 新增 `_compute_dispatchable_counts()` 与 `_sync_dispatchable_available()`，统一可调度车辆定义为 `remain==0 && charger_id==-1`。
+  2. `step()` 动作解码预算改为使用 `_compute_dispatchable_counts()`，不再直接依赖可能漂移的 `available[0]`。
+  3. `check_idle_vehicles()` 仅对“可调度且未占桩”车辆分配充电任务，避免已充电车辆重复参与分配。
+  4. 在动作解码前与充电分配后同步 `available[0]`，减少预算漂移导致的后期全零。
+
+**目标**:
+* 降低后期“有需求但无动作”的结构性概率。
+* 避免充电侧对调度预算的重复侵蚀。
