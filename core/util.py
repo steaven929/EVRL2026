@@ -35,8 +35,9 @@ def get_args():
     parser.add_argument('--sac_alpha_lr',default=3e-4,type=float,help="SAC alpha learning rate")  #SAC alpha学习率  # 实验16：恢复默认3e-4
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
+    parser.add_argument('--reward_scale',default=0.01,type=float,help="reward scale used for replay update")
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
-    args = parser.parse_args([])    
+    args = parser.parse_args()
     args = {**vars(args)} # 将args转换为字典  
     # 打印参数
     print("训练参数如下：")

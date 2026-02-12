@@ -619,7 +619,7 @@ class dclily(gym.Env):
         for zone in range(ZONE_NUM):
             if len(CHARGER_PER_ZONE[zone]) == 0:
                 continue
-            has_available_slot = any(self.available[1][zone] > slot for slot in CHARGER_PER_ZONE[zone])
+            has_available_slot = any(ch.get("occupied_by") is None for ch in self.charging_stations.get(zone, []))
             if has_available_slot:
                 dist_score = -self.dist[current_zone][zone]
                 prefer_score = charge_pref[zone]
@@ -763,23 +763,26 @@ class dclily(gym.Env):
                     self.release_charger(current_zone, old_charger_id)
                     self.car[vehicle_id][3] = -1
 
+                origin_zone = current_zone
                 self.car[vehicle_id][0] = target_charger
                 dist_to_charge = self.dist[current_zone][target_charger]
                 self.car[vehicle_id][2] = dist_to_charge
                 self.assign_parking_slot(vehicle_id, is_charging_order=True)
 
-                if self.car[vehicle_id][3] != -1:
-                    charging_actions[target_charger] = charging_actions.get(target_charger, 0) + 1
-
                 planned_id = self.car[vehicle_id][3]
+                if planned_id == -1:
+                    # 无可用充电桩，回滚车辆状态，避免“决策为真但动作未落地”
+                    self.car[vehicle_id][0] = origin_zone
+                    self.car[vehicle_id][2] = 0
+                    continue
+
+                charging_actions[target_charger] = charging_actions.get(target_charger, 0) + 1
+
                 if planned_id != -1 and target_charger in self.charging_stations:
                     for station in self.charging_stations[target_charger]:
                         if station['charger_id'] == planned_id:
                             station['occupied_by'] = vehicle_id
                             break
-
-                if dist_to_charge == 0:
-                    self.available[0][current_zone] -= 1
 
                 # 记录已执行充电决策
                 self.current_step_logs[vehicle_id].update({
@@ -997,6 +1000,14 @@ class dclily(gym.Env):
                 self.car[i][1] = min(BATTERY_CAPACITY, self.car[i][1] + added_energy)
                 if self.car[i][1] >= BATTERY_CAPACITY:
                     self.car[i][1] = BATTERY_CAPACITY
+                    # =========2026.2.12修改，方案F6：充满即释放充电桩==========
+                    # 避免充电桩被满电车辆长期占用导致后续充电动作无法落地
+                    full_zone = int(self.car[i][0])
+                    full_charger_id = self.car[i][3]
+                    if full_charger_id != -1:
+                        self.release_charger(full_zone, full_charger_id)
+                        self.car[i][3] = -1
+                    # ======修改结束
                 
                 # (可选) 如果充满了，是否自动释放充电桩？
                 # if self.car[i][1] >= BATTERY_CAPACITY:
@@ -1247,26 +1258,9 @@ class dclily(gym.Env):
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
-        # =========2026.2.11修改，实验12：渐进式训练（Curriculum Learning）==========
-        # 根据当前训练轮数动态调整SOC惩罚强度
-        epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
-
-        # 阶段1（0-200轮）：高惩罚，强制学习充电
-        # 阶段2（200-400轮）：中等惩罚，优化策略
-        # 阶段3（400+轮）：低惩罚，平衡收益
-        if epoch < 200:
-            # 高惩罚阶段
-            penalty_scale = 1.0
-            vehicle_penalty = 500
-        elif epoch < 400:
-            # 中等惩罚阶段（线性衰减）
-            progress = (epoch - 200) / 200  # 0到1
-            penalty_scale = 1.0 - 0.25 * progress  # 1.0衰减到0.75
-            vehicle_penalty = 500 - 125 * progress  # 500衰减到375
-        else:
-            # 低惩罚阶段
-            penalty_scale = 0.75
-            vehicle_penalty = 375
+        # =========2026.2.12修改，方案F7：固定惩罚以降低目标非平稳性==========
+        penalty_scale = 0.85
+        vehicle_penalty = 420
 
         soc_penalty = 0
         low_soc_count = 0
@@ -1329,19 +1323,9 @@ class dclily(gym.Env):
             charging_bonus = 3000 * charging_count
             # ======修改结束
 
-            # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
-            epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
-
-            if epoch < 200:
-                penalty_scale = 1.0
-                vehicle_penalty = 500
-            elif epoch < 400:
-                progress = (epoch - 200) / 200
-                penalty_scale = 1.0 - 0.25 * progress
-                vehicle_penalty = 500 - 125 * progress
-            else:
-                penalty_scale = 0.75
-                vehicle_penalty = 375
+            # =========2026.2.12修改，方案F7：终止步使用同一固定惩罚==========
+            penalty_scale = 0.85
+            vehicle_penalty = 420
 
             soc_penalty = 0
             low_soc_count = 0

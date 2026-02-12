@@ -103,3 +103,35 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 **目标**:
 * 降低后期“有需求但无动作”的结构性概率。
 * 避免充电侧对调度预算的重复侵蚀。
+
+### 2.5 [2026-02-12] 充电决策落地一致性修复（动作记账对齐）
+**问题现象**: `Decision_Charge=True` 数量较高，但 `charging_actions` 统计偏低或为0。
+
+**代码修复点**:
+* `specific/dclily_elec.py`
+  1. `find_preferred_charger()` 改为基于 `charging_stations[*].occupied_by` 判断桩可用性，不再用 `available[1] > slot_id` 代理判定。
+  2. `check_idle_vehicles()` 中充电分配仅在 `assign_parking_slot(..., True)` 成功拿到 `charger_id` 后计入 `charging_actions` 与 `decision_charge=True`。
+  3. 充电桩分配失败时回滚车辆状态，避免“决策为真但动作未落地”。
+  4. 车辆充满电后自动释放充电桩（`charger_id=-1`），避免桩长期占用导致后续无法充电。
+
+**目标**:
+* 让“充电决策日志”与“充电动作统计”保持一致。
+* 提升后期可用充电桩周转率。
+
+### 2.6 [2026-02-12] 训练稳定性修复（奖励收敛）
+**问题现象**: 训练奖励长期高波动，Critic 值域过大，收敛慢。
+
+**代码修复点**:
+* `core/training.py`
+  1. `algo_name == SAC` 时不再叠加 OU 噪声。
+  2. `algo_name == SAC` 时禁用前20轮充电维度额外噪声。
+  3. 回放入池奖励使用 `train_reward = reward * reward_scale`（默认 0.01）。
+* `core/util.py`
+  1. 新增 `reward_scale` 参数（默认 0.01）。
+  2. 参数解析改为 `parse_args()`，支持命令行覆盖。
+* `specific/dclily_elec.py`
+  1. 训练步与终止步 SOC 惩罚改为固定参数（`penalty_scale=0.85`, `vehicle_penalty=420`），移除分段 curriculum 的非平稳目标。
+
+**目标**:
+* 降低策略目标漂移。
+* 缩小 Q/TD 目标尺度，提升训练稳定性。

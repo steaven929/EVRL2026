@@ -59,7 +59,7 @@ def encode_custom_action(zone_to_counts, zone_from_counts=None, charge_pref=None
 
 def train(cfg, env, agent):
     print("开始训练！")
-    ou_noise = OUNoise(env.action_space)  # 动作噪声
+    ou_noise = OUNoise(env.action_space)  # 动作噪声（仅DDPG使用）
     rewards = [] # 记录所有回合的奖励
     critic1_losses, critic2_losses, actor_losses = [], [], []
     q_values, target_q_values = [], []  # 修改：记录Q值和目标Q值用于诊断
@@ -93,11 +93,12 @@ def train(cfg, env, agent):
             zone_to_counts = [5, 5, 4, 4]  # zone 0 ~ 3
             # 出发区域可以不指定，默认为均匀
             #action = encode_custom_action(zone_to_counts)  #0723修改，用来自定义action 来测试
-            action = ou_noise.get_action(action, i_step+1)
+            if cfg['algo_name'] != 'SAC':
+                action = ou_noise.get_action(action, i_step+1)
 
             # =========2026.2.7修改，方案D2：充电维度噪声增强==========
             # 前20轮训练，对充电维度 [8:12] 添加额外噪声
-            if i_ep < 20:
+            if i_ep < 20 and cfg['algo_name'] != 'SAC':
                 charging_noise = np.random.uniform(-0.3, 0.3, size=4)
                 action[8:12] = np.clip(action[8:12] + charging_noise, 0, 1)
             # ======修改结束
@@ -116,7 +117,10 @@ def train(cfg, env, agent):
             battery_snapshot = [car[1] for car in env.car]  # 20250726添加，画图1用 # 每步记录所有车辆电量
             current_ep_battery_log.append(battery_snapshot) # 20250726添加，画图1用
 
-            agent.memory.push((state, action, reward, next_state, done))
+            train_reward = reward
+            if cfg['algo_name'] == 'SAC':
+                train_reward = reward * cfg.get('reward_scale', 0.01)
+            agent.memory.push((state, action, train_reward, next_state, done))
             #agent.update()  #2026.1.22修改
             loss_info = agent.update()  # 让它返回 dict
             if loss_info is not None:
