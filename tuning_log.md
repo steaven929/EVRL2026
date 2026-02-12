@@ -5,6 +5,26 @@
 ---
 
 
+## 2026-02-13_experiment_matrix_v1
+**时间**: 2026-02-13
+**描述**: RL vs 最优解动作差异分析后的最小改动实验矩阵（先做可观测性）
+**状态**: 进行中
+
+### 实验矩阵（目标：让 RL 奖励逼近最优解）
+1. 实验A：动作生效率诊断（requested vs applied）
+   - 指标：requested_dispatch, applied_dispatch, requested_charge, applied_charge, served_count
+   - 判定：若 applied/requested 常低于 0.7，优先修动作映射链路
+2. 实验B：结构对齐（imitation warm-start）
+   - 指标：OD-L1 gap、service/dispatch/charge 总量差
+3. 实验C：后半程防塌缩（t7-t11）
+   - 指标：service_t7_11、zone0/1 充电覆盖、分区可调度车辆
+
+### 本次代码变更计划
+- 先落地实验A：在环境 info 和动作导出文件中增加 requested/applied 诊断字段。
+
+---
+
+
 ## baseline_600eps
 **时间**: 2026-02-10 21:42:27
 **描述**: 基线配置，train_eps=600

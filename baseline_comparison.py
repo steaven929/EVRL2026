@@ -395,7 +395,17 @@ def main():
                 'served_orders': served_orders,
                 'reposition_actions': reposition_actions,
                 'charging_actions': charging_actions,
-                'reward': reward
+                'reward': reward,
+                'requested_dispatch': info.get('requested_dispatch', 0),
+                'applied_dispatch': info.get('applied_dispatch', 0),
+                'dispatch_effectiveness': info.get('dispatch_effectiveness', 0.0),
+                'requested_charge': info.get('requested_charge', 0),
+                'applied_charge': info.get('applied_charge', 0),
+                'charge_effectiveness': info.get('charge_effectiveness', 0.0),
+                'requested_service': info.get('requested_service', 0),
+                'applied_service': info.get('applied_service', 0),
+                'service_effectiveness': info.get('service_effectiveness', 0.0),
+                'idle_charge_candidates': info.get('idle_charge_candidates', 0),
             })
             # ======修改结束
 
@@ -448,6 +458,16 @@ def main():
                 # 写入动作向量（供调试用）
                 f.write("【动作向量】\n")
                 f.write(f"  {action_data['action']}\n\n")
+
+                # 实验A：动作生效率诊断
+                f.write("【实验A诊断】\n")
+                f.write(f"  Dispatch requested/applied: {action_data['requested_dispatch']}/{action_data['applied_dispatch']}"
+                        f" (ratio={action_data['dispatch_effectiveness']:.3f})\n")
+                f.write(f"  Charge requested/applied:   {action_data['requested_charge']}/{action_data['applied_charge']}"
+                        f" (ratio={action_data['charge_effectiveness']:.3f})\n")
+                f.write(f"  Service requested/applied:  {action_data['requested_service']}/{action_data['applied_service']}"
+                        f" (ratio={action_data['service_effectiveness']:.3f})\n")
+                f.write(f"  Idle charge candidates:     {action_data['idle_charge_candidates']}\n\n")
 
         print(f"[INFO] 动作文件已保存到: {action_file}")
         # ======修改结束

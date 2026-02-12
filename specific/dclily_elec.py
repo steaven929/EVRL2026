@@ -656,6 +656,13 @@ class dclily(gym.Env):
         if charging_actions is None:
             charging_actions = {}
 
+        diag = {
+            "requested_charge": 0,
+            "applied_charge": 0,
+            "idle_candidates": 0,
+            "charge_ratio": 0.0,
+        }
+
         # =========2026.2.7修改，方案D2：ε-greedy充电探索==========
         # 前30轮，10%概率随机选择一个区域进行充电
         if epoch < 30 and random.random() < 0.1:
@@ -670,9 +677,12 @@ class dclily(gym.Env):
             if idle_vehicles_in_zone:
                 # 随机充电1-3辆车
                 charge_count = random.randint(1, min(3, len(idle_vehicles_in_zone)))
+                diag["requested_charge"] = int(charge_count)
+                diag["idle_candidates"] = int(len(idle_vehicles_in_zone))
                 # 按SOC升序排序，优先充电低电量车辆
                 idle_vehicles_in_zone.sort(key=lambda x: x[1])
 
+                charged_count = 0
                 for vehicle_id, soc in idle_vehicles_in_zone[:charge_count]:
                     current_zone = self.car[vehicle_id][0]
 
@@ -701,6 +711,7 @@ class dclily(gym.Env):
                             if target_charger not in charging_actions:
                                 charging_actions[target_charger] = 0
                             charging_actions[target_charger] += 1
+                            charged_count += 1
 
                         # 立即物理锁桩
                         planned_id = self.car[vehicle_id][3]
@@ -720,7 +731,11 @@ class dclily(gym.Env):
                     if self.available[0][z] < 0:
                         self.available[0][z] = 0
 
-                return  # 本步使用随机策略，跳过RL决策
+                diag["applied_charge"] = int(charged_count)
+                if diag["requested_charge"] > 0:
+                    diag["charge_ratio"] = float(diag["applied_charge"] / diag["requested_charge"])
+
+                return diag  # 本步使用随机策略，跳过RL决策
         # ======探索逻辑结束
 
         # =========2026.2.12修改，方案F1：全局充电预算 + 跨区回填==========
@@ -745,12 +760,14 @@ class dclily(gym.Env):
                 })
 
         total_idle = len(idle_vehicles_all)
+        diag["idle_candidates"] = int(total_idle)
         if total_idle > 0 and float(pref_arr.max()) > 1e-6:
             global_ratio = float(np.clip(0.6 * pref_arr.max() + 0.4 * pref_arr.mean(), 0.0, 1.0))
             charge_budget = int(round(global_ratio * total_idle))
             if pref_arr.max() > 0.8:
                 charge_budget = max(charge_budget, int(round(0.6 * total_idle)))
             charge_budget = max(0, min(charge_budget, total_idle))
+            diag["requested_charge"] = int(charge_budget)
 
             # 优先充电低SOC车辆
             idle_vehicles_all.sort(key=lambda x: x[2])
@@ -800,6 +817,10 @@ class dclily(gym.Env):
                     "score": float(charge_budget)
                 })
                 charged_count += 1
+
+            diag["applied_charge"] = int(charged_count)
+            if diag["requested_charge"] > 0:
+                diag["charge_ratio"] = float(diag["applied_charge"] / diag["requested_charge"])
         # ======修改结束
 
         # 确保 available 不会变成负数
@@ -807,6 +828,8 @@ class dclily(gym.Env):
             if self.available[0][z] < 0:
                 self.available[0][z] = 0
         # ======修改结束
+
+        return diag
     
     def release_charger(self, zone_id, charger_id):
         """释放指定区域的指定充电桩,清除车辆离开时的占用记录。"""
@@ -1218,7 +1241,7 @@ class dclily(gym.Env):
         # 移到这里：两次 solveproblem 之后，让调度后剩余的空闲车辆去充电
         # 优势：避免充电-调度冲突，确保充电决策基于调度后的真实空闲车辆
         # =========2026.2.7修改，方案D2：使用self.current_epoch而不是参数==========
-        self.check_idle_vehicles(charge_pref, charging_actions, epoch=self.current_epoch)
+        charge_diag = self.check_idle_vehicles(charge_pref, charging_actions, epoch=self.current_epoch)
         self._sync_dispatchable_available()
         # ======修改结束
 
@@ -1341,6 +1364,12 @@ class dclily(gym.Env):
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
         active_charging_actions = self._collect_active_charging_actions()
+        requested_dispatch = int(np.sum(action_table_true))
+        applied_dispatch = int(np.sum(rel_dispatch))
+        requested_service = int(np.sum(demand))
+        applied_service = int(np.sum(rel_demand))
+        requested_charge = int(charge_diag.get("requested_charge", 0))
+        applied_charge = int(charge_diag.get("applied_charge", 0))
 
         info = {            ##0729 计算trb论文指标加入
             "rld": self._last_rld,          ##0729 计算trb论文指标加入
@@ -1349,7 +1378,17 @@ class dclily(gym.Env):
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
             "demand_orders": rel_demand,  # 需求订单矩阵
             "charging_actions": active_charging_actions,  # 当前真实充电动作（按区域计数）
-            "action_table_true": action_table_true  # RL调度倾向矩阵
+            "action_table_true": action_table_true,  # RL调度倾向矩阵
+            "requested_dispatch": requested_dispatch,
+            "applied_dispatch": applied_dispatch,
+            "dispatch_effectiveness": (applied_dispatch / requested_dispatch) if requested_dispatch > 0 else 0.0,
+            "requested_service": requested_service,
+            "applied_service": applied_service,
+            "service_effectiveness": (applied_service / requested_service) if requested_service > 0 else 0.0,
+            "requested_charge": requested_charge,
+            "applied_charge": applied_charge,
+            "charge_effectiveness": (applied_charge / requested_charge) if requested_charge > 0 else 0.0,
+            "idle_charge_candidates": int(charge_diag.get("idle_candidates", 0))
         }           ##0729 计算trb论文指标加入
         # ======修改结束
 
