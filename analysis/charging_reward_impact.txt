@@ -1,0 +1,147 @@
+================================================================================
+Charging Behavior Impact on Rewards Analysis
+================================================================================
+
+Reward Function Components:
+  reward = (service_revenue + charging_bonus - soc_penalty) / 10
+  charging_bonus = 500 * charging_count
+  (divided by 10, so actual contribution = 50 * charging_count)
+
+Total reward (12 steps): 6290.0
+Average reward per step: 524.17
+
+================================================================================
+Timestep Analysis
+================================================================================
+
+Timestep 0:
+  Charging count: 3
+  Charging reward contribution: 150.00
+  (500 * 3 / 10 = 150.00)
+  ✓ HAS CHARGING
+
+Timestep 1:
+  Charging count: 0
+  Charging reward contribution: 0.00
+  (500 * 0 / 10 = 0.00)
+  ✗ NO CHARGING
+
+Timestep 2:
+  Charging count: 6
+  Charging reward contribution: 300.00
+  (500 * 6 / 10 = 300.00)
+  ✓ HAS CHARGING
+
+Timestep 3:
+  Charging count: 0
+  Charging reward contribution: 0.00
+  (500 * 0 / 10 = 0.00)
+  ✗ NO CHARGING
+
+Timestep 4:
+  Charging count: 3
+  Charging reward contribution: 150.00
+  (500 * 3 / 10 = 150.00)
+  ✓ HAS CHARGING
+
+Timestep 5:
+  Charging count: 9
+  Charging reward contribution: 450.00
+  (500 * 9 / 10 = 450.00)
+  ✓ HAS CHARGING
+
+Timestep 6:
+  Charging count: 0
+  Charging reward contribution: 0.00
+  (500 * 0 / 10 = 0.00)
+  ✗ NO CHARGING
+
+Timestep 7:
+  Charging count: 6
+  Charging reward contribution: 300.00
+  (500 * 6 / 10 = 300.00)
+  ✓ HAS CHARGING
+
+Timestep 8:
+  Charging count: 0
+  Charging reward contribution: 0.00
+  (500 * 0 / 10 = 0.00)
+  ✗ NO CHARGING
+
+Timestep 9:
+  Charging count: 6
+  Charging reward contribution: 300.00
+  (500 * 6 / 10 = 300.00)
+  ✓ HAS CHARGING
+
+Timestep 10:
+  Charging count: 3
+  Charging reward contribution: 150.00
+  (500 * 3 / 10 = 150.00)
+  ✓ HAS CHARGING
+
+Timestep 11:
+  Charging count: 3
+  Charging reward contribution: 150.00
+  (500 * 3 / 10 = 150.00)
+  ✓ HAS CHARGING
+
+================================================================================
+Summary Statistics
+================================================================================
+
+Steps with charging: 8/12
+Steps without charging: 4/12
+Total charging events: 39
+Total charging reward contribution: 1950.00
+Percentage of total reward: 31.00%
+
+Average charging reward per charging step: 243.75
+
+================================================================================
+Key Insights
+================================================================================
+
+1. Charging Reward Signal Strength:
+   - Each charging vehicle contributes: 50 reward points
+   - Total charging contribution: 1950.00 (31.00% of total)
+   - Average reward per step: 524.17
+   - Charging reward is 0.47x average step reward
+
+2. Why Actor Doesn't Learn to Charge:
+   a) Reward Signal Dilution:
+      - Charging reward: 1950.00
+      - Service revenue (estimated): 4340.00
+      - Charging is only 31.00% of total reward
+
+   b) Temporal Credit Assignment:
+      - Charging benefit is long-term (prevents future SOC penalty)
+      - But gamma=0.95 may not be high enough
+      - Immediate service revenue dominates learning
+
+   c) Exploration Dependency:
+      - Actor outputs ~10^-6 for charging preferences
+      - Only noise (+/-0.3) triggers charging
+      - Without noise, no charging → no learning signal
+
+3. Proposed Solutions:
+   A. Increase charging reward:
+      - Current: 500 per vehicle (50 after /10)
+      - Proposed: 1000-2000 per vehicle (100-200 after /10)
+      - Make charging reward comparable to service revenue
+
+   B. Lower charging threshold:
+      - Current: 0.1 (too high for Actor's 10^-6 output)
+      - Proposed: 0.01 or 0.001
+      - Allow Actor's small outputs to trigger charging
+
+   C. Extend exploration period:
+      - Current: 20 epochs with charging noise
+      - Proposed: 50-100 epochs
+      - Give Actor more time to learn from charging experiences
+
+   D. Increase gamma:
+      - Current: 0.95
+      - Proposed: 0.98 or 0.99
+      - Strengthen long-term reward signal
+

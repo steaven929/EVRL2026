@@ -1,0 +1,215 @@
+# 充电偏好值分析工具集
+
+本文件夹包含用于分析RL充电决策的脚本工具和版本管理系统。
+
+## 📋 使用方式说明
+
+### 文档类型
+
+**静态分析文档**（不需要每次更新）：
+- `zone_classification_explanation.md` - 区域分类说明
+- `charging_behavior_mapping_analysis.md` - 充电行为映射分析
+- `../docs/charging_preference_root_cause.md` - 根本原因分析
+
+**动态分析结果**（每次训练后重新生成）：
+- `charging_preferences_analysis.txt` - 测试期充电偏好值分析
+- `exploration_vs_test_comparison.txt` - 探索期vs测试期对比
+- `../action/RL-DDPG_actions*.txt` - 详细动作记录
+
+### 推荐工作流程
+
+```bash
+# 1. 训练新模型
+python main.py --train_eps 50
+
+# 2. 自动运行所有分析（推荐）
+python analysis/auto_analyze.py
+
+# 3. 保存当前版本的分析结果
+python analysis/version_manager.py save --name "E3_50epochs"
+
+# 4. 查看所有版本
+python analysis/version_manager.py list
+
+# 5. 对比两个版本
+python analysis/version_manager.py compare --v1 "D2_50epochs" --v2 "E3_50epochs"
+```
+
+---
+
+## 🔧 脚本列表
+
+### 1. analyze_charging_preferences.py
+**功能**：分析测试期的充电偏好值分布
+
+**用法**：
+```bash
+cd C:\Users\cheng\PycharmProjects\EVRL2026
+python analysis/analyze_charging_preferences.py
+```
+
+**输出**：
+- `charging_preferences_analysis.txt` - 详细的充电偏好值统计分析
+
+**分析内容**：
+- 每个区域的充电偏好值统计（最小值、最大值、平均值、中位数）
+- 充电偏好值的数量级分布
+- 每个时间步的详细充电偏好值
+- 关键发现和核心矛盾
+
+---
+
+## 🔧 脚本列表
+
+### 核心分析脚本
+
+### 1. analyze_charging_preferences.py
+**功能**：保存探索期（第10轮训练）的详细动作数据
+
+**用法**：
+```bash
+cd C:\Users\cheng\PycharmProjects\EVRL2026
+python analysis/save_exploration_actions.py
+```
+
+**前提条件**：
+- 需要已训练的模型文件 `trained_model.pth`
+
+**输出**：
+- `action/RL-DDPG_actions_exploration.txt` - 探索期详细动作记录
+
+**记录内容**：
+- Actor原始输出（无噪声）
+- 添加OU噪声后的动作
+- 充电噪声（±0.3）
+- 最终动作（添加充电噪声后）
+- 每个区域的充电偏好值
+
+---
+
+### 2. save_exploration_actions.py
+**功能**：保存探索期（第10轮训练）的详细动作数据
+
+**用法**：
+```bash
+cd C:\Users\cheng\PycharmProjects\EVRL2026
+python analysis/save_exploration_actions.py
+```
+
+**前提条件**：
+- 需要已训练的模型文件 `trained_model.pth`
+
+**输出**：
+- `action/RL-DDPG_actions_exploration.txt` - 探索期详细动作记录
+
+**记录内容**：
+- Actor原始输出（无噪声）
+- 添加OU噪声后的动作
+- 充电噪声（±0.3）
+- 最终动作（添加充电噪声后）
+- 每个区域的充电偏好值
+
+---
+
+### 3. compare_exploration_test.py
+**功能**：对比探索期和测试期的充电偏好值
+
+**用法**：
+```bash
+cd C:\Users\cheng\PycharmProjects\EVRL2026
+python analysis/compare_exploration_test.py
+```
+
+**前提条件**：
+- 需要 `action/RL-DDPG_actions.txt`（测试期数据）
+- 需要 `action/RL-DDPG_actions_exploration.txt`（探索期数据）
+
+**输出**：
+- `exploration_vs_test_comparison.txt` - 探索期vs测试期对比分析
+
+**对比内容**：
+- 每个区域在探索期和测试期的充电偏好值统计
+- 探索期平均值 / 测试期平均值的倍数
+- 每个时间步的详细对比
+- 关键发现和核心洞察
+
+---
+
+## 完整分析流程
+
+### 步骤1：训练模型
+```bash
+cd C:\Users\cheng\PycharmProjects\EVRL2026
+python main.py --train_eps 50
+```
+
+### 步骤2：测试模型（生成测试期动作）
+测试会在训练结束后自动运行，生成 `action/RL-DDPG_actions.txt`
+
+### 步骤3：分析测试期充电偏好值
+```bash
+python analysis/analyze_charging_preferences.py
+```
+
+### 步骤4：保存探索期动作
+```bash
+python analysis/save_exploration_actions.py
+```
+
+### 步骤5：对比探索期和测试期
+```bash
+python analysis/compare_exploration_test.py
+```
+
+---
+
+## 关键发现总结
+
+### 测试期充电偏好值（最新数据）
+- **区域0（有车辆）**：平均 3.95e-06（极小）
+- **区域1（过境区）**：平均 0.251（较大）
+- **区域2（过境区）**：平均 5.42e-06（极小）
+- **区域3（有车辆）**：平均 6.30e-05（较小）
+
+### 探索期充电偏好值
+- **区域0（有车辆）**：平均 0.076（较大）
+- **区域1（过境区）**：平均 0.311（较大）
+- **区域2（过境区）**：平均 0.046（较大）
+- **区域3（有车辆）**：平均 0.165（较大）
+
+### 探索期 vs 测试期倍数
+- **区域0**：探索期是测试期的 **19,243倍**
+- **区域1**：探索期是测试期的 1.24倍
+- **区域2**：探索期是测试期的 8,586倍
+- **区域3**：探索期是测试期的 **2,616倍**
+
+### 核心问题
+1. **映射公式缺陷**：`charge_count = int(pref * idle + 0.5)` 在极小偏好值下失效
+2. **学习方向错误**：RL学会了在无车辆的区域输出高偏好值
+3. **探索不足**：即使探索期有更大的充电偏好值，RL也没有学会正确充电
+4. **奖励信号问题**：充电的长期收益被短期成本掩盖
+
+---
+
+## 相关文档
+
+- **完整根因分析**：`docs/charging_preference_root_cause.md`
+- **实验记录**：`checkpoint/experiment_E1C.md`
+- **根因分析（旧版）**：`docs/root_cause_analysis.md`
+
+---
+
+## 维护说明
+
+这些脚本是为了分析"为什么RL只学会充电5次（vs 最优解112次）"这个问题而创建的。
+
+如果需要修改或扩展分析功能，请：
+1. 保持脚本的独立性（每个脚本可以单独运行）
+2. 使用UTF-8编码处理中文输出
+3. 将输出重定向到文件以避免Windows控制台编码问题
+4. 在脚本开头添加清晰的文档说明
+
+---
+
+**创建日期**：2026-02-07
+**最后更新**：2026-02-07

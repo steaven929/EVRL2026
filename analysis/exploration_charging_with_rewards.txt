@@ -1,0 +1,576 @@
+================================================================================
+Exploration Period Charging Analysis with Rewards
+================================================================================
+
+Period: Exploration (epoch 10, with charging noise)
+Total reward: 6290.0
+
+Assumptions:
+- Zone 0: vehicles ID 0-14 (demand endpoint)
+- Zone 3: vehicles ID 15-29 (demand endpoint)
+- Zones 1,2: transit zones (no idle vehicles)
+- Charging selection: SOC ascending (lowest battery first)
+- Charging noise: +/- 0.3 added to preferences
+
+
+================================================================================
+Timestep 0
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.000000
+  Zone 1: 0.899611
+  Zone 2: 0.000000
+  Zone 3: 0.285821
+
+Zone 0:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.899611
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.285821
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC=200 ← CHARGING
+    - Vehicle ID 16: SOC=250 ← CHARGING
+    - Vehicle ID 17: SOC=300 ← CHARGING
+
+Timestep 0 Summary: 3 vehicles charged
+
+================================================================================
+Timestep 1
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.000000
+  Zone 1: 0.000000
+  Zone 2: 0.084244
+  Zone 3: 0.027889
+
+Zone 0:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.084244
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.027889
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 1 Summary: 0 vehicles charged
+
+================================================================================
+Timestep 2
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.000000
+  Zone 1: 0.325987
+  Zone 2: 0.021363
+  Zone 3: 0.391131
+
+Zone 0:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.325987
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.021363
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.391131
+  Rule: pref 0.3-0.5 -> 40%
+  Idle vehicles: 15
+  To charge: 6
+  ✓ CHARGING 6 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC=200 ← CHARGING
+    - Vehicle ID 16: SOC=250 ← CHARGING
+    - Vehicle ID 17: SOC=300 ← CHARGING
+    - Vehicle ID 18: SOC=350 ← CHARGING
+    - Vehicle ID 19: SOC=400 ← CHARGING
+    - Vehicle ID 20: SOC=450 ← CHARGING
+
+Timestep 2 Summary: 6 vehicles charged
+
+================================================================================
+Timestep 3
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.000000
+  Zone 1: 0.000000
+  Zone 2: 0.289892
+  Zone 3: 0.000000
+
+Zone 0:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.289892
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 3 Summary: 0 vehicles charged
+
+================================================================================
+Timestep 4
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.000000
+  Zone 1: 0.446227
+  Zone 2: 0.000000
+  Zone 3: 0.116717
+
+Zone 0:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.446227
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.116717
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC=200 ← CHARGING
+    - Vehicle ID 16: SOC=250 ← CHARGING
+    - Vehicle ID 17: SOC=300 ← CHARGING
+
+Timestep 4 Summary: 3 vehicles charged
+
+================================================================================
+Timestep 5
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.179151
+  Zone 1: 0.333721
+  Zone 2: 0.000000
+  Zone 3: 0.352609
+
+Zone 0:
+  Preference: 0.179151
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC=200 ← CHARGING
+    - Vehicle ID 1: SOC=250 ← CHARGING
+    - Vehicle ID 2: SOC=300 ← CHARGING
+
+Zone 1:
+  Preference: 0.333721
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.352609
+  Rule: pref 0.3-0.5 -> 40%
+  Idle vehicles: 15
+  To charge: 6
+  ✓ CHARGING 6 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC=200 ← CHARGING
+    - Vehicle ID 16: SOC=250 ← CHARGING
+    - Vehicle ID 17: SOC=300 ← CHARGING
+    - Vehicle ID 18: SOC=350 ← CHARGING
+    - Vehicle ID 19: SOC=400 ← CHARGING
+    - Vehicle ID 20: SOC=450 ← CHARGING
+
+Timestep 5 Summary: 9 vehicles charged
+
+================================================================================
+Timestep 6
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.028745
+  Zone 1: 0.330781
+  Zone 2: 0.000000
+  Zone 3: 0.027544
+
+Zone 0:
+  Preference: 0.028745
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.330781
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.027544
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 6 Summary: 0 vehicles charged
+
+================================================================================
+Timestep 7
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.226153
+  Zone 1: 0.000000
+  Zone 2: 0.145053
+  Zone 3: 0.296724
+
+Zone 0:
+  Preference: 0.226153
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC=200 ← CHARGING
+    - Vehicle ID 1: SOC=250 ← CHARGING
+    - Vehicle ID 2: SOC=300 ← CHARGING
+
+Zone 1:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.145053
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.296724
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC=200 ← CHARGING
+    - Vehicle ID 16: SOC=250 ← CHARGING
+    - Vehicle ID 17: SOC=300 ← CHARGING
+
+Timestep 7 Summary: 6 vehicles charged
+
+================================================================================
+Timestep 8
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.069153
+  Zone 1: 0.498466
+  Zone 2: 0.000000
+  Zone 3: 0.041050
+
+Zone 0:
+  Preference: 0.069153
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.498466
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.041050
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 8 Summary: 0 vehicles charged
+
+================================================================================
+Timestep 9
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.174248
+  Zone 1: 0.448046
+  Zone 2: 0.000000
+  Zone 3: 0.290031
+
+Zone 0:
+  Preference: 0.174248
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC=200 ← CHARGING
+    - Vehicle ID 1: SOC=250 ← CHARGING
+    - Vehicle ID 2: SOC=300 ← CHARGING
+
+Zone 1:
+  Preference: 0.448046
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.290031
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC=200 ← CHARGING
+    - Vehicle ID 16: SOC=250 ← CHARGING
+    - Vehicle ID 17: SOC=300 ← CHARGING
+
+Timestep 9 Summary: 6 vehicles charged
+
+================================================================================
+Timestep 10
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.000000
+  Zone 1: 0.000000
+  Zone 2: 0.017363
+  Zone 3: 0.148054
+
+Zone 0:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.017363
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.148054
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC=200 ← CHARGING
+    - Vehicle ID 16: SOC=250 ← CHARGING
+    - Vehicle ID 17: SOC=300 ← CHARGING
+
+Timestep 10 Summary: 3 vehicles charged
+
+================================================================================
+Timestep 11
+================================================================================
+
+Charging Preferences (after noise enhancement):
+  Zone 0: 0.233626
+  Zone 1: 0.445556
+  Zone 2: 0.000000
+  Zone 3: 0.000000
+
+Zone 0:
+  Preference: 0.233626
+  Rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  To charge: 3
+  ✓ CHARGING 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC=200 ← CHARGING
+    - Vehicle ID 1: SOC=250 ← CHARGING
+    - Vehicle ID 2: SOC=300 ← CHARGING
+
+Zone 1:
+  Preference: 0.445556
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.000000
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  To charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.000000
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  To charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 11 Summary: 3 vehicles charged
+
+================================================================================
+Overall Summary
+================================================================================
+
+Total charging events: 39
+Total reward: 6290.0
+Cumulative reward (first 12 steps): 0.00
+
+Charging by zone:
+  Zone 0: 12 vehicles
+  Zone 1: 0 vehicles
+  Zone 2: 0 vehicles
+  Zone 3: 27 vehicles
+
+Key Insights:
+- Exploration period has charging noise (+/- 0.3)
+- Noise enhancement increases preferences by 100-4000x
+- 39 total charging events across all timesteps
+- Vehicles with lowest SOC are prioritized
+- Compare with test period: 0 charging events

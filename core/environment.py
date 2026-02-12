@@ -66,7 +66,7 @@ def env_agent_config(cfg):
             vocab_size=10,
             actor_lr=cfg['actor_lr'],
             critic_lr=cfg['critic_lr'],
-            alpha_lr=3e-4,
+            alpha_lr=cfg.get('sac_alpha_lr', 3e-4),  # 使用配置中的alpha_lr参数
             gamma=cfg['gamma'],
             tau=cfg['tau'],
             alpha=cfg.get('sac_alpha', 0.2),  # 使用配置中的alpha参数

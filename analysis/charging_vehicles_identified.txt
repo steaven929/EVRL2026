@@ -1,0 +1,744 @@
+================================================================================
+Charging Vehicle Identification Analysis
+================================================================================
+
+Assumptions:
+- Zone 0 has vehicles ID 0-14 (idle at zone 0)
+- Zone 3 has vehicles ID 15-29 (idle at zone 3)
+- Zones 1,2 are transit zones (no idle vehicles)
+- Vehicle SOC ranges from 200-900 (uniformly distributed)
+- Charging selection: SOC ascending order (lowest battery first)
+
+
+================================================================================
+Timestep 0
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.000000
+  Zone 1: 0.899611
+  Zone 2: 0.000000
+  Zone 3: 0.285821
+
+Zone 0:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.899611
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.285821
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 16: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 17: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 3 (for reference):
+    - Vehicle ID 15: SOC = 200 ← SELECTED
+    - Vehicle ID 16: SOC = 250 ← SELECTED
+    - Vehicle ID 17: SOC = 300 ← SELECTED
+    - Vehicle ID 18: SOC = 350
+    - Vehicle ID 19: SOC = 400
+    - Vehicle ID 20: SOC = 450
+    - Vehicle ID 21: SOC = 500
+    - Vehicle ID 22: SOC = 550
+    - Vehicle ID 23: SOC = 600
+    - Vehicle ID 24: SOC = 650
+    - Vehicle ID 25: SOC = 700
+    - Vehicle ID 26: SOC = 750
+    - Vehicle ID 27: SOC = 800
+    - Vehicle ID 28: SOC = 850
+    - Vehicle ID 29: SOC = 900
+
+
+================================================================================
+Timestep 1
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.000000
+  Zone 1: 0.000000
+  Zone 2: 0.084244
+  Zone 3: 0.027889
+
+Zone 0:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.084244
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.027889
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+
+================================================================================
+Timestep 2
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.000000
+  Zone 1: 0.325987
+  Zone 2: 0.021363
+  Zone 3: 0.391131
+
+Zone 0:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.325987
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.021363
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.391131
+  Mapping rule: pref 0.3-0.5 -> 40%
+  Idle vehicles: 15
+  Vehicles to charge: 6
+  ✓ WILL CHARGE 6 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 16: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 17: SOC = 300 ← SELECTED FOR CHARGING
+    - Vehicle ID 18: SOC = 350 ← SELECTED FOR CHARGING
+    - Vehicle ID 19: SOC = 400 ← SELECTED FOR CHARGING
+    - Vehicle ID 20: SOC = 450 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 3 (for reference):
+    - Vehicle ID 15: SOC = 200 ← SELECTED
+    - Vehicle ID 16: SOC = 250 ← SELECTED
+    - Vehicle ID 17: SOC = 300 ← SELECTED
+    - Vehicle ID 18: SOC = 350 ← SELECTED
+    - Vehicle ID 19: SOC = 400 ← SELECTED
+    - Vehicle ID 20: SOC = 450 ← SELECTED
+    - Vehicle ID 21: SOC = 500
+    - Vehicle ID 22: SOC = 550
+    - Vehicle ID 23: SOC = 600
+    - Vehicle ID 24: SOC = 650
+    - Vehicle ID 25: SOC = 700
+    - Vehicle ID 26: SOC = 750
+    - Vehicle ID 27: SOC = 800
+    - Vehicle ID 28: SOC = 850
+    - Vehicle ID 29: SOC = 900
+
+
+================================================================================
+Timestep 3
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.000000
+  Zone 1: 0.000000
+  Zone 2: 0.289892
+  Zone 3: 0.000000
+
+Zone 0:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.289892
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+
+================================================================================
+Timestep 4
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.000000
+  Zone 1: 0.446227
+  Zone 2: 0.000000
+  Zone 3: 0.116717
+
+Zone 0:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.446227
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.116717
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 16: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 17: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 3 (for reference):
+    - Vehicle ID 15: SOC = 200 ← SELECTED
+    - Vehicle ID 16: SOC = 250 ← SELECTED
+    - Vehicle ID 17: SOC = 300 ← SELECTED
+    - Vehicle ID 18: SOC = 350
+    - Vehicle ID 19: SOC = 400
+    - Vehicle ID 20: SOC = 450
+    - Vehicle ID 21: SOC = 500
+    - Vehicle ID 22: SOC = 550
+    - Vehicle ID 23: SOC = 600
+    - Vehicle ID 24: SOC = 650
+    - Vehicle ID 25: SOC = 700
+    - Vehicle ID 26: SOC = 750
+    - Vehicle ID 27: SOC = 800
+    - Vehicle ID 28: SOC = 850
+    - Vehicle ID 29: SOC = 900
+
+
+================================================================================
+Timestep 5
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.179151
+  Zone 1: 0.333721
+  Zone 2: 0.000000
+  Zone 3: 0.352609
+
+Zone 0:
+  Preference value: 0.179151
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 1: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 2: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 0 (for reference):
+    - Vehicle ID 0: SOC = 200 ← SELECTED
+    - Vehicle ID 1: SOC = 250 ← SELECTED
+    - Vehicle ID 2: SOC = 300 ← SELECTED
+    - Vehicle ID 3: SOC = 350
+    - Vehicle ID 4: SOC = 400
+    - Vehicle ID 5: SOC = 450
+    - Vehicle ID 6: SOC = 500
+    - Vehicle ID 7: SOC = 550
+    - Vehicle ID 8: SOC = 600
+    - Vehicle ID 9: SOC = 650
+    - Vehicle ID 10: SOC = 700
+    - Vehicle ID 11: SOC = 750
+    - Vehicle ID 12: SOC = 800
+    - Vehicle ID 13: SOC = 850
+    - Vehicle ID 14: SOC = 900
+
+Zone 1:
+  Preference value: 0.333721
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.352609
+  Mapping rule: pref 0.3-0.5 -> 40%
+  Idle vehicles: 15
+  Vehicles to charge: 6
+  ✓ WILL CHARGE 6 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 16: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 17: SOC = 300 ← SELECTED FOR CHARGING
+    - Vehicle ID 18: SOC = 350 ← SELECTED FOR CHARGING
+    - Vehicle ID 19: SOC = 400 ← SELECTED FOR CHARGING
+    - Vehicle ID 20: SOC = 450 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 3 (for reference):
+    - Vehicle ID 15: SOC = 200 ← SELECTED
+    - Vehicle ID 16: SOC = 250 ← SELECTED
+    - Vehicle ID 17: SOC = 300 ← SELECTED
+    - Vehicle ID 18: SOC = 350 ← SELECTED
+    - Vehicle ID 19: SOC = 400 ← SELECTED
+    - Vehicle ID 20: SOC = 450 ← SELECTED
+    - Vehicle ID 21: SOC = 500
+    - Vehicle ID 22: SOC = 550
+    - Vehicle ID 23: SOC = 600
+    - Vehicle ID 24: SOC = 650
+    - Vehicle ID 25: SOC = 700
+    - Vehicle ID 26: SOC = 750
+    - Vehicle ID 27: SOC = 800
+    - Vehicle ID 28: SOC = 850
+    - Vehicle ID 29: SOC = 900
+
+
+================================================================================
+Timestep 6
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.028745
+  Zone 1: 0.330781
+  Zone 2: 0.000000
+  Zone 3: 0.027544
+
+Zone 0:
+  Preference value: 0.028745
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.330781
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.027544
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+
+================================================================================
+Timestep 7
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.226153
+  Zone 1: 0.000000
+  Zone 2: 0.145053
+  Zone 3: 0.296724
+
+Zone 0:
+  Preference value: 0.226153
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 1: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 2: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 0 (for reference):
+    - Vehicle ID 0: SOC = 200 ← SELECTED
+    - Vehicle ID 1: SOC = 250 ← SELECTED
+    - Vehicle ID 2: SOC = 300 ← SELECTED
+    - Vehicle ID 3: SOC = 350
+    - Vehicle ID 4: SOC = 400
+    - Vehicle ID 5: SOC = 450
+    - Vehicle ID 6: SOC = 500
+    - Vehicle ID 7: SOC = 550
+    - Vehicle ID 8: SOC = 600
+    - Vehicle ID 9: SOC = 650
+    - Vehicle ID 10: SOC = 700
+    - Vehicle ID 11: SOC = 750
+    - Vehicle ID 12: SOC = 800
+    - Vehicle ID 13: SOC = 850
+    - Vehicle ID 14: SOC = 900
+
+Zone 1:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.145053
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.296724
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 16: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 17: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 3 (for reference):
+    - Vehicle ID 15: SOC = 200 ← SELECTED
+    - Vehicle ID 16: SOC = 250 ← SELECTED
+    - Vehicle ID 17: SOC = 300 ← SELECTED
+    - Vehicle ID 18: SOC = 350
+    - Vehicle ID 19: SOC = 400
+    - Vehicle ID 20: SOC = 450
+    - Vehicle ID 21: SOC = 500
+    - Vehicle ID 22: SOC = 550
+    - Vehicle ID 23: SOC = 600
+    - Vehicle ID 24: SOC = 650
+    - Vehicle ID 25: SOC = 700
+    - Vehicle ID 26: SOC = 750
+    - Vehicle ID 27: SOC = 800
+    - Vehicle ID 28: SOC = 850
+    - Vehicle ID 29: SOC = 900
+
+
+================================================================================
+Timestep 8
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.069153
+  Zone 1: 0.498466
+  Zone 2: 0.000000
+  Zone 3: 0.041050
+
+Zone 0:
+  Preference value: 0.069153
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.498466
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.041050
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+
+================================================================================
+Timestep 9
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.174248
+  Zone 1: 0.448046
+  Zone 2: 0.000000
+  Zone 3: 0.290031
+
+Zone 0:
+  Preference value: 0.174248
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 1: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 2: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 0 (for reference):
+    - Vehicle ID 0: SOC = 200 ← SELECTED
+    - Vehicle ID 1: SOC = 250 ← SELECTED
+    - Vehicle ID 2: SOC = 300 ← SELECTED
+    - Vehicle ID 3: SOC = 350
+    - Vehicle ID 4: SOC = 400
+    - Vehicle ID 5: SOC = 450
+    - Vehicle ID 6: SOC = 500
+    - Vehicle ID 7: SOC = 550
+    - Vehicle ID 8: SOC = 600
+    - Vehicle ID 9: SOC = 650
+    - Vehicle ID 10: SOC = 700
+    - Vehicle ID 11: SOC = 750
+    - Vehicle ID 12: SOC = 800
+    - Vehicle ID 13: SOC = 850
+    - Vehicle ID 14: SOC = 900
+
+Zone 1:
+  Preference value: 0.448046
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.290031
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 16: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 17: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 3 (for reference):
+    - Vehicle ID 15: SOC = 200 ← SELECTED
+    - Vehicle ID 16: SOC = 250 ← SELECTED
+    - Vehicle ID 17: SOC = 300 ← SELECTED
+    - Vehicle ID 18: SOC = 350
+    - Vehicle ID 19: SOC = 400
+    - Vehicle ID 20: SOC = 450
+    - Vehicle ID 21: SOC = 500
+    - Vehicle ID 22: SOC = 550
+    - Vehicle ID 23: SOC = 600
+    - Vehicle ID 24: SOC = 650
+    - Vehicle ID 25: SOC = 700
+    - Vehicle ID 26: SOC = 750
+    - Vehicle ID 27: SOC = 800
+    - Vehicle ID 28: SOC = 850
+    - Vehicle ID 29: SOC = 900
+
+
+================================================================================
+Timestep 10
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.000000
+  Zone 1: 0.000000
+  Zone 2: 0.017363
+  Zone 3: 0.148054
+
+Zone 0:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.017363
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.148054
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 15: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 16: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 17: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 3 (for reference):
+    - Vehicle ID 15: SOC = 200 ← SELECTED
+    - Vehicle ID 16: SOC = 250 ← SELECTED
+    - Vehicle ID 17: SOC = 300 ← SELECTED
+    - Vehicle ID 18: SOC = 350
+    - Vehicle ID 19: SOC = 400
+    - Vehicle ID 20: SOC = 450
+    - Vehicle ID 21: SOC = 500
+    - Vehicle ID 22: SOC = 550
+    - Vehicle ID 23: SOC = 600
+    - Vehicle ID 24: SOC = 650
+    - Vehicle ID 25: SOC = 700
+    - Vehicle ID 26: SOC = 750
+    - Vehicle ID 27: SOC = 800
+    - Vehicle ID 28: SOC = 850
+    - Vehicle ID 29: SOC = 900
+
+
+================================================================================
+Timestep 11
+================================================================================
+
+Charging Preferences:
+  Zone 0: 0.233626
+  Zone 1: 0.445556
+  Zone 2: 0.000000
+  Zone 3: 0.000000
+
+Zone 0:
+  Preference value: 0.233626
+  Mapping rule: pref 0.1-0.3 -> 20%
+  Idle vehicles: 15
+  Vehicles to charge: 3
+  ✓ WILL CHARGE 3 vehicles
+
+  Selected vehicles (by SOC ascending):
+    - Vehicle ID 0: SOC = 200 ← SELECTED FOR CHARGING
+    - Vehicle ID 1: SOC = 250 ← SELECTED FOR CHARGING
+    - Vehicle ID 2: SOC = 300 ← SELECTED FOR CHARGING
+
+  All idle vehicles in zone 0 (for reference):
+    - Vehicle ID 0: SOC = 200 ← SELECTED
+    - Vehicle ID 1: SOC = 250 ← SELECTED
+    - Vehicle ID 2: SOC = 300 ← SELECTED
+    - Vehicle ID 3: SOC = 350
+    - Vehicle ID 4: SOC = 400
+    - Vehicle ID 5: SOC = 450
+    - Vehicle ID 6: SOC = 500
+    - Vehicle ID 7: SOC = 550
+    - Vehicle ID 8: SOC = 600
+    - Vehicle ID 9: SOC = 650
+    - Vehicle ID 10: SOC = 700
+    - Vehicle ID 11: SOC = 750
+    - Vehicle ID 12: SOC = 800
+    - Vehicle ID 13: SOC = 850
+    - Vehicle ID 14: SOC = 900
+
+Zone 1:
+  Preference value: 0.445556
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference value: 0.000000
+  Mapping rule: N/A (transit zone)
+  Idle vehicles: 0
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference value: 0.000000
+  Mapping rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Vehicles to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+
+================================================================================
+Summary
+================================================================================
+
+Total charging events: 39
+Charging events by zone:
+  Zone 0: 12 vehicles charged
+  Zone 1: 0 vehicles charged
+  Zone 2: 0 vehicles charged
+  Zone 3: 27 vehicles charged
+
+Key Insights:
+- Vehicles with lowest SOC are prioritized for charging
+- Zone 0 and 3 have idle vehicles available for charging
+- Zones 1 and 2 are transit zones with no idle vehicles
+- Charging threshold 0.1 may be too high for some zones

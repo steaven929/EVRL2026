@@ -1,0 +1,549 @@
+================================================================================
+Test Period Charging Analysis
+================================================================================
+
+Period: Test (no exploration noise)
+总奖励: 9820.00
+
+
+Assumptions:
+- Zone 0: vehicles ID 0-14 (demand endpoint)
+- Zone 3: vehicles ID 15-29 (demand endpoint)
+- Zones 1,2: transit zones (no idle vehicles)
+- Charging selection: SOC ascending (lowest battery first)
+
+
+================================================================================
+Timestep 0
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000006975
+  Zone 1: 0.0000005600
+  Zone 2: 0.0000196273
+  Zone 3: 0.0000007943
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000006975
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000005600
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000196273
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000007943
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 0 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 1
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000090
+  Zone 1: 0.0000000067
+  Zone 2: 0.0000006876
+  Zone 3: 0.0000000107
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000090
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000067
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000006876
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000107
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 1 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 2
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000037
+  Zone 1: 0.0000000027
+  Zone 2: 0.0000003494
+  Zone 3: 0.0000000044
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000037
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000027
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000003494
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000044
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 2 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 3
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000092
+  Zone 1: 0.0000000068
+  Zone 2: 0.0000006978
+  Zone 3: 0.0000000109
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000092
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000068
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000006978
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000109
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 3 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 4
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000294
+  Zone 1: 0.0000000225
+  Zone 2: 0.0000017152
+  Zone 3: 0.0000000346
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000294
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000225
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000017152
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000346
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 4 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 5
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000439
+  Zone 1: 0.0000000330
+  Zone 2: 0.0000022763
+  Zone 3: 0.0000000517
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000439
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000330
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000022763
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000517
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 5 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 6
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000467
+  Zone 1: 0.0000000355
+  Zone 2: 0.0000023932
+  Zone 3: 0.0000000547
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000467
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000355
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000023932
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000547
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 6 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 7
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000407
+  Zone 1: 0.0000000309
+  Zone 2: 0.0000021549
+  Zone 3: 0.0000000480
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000407
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000309
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000021549
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000480
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 7 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 8
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000144
+  Zone 1: 0.0000000107
+  Zone 2: 0.0000009675
+  Zone 3: 0.0000000170
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000144
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000107
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000009675
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000170
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 8 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 9
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000460
+  Zone 1: 0.0000000349
+  Zone 2: 0.0000023621
+  Zone 3: 0.0000000541
+
+Actual charging actions from file:
+  区域3: 2辆
+
+Zone 0:
+  Preference: 0.0000000460
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000349
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000023621
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000541
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 9 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 10
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000818
+  Zone 1: 0.0000000625
+  Zone 2: 0.0000036783
+  Zone 3: 0.0000000952
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000818
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000625
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000036783
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000952
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 10 Summary: 0 vehicles expected to charge
+
+================================================================================
+Timestep 11
+================================================================================
+
+Charging Preferences (from action vector [8:12]):
+  Zone 0: 0.0000000693
+  Zone 1: 0.0000000538
+  Zone 2: 0.0000032399
+  Zone 3: 0.0000000806
+
+Actual charging actions from file:
+  None
+
+Zone 0:
+  Preference: 0.0000000693
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Zone 1:
+  Preference: 0.0000000538
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 2:
+  Preference: 0.0000032399
+  Rule: N/A (transit zone)
+  Idle vehicles: 0
+  Expected to charge: 0
+  ✗ NO CHARGING (Transit zone (no idle vehicles))
+
+Zone 3:
+  Preference: 0.0000000806
+  Rule: pref < 0.1 -> 0%
+  Idle vehicles: 15
+  Expected to charge: 0
+  ✗ NO CHARGING (Preference too low)
+
+Timestep 11 Summary: 0 vehicles expected to charge
+
+================================================================================
+Overall Summary
+================================================================================
+
+Total expected charging events: 0
+
+Expected charging by zone:
+  Zone 0: 0 vehicles
+  Zone 1: 0 vehicles
+  Zone 2: 0 vehicles
+  Zone 3: 0 vehicles
+
+Key Insights:
+- Test period has NO exploration noise
+- Actor outputs are very small (10^-6 to 10^-5 level)
+- Most timesteps have no charging due to low preferences
+- Compare with exploration period: 39 charging events
+- Test period: only 5 charging events (from actual file)
