@@ -336,6 +336,79 @@ class TD3(object):
 
 # =========2026.2.11，实验13：SAC算法实现==========
 
+class SACDualHeadActorNetwork(nn.Module):
+    """SAC的双头Actor网络，分别处理调度和充电决策"""
+    def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, vocab_size=10):
+        super(SACDualHeadActorNetwork, self).__init__()
+
+        # 动作维度分解：前8维调度，后4维充电
+        self.dispatch_dims = 8
+        self.charging_dims = 4
+        assert n_actions == self.dispatch_dims + self.charging_dims, "n_actions must be 12"
+
+        # 共享层
+        self.embedding = nn.Embedding(vocab_size, embedding_dims)
+        self.shared_linear1 = nn.Linear(n_states * embedding_dims, hidden_dim)
+        self.shared_linear2 = nn.Linear(hidden_dim, hidden_dim)
+
+        # 调度头（8维）
+        self.dispatch_mean = nn.Linear(hidden_dim, self.dispatch_dims)
+        self.dispatch_log_std = nn.Linear(hidden_dim, self.dispatch_dims)
+
+        # 充电头（4维）- 增强充电决策能力
+        self.charging_hidden = nn.Linear(hidden_dim, 128)
+        self.charging_mean = nn.Linear(128, self.charging_dims)
+        self.charging_log_std = nn.Linear(128, self.charging_dims)
+
+        # 标准差范围限制
+        self.log_std_min = -20
+        self.log_std_max = 2
+
+    def forward(self, state):
+        # 共享特征提取
+        embedded_states = self.embedding(state)
+        embedded_flattened = embedded_states.view(embedded_states.size(0), -1)
+
+        shared = F.relu(self.shared_linear1(embedded_flattened))
+        shared = F.relu(self.shared_linear2(shared))
+
+        # 调度头
+        dispatch_mean = self.dispatch_mean(shared)
+        dispatch_log_std = self.dispatch_log_std(shared)
+        dispatch_log_std = torch.clamp(dispatch_log_std, self.log_std_min, self.log_std_max)
+
+        # 充电头（额外的隐藏层）
+        charging_features = F.relu(self.charging_hidden(shared))
+        charging_mean = self.charging_mean(charging_features)
+        charging_log_std = self.charging_log_std(charging_features)
+        charging_log_std = torch.clamp(charging_log_std, self.log_std_min, self.log_std_max)
+
+        # 合并输出
+        mean = torch.cat([dispatch_mean, charging_mean], dim=1)
+        log_std = torch.cat([dispatch_log_std, charging_log_std], dim=1)
+
+        return mean, log_std
+
+    def sample(self, state, epsilon=1e-6):
+        """采样动作"""
+        mean, log_std = self.forward(state)
+        std = log_std.exp()
+
+        # 重参数化技巧
+        normal = torch.distributions.Normal(mean, std)
+        x_t = normal.rsample()
+
+        # 使用sigmoid映射到[0, 1]
+        action = torch.sigmoid(x_t)
+
+        # 计算log概率
+        log_prob = normal.log_prob(x_t)
+        log_prob -= torch.log(action * (1 - action) + epsilon)
+        log_prob = log_prob.sum(1, keepdim=True)
+
+        return action, log_prob, mean, log_std
+
+
 class SACActorNetwork(nn.Module):
     """SAC的Actor网络，输出动作的均值和标准差"""
     def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, vocab_size=10):
@@ -416,6 +489,7 @@ class SACCriticNetwork(nn.Module):
 class SAC:
     """SAC算法实现"""
     def __init__(self, n_states, n_actions, memory, vocab_size=10,
+                 embedding_dims=8, hidden_dim=256, use_dual_head=False,
                  actor_lr=3e-4, critic_lr=3e-4, alpha_lr=3e-4,
                  gamma=0.95, tau=0.005, alpha=0.2, batch_size=128, device='cpu'):
         self.device = device
@@ -425,19 +499,22 @@ class SAC:
         self.batch_size = batch_size
         self.memory = memory  # 经验回放池
 
-        # Actor网络
-        self.actor = SACActorNetwork(n_states, n_actions, vocab_size=vocab_size).to(device)
+        # Actor网络 - 根据配置选择单头或双头
+        if use_dual_head:
+            self.actor = SACDualHeadActorNetwork(n_states, n_actions, embedding_dims=embedding_dims, hidden_dim=hidden_dim, vocab_size=vocab_size).to(device)
+        else:
+            self.actor = SACActorNetwork(n_states, n_actions, embedding_dims=embedding_dims, hidden_dim=hidden_dim, vocab_size=vocab_size).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
 
         # 两个Critic网络（Twin Q）
-        self.critic1 = SACCriticNetwork(n_states, n_actions, vocab_size=vocab_size).to(device)
-        self.critic2 = SACCriticNetwork(n_states, n_actions, vocab_size=vocab_size).to(device)
+        self.critic1 = SACCriticNetwork(n_states, n_actions, embedding_dims=embedding_dims, hidden_dim=hidden_dim, vocab_size=vocab_size).to(device)
+        self.critic2 = SACCriticNetwork(n_states, n_actions, embedding_dims=embedding_dims, hidden_dim=hidden_dim, vocab_size=vocab_size).to(device)
         self.critic1_optimizer = torch.optim.Adam(self.critic1.parameters(), lr=critic_lr)
         self.critic2_optimizer = torch.optim.Adam(self.critic2.parameters(), lr=critic_lr)
 
         # 目标Critic网络
-        self.target_critic1 = SACCriticNetwork(n_states, n_actions, vocab_size=vocab_size).to(device)
-        self.target_critic2 = SACCriticNetwork(n_states, n_actions, vocab_size=vocab_size).to(device)
+        self.target_critic1 = SACCriticNetwork(n_states, n_actions, embedding_dims=embedding_dims, hidden_dim=hidden_dim, vocab_size=vocab_size).to(device)
+        self.target_critic2 = SACCriticNetwork(n_states, n_actions, embedding_dims=embedding_dims, hidden_dim=hidden_dim, vocab_size=vocab_size).to(device)
         self.target_critic1.load_state_dict(self.critic1.state_dict())
         self.target_critic2.load_state_dict(self.critic2.state_dict())
 

@@ -1220,9 +1220,9 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # =========2026.2.11修改，实验4：回滚到成功配置==========
-        # 即时充电奖励：每辆充电车辆+1500
-        charging_bonus = 1500 * charging_count
+        # =========2026.2.12修改，实验19：大幅提升充电奖励==========
+        # 即时充电奖励：每辆充电车辆+3000（从1500提升到3000）
+        charging_bonus = 3000 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1276,9 +1276,10 @@ class dclily(gym.Env):
         fixed_penalty = 0  # 原500改为0
         # ======修改结束
 
-        # 新奖励函数（添加缩放因子/10以控制波动）
-        # 每步都给予即时奖励，包括充电奖励
-        reward_value = (service_revenue + charging_bonus - soc_penalty) / 10 - fixed_penalty
+        # =========2026.2.12修改，实验19：充电奖励不缩放==========
+        # 新奖励函数：充电奖励单独计算，不除以10
+        # 这样充电奖励的信号更强
+        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========

@@ -64,12 +64,15 @@ def env_agent_config(cfg):
             n_actions=n_actions,
             memory=memory,
             vocab_size=10,
+            embedding_dims=cfg['actor_embed_dim'],
+            hidden_dim=cfg['actor_hidden_dim'],
+            use_dual_head=cfg.get('use_dual_head', False),  # 是否使用双头架构
             actor_lr=cfg['actor_lr'],
             critic_lr=cfg['critic_lr'],
-            alpha_lr=cfg.get('sac_alpha_lr', 3e-4),  # 使用配置中的alpha_lr参数
+            alpha_lr=cfg.get('sac_alpha_lr', 3e-4),
             gamma=cfg['gamma'],
             tau=cfg['tau'],
-            alpha=cfg.get('sac_alpha', 0.2),  # 使用配置中的alpha参数
+            alpha=cfg.get('sac_alpha', 0.2),
             batch_size=cfg['batch_size'],
             device=cfg['device']
         )

@@ -140,10 +140,10 @@ class OptimalSolver:
             for j in range(zone_num)
         )
 
-        # =========2026.2.11修改，实验10：回到实验4配置==========
+        # =========2026.2.12修改，实验19：提升充电奖励信号==========
         # 3. 充电加分
         charging_bonus = gp.quicksum(
-            1500 * c[v, t, i]
+            3000 * c[v, t, i]
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)
@@ -167,11 +167,13 @@ class OptimalSolver:
         fixed_penalty = 0  # 原500 * used_time改为0
         # ======修改结束
 
-        # 新目标函数（添加缩放因子/10）
+        # =========2026.2.12修改，实验19：充电奖励不参与缩放==========
+        # 新目标函数（充电奖励不除以10）
         model.setObjective(
-            (service_revenue + charging_bonus - soc_penalty - dispatch_cost) / 10 - fixed_penalty,
+            (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus - fixed_penalty,
             GRB.MAXIMIZE
         )
+        # ======修改结束
         # ======修改结束
 
         for v in range(car_num):  # 修改
