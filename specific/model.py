@@ -52,37 +52,35 @@ training_set_number = config['training_set_number']
 class Actor(nn.Module):
     def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, init_w=3e-3):
         super(Actor, self).__init__()
-        
+
+        # =========2026.2.11修改，实验11：回滚到单头网络==========
         # 嵌入层，适用于 MultiDiscrete 状态空间
-        # =========2026.2.6修改，状态空间增强：使用新词汇表大小==========
         self.embedding = nn.Embedding(vocab_size, embedding_dims)
-        # ======修改结束
-        
+
         # 全连接层定义
         self.linear1 = nn.Linear(n_states * embedding_dims, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-        
+
         # 输出的动作空间是展平后的矩阵
-        self.linear3 = nn.Linear(hidden_dim, n_actions)  # n_actions 是矩阵的总元素数
+        self.linear3 = nn.Linear(hidden_dim, n_actions)
 
         # 初始化权重
         self.linear3.weight.data.uniform_(-init_w, init_w)
         self.linear3.bias.data.uniform_(-init_w, init_w)
+        # ======修改结束
 
     def forward(self, x):
+        # =========2026.2.11修改，实验11：单头前向传播==========
         # 嵌入层处理离散状态
-        embedded_states = self.embedding(x)  # [batch_size, n_states, embedding_dim]
+        embedded_states = self.embedding(x)
         embedded_flattened = embedded_states.view(embedded_states.size(0), -1)
+
         # 前向传播经过全连接层
         x = F.relu(self.linear1(embedded_flattened))
         x = F.relu(self.linear2(x))
-        x = torch.sigmoid(self.linear3(x))  # 使用 tanh 保证输出范围在 [-1, 1]
+        x = torch.sigmoid(self.linear3(x))
+        # ======修改结束
 
-        # 将 tanh 输出映射到 [0, 1] 之间
-        
-        # print("神经网络动作")
-        # print(x)
-        
         return x
 
 class Critic(nn.Module):

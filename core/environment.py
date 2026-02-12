@@ -13,7 +13,7 @@ import random
 import gym
 
 from specific.model import Actor, Critic
-from core.algorithm import DDPG
+from core.algorithm import DDPG, SAC
 from core.buffer import ReplayBuffer
 
 
@@ -55,9 +55,29 @@ def env_agent_config(cfg):
     n_states = env.observation_space.shape[0]
     n_actions = env.action_space.shape[0]
     cfg.update({"n_states":n_states,"n_actions":n_actions}) # 更新n_states和n_actions到cfg参数中
-    models = {"actor":Actor(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['actor_hidden_dim']),"critic":Critic(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['critic_hidden_dim'])}
-    memories = {"memory":ReplayBuffer(cfg['memory_capacity'])}
-    agent = DDPG(models,memories,cfg)
+
+    # 根据算法名称选择不同的agent
+    if cfg['algo_name'] == 'SAC':
+        memory = ReplayBuffer(cfg['memory_capacity'])
+        agent = SAC(
+            n_states=n_states,
+            n_actions=n_actions,
+            memory=memory,
+            vocab_size=10,
+            actor_lr=cfg['actor_lr'],
+            critic_lr=cfg['critic_lr'],
+            alpha_lr=3e-4,
+            gamma=cfg['gamma'],
+            tau=cfg['tau'],
+            alpha=cfg.get('sac_alpha', 0.2),  # 使用配置中的alpha参数
+            batch_size=cfg['batch_size'],
+            device=cfg['device']
+        )
+    else:  # DDPG
+        models = {"actor":Actor(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['actor_hidden_dim']),"critic":Critic(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['critic_hidden_dim'])}
+        memories = {"memory":ReplayBuffer(cfg['memory_capacity'])}
+        agent = DDPG(models,memories,cfg)
+
     return env,agent
 
 #--

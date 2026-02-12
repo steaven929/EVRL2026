@@ -1220,31 +1220,50 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # =========2026.2.11修改，实验3：进一步增加充电奖励==========
-        # 即时充电奖励：每辆充电车辆+1500（从500提升到1500，进一步强化充电信号）
+        # =========2026.2.11修改，实验4：回滚到成功配置==========
+        # 即时充电奖励：每辆充电车辆+1500
         charging_bonus = 1500 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
-        # =========2026.2.11修改，实验5：调整SOC惩罚力度（降低50%）==========
+        # =========2026.2.11修改，实验12：渐进式训练（Curriculum Learning）==========
+        # 根据当前训练轮数动态调整SOC惩罚强度
+        epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
+
+        # 阶段1（0-200轮）：高惩罚，强制学习充电
+        # 阶段2（200-400轮）：中等惩罚，优化策略
+        # 阶段3（400+轮）：低惩罚，平衡收益
+        if epoch < 200:
+            # 高惩罚阶段
+            penalty_scale = 1.0
+            vehicle_penalty = 500
+        elif epoch < 400:
+            # 中等惩罚阶段（线性衰减）
+            progress = (epoch - 200) / 200  # 0到1
+            penalty_scale = 1.0 - 0.25 * progress  # 1.0衰减到0.75
+            vehicle_penalty = 500 - 125 * progress  # 500衰减到375
+        else:
+            # 低惩罚阶段
+            penalty_scale = 0.75
+            vehicle_penalty = 375
+
         soc_penalty = 0
-        low_soc_count = 0  # 统计低电量车辆数
+        low_soc_count = 0
         for i in range(self.CAR_NUM):
             soc = self.car[i][1]
             if soc >= 600:
                 penalty = 0
-            elif soc >= 400:  # 修改：从200提升到400，扩大惩罚范围
-                penalty = 1.0 * (600 - soc)  # 修改：从2.0降低到1.0（实验4的50%）
+            elif soc >= 400:
+                penalty = 2.0 * penalty_scale * (600 - soc)
             elif soc >= 200:
-                penalty = 1.0 * 200 + 5.0 * (400 - soc)  # 修改：从10.0降低到5.0（实验4的50%）
-                low_soc_count += 1  # 统计低电量车辆
+                penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * (400 - soc)
+                low_soc_count += 1
             else:
-                penalty = 1.0 * 200 + 5.0 * 200 + 25.0 * (200 - soc)  # 从50.0降低到25.0（实验4的50%）
+                penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * 200 + 50.0 * penalty_scale * (200 - soc)
                 low_soc_count += 1
             soc_penalty += penalty
 
-        # 额外惩罚：低电量车辆数惩罚（让Actor直接感知到低SOC的危险）
-        low_soc_vehicle_penalty = low_soc_count * 250  # 从500降低到250（实验4的50%）
+        low_soc_vehicle_penalty = low_soc_count * vehicle_penalty
         soc_penalty += low_soc_vehicle_penalty
         # ======修改结束
 
@@ -1284,11 +1303,24 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            # =========2026.2.11修改，实验3：终止时也使用新的充电奖励==========
-            charging_bonus = 1500 * charging_count  # 与即时奖励保持一致（1500）
+            # =========2026.2.11修改，实验4：回滚到1500充电奖励==========
+            charging_bonus = 1500 * charging_count
             # ======修改结束
 
-            # =========2026.2.11修改，实验5：终止时也使用调整后的SOC惩罚（降低50%）==========
+            # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
+            epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
+
+            if epoch < 200:
+                penalty_scale = 1.0
+                vehicle_penalty = 500
+            elif epoch < 400:
+                progress = (epoch - 200) / 200
+                penalty_scale = 1.0 - 0.25 * progress
+                vehicle_penalty = 500 - 125 * progress
+            else:
+                penalty_scale = 0.75
+                vehicle_penalty = 375
+
             soc_penalty = 0
             low_soc_count = 0
             for i in range(self.CAR_NUM):
@@ -1296,16 +1328,16 @@ class dclily(gym.Env):
                 if soc >= 600:
                     penalty = 0
                 elif soc >= 400:
-                    penalty = 1.0 * (600 - soc)  # 从2.0降低到1.0
+                    penalty = 2.0 * penalty_scale * (600 - soc)
                 elif soc >= 200:
-                    penalty = 1.0 * 200 + 5.0 * (400 - soc)  # 从10.0降低到5.0
+                    penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * (400 - soc)
                     low_soc_count += 1
                 else:
-                    penalty = 1.0 * 200 + 5.0 * 200 + 25.0 * (200 - soc)  # 从50.0降低到25.0
+                    penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * 200 + 50.0 * penalty_scale * (200 - soc)
                     low_soc_count += 1
                 soc_penalty += penalty
 
-            low_soc_vehicle_penalty = low_soc_count * 250  # 从500降低到250
+            low_soc_vehicle_penalty = low_soc_count * vehicle_penalty
             soc_penalty += low_soc_vehicle_penalty
             # ======修改结束
 

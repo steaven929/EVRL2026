@@ -14,15 +14,15 @@ def get_args():
     """ 超参数
     """
     parser = argparse.ArgumentParser(description="hyperparameters")      
-    parser.add_argument('--algo_name',default='DDPG',type=str,help="name of algorithm")#算法名称
+    parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=1000,type=int,help="episodes of training") #训练轮数  # 实验5：延长训练到1000轮
+    parser.add_argument('--train_eps',default=800,type=int,help="episodes of training") #训练轮数  # 实验14方案A：600→800
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
-    parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 2026.2.4修改：从0.5提升至0.85，增强长期规划能力
+    parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
     parser.add_argument('--critic_lr',default=5e-5,type=float,help="learning rate of critic")  #critic学习率
-    parser.add_argument('--actor_lr',default=5e-6,type=float,help="learning rate of actor")  #actor学习率
+    parser.add_argument('--actor_lr',default=2e-5,type=float,help="learning rate of actor")  #actor学习率  # 实验14方案A：5e-6→2e-5
     parser.add_argument('--memory_capacity',default=16000,type=int,help="memory capacity")  #经验池容量
     parser.add_argument('--batch_size',default=128,type=int)  #批量学习数  # 修改
     parser.add_argument('--target_update',default=2,type=int)  #目标网络更新频率
@@ -31,6 +31,7 @@ def get_args():
     parser.add_argument('--actor_hidden_dim',default=256,type=int)   #actor的dense层神经元
     parser.add_argument('--critic_embed_dim',default=8,type=int)  #critic的embedding层
     parser.add_argument('--actor_embed_dim',default=8,type=int)  #actor层的embedding层
+    parser.add_argument('--sac_alpha',default=0.5,type=float,help="SAC initial temperature")  #SAC温度参数  # 实验14方案A：0.2→0.5
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
     args = parser.parse_args([])    

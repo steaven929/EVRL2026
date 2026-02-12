@@ -140,41 +140,24 @@ class OptimalSolver:
             for j in range(zone_num)
         )
 
-        # =========2026.2.11修改，实验3：同步RL的充电奖励提升==========
-        # 3. 充电加分：每步统计充电车辆数（从500提升到1500，与RL保持一致）
+        # =========2026.2.11修改，实验10：回到实验4配置==========
+        # 3. 充电加分
         charging_bonus = gp.quicksum(
-            1500 * c[v, t, i]  # 原500改为1500
+            1500 * c[v, t, i]
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)
         )
         # ======修改结束
 
-        # =========2026.2.11修改，实验5：调整SOC惩罚力度（降低50%）==========
-        # 4. 低电量惩罚：分段惩罚（调整版，不使用二值变量）
-        # 使用辅助变量来实现分段惩罚
+        # 4. 低电量惩罚：高惩罚
         soc_penalty_vars = model.addVars(car_num, used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_penalty")
 
         for v in range(car_num):
             for t in range(used_time + 1):
-                # 调整后的分段惩罚（实验4的50%）：
-                # 如果 SOC >= 600: penalty = 0
-                # 如果 400 <= SOC < 600: penalty = 1.0 * (600 - SOC)  [从2.0降低到1.0]
-                # 如果 200 <= SOC < 400: penalty = 1.0 * 200 + 5.0 * (400 - SOC)  [从10.0降低到5.0]
-                # 如果 SOC < 200: penalty = 1.0 * 200 + 5.0 * 200 + 25.0 * (200 - SOC)  [从50.0降低到25.0]
-
-                # 线性化：penalty >= 1.0 * (600 - soc) 当 soc < 600
-                model.addConstr(soc_penalty_vars[v, t] >= 1.0 * (600 - soc[v, t]))
-
-                # 当 soc < 400: 额外惩罚 = 1.0*200 + 5.0*(400-soc) - 1.0*(600-soc)
-                #                        = 200 + 2000 - 5*soc - 600 + soc
-                #                        = 1600 - 4*soc
-                model.addConstr(soc_penalty_vars[v, t] >= 1600 - 4.0 * soc[v, t])
-
-                # 当 soc < 200: 额外惩罚 = 1600 - 4*200 + 25*(200-soc)
-                #                        = 1600 - 800 + 5000 - 25*soc
-                #                        = 5800 - 25*soc
-                model.addConstr(soc_penalty_vars[v, t] >= 5800 - 25.0 * soc[v, t])
+                model.addConstr(soc_penalty_vars[v, t] >= 2.0 * (600 - soc[v, t]))
+                model.addConstr(soc_penalty_vars[v, t] >= 3200 - 8.0 * soc[v, t])
+                model.addConstr(soc_penalty_vars[v, t] >= 11600 - 50.0 * soc[v, t])
 
         soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(used_time + 1))
         # ======修改结束
