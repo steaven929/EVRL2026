@@ -140,10 +140,10 @@ class OptimalSolver:
             for j in range(zone_num)
         )
 
-        # =========2026.2.12修改，实验19：提升充电奖励信号==========
+        # =========2026.2.12修改，实验20：激进充电奖励==========
         # 3. 充电加分
         charging_bonus = gp.quicksum(
-            3000 * c[v, t, i]
+            10000 * c[v, t, i]
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)

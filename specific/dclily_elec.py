@@ -631,6 +631,50 @@ class dclily(gym.Env):
         if charging_actions is None:
             charging_actions = {}
 
+        # =========2026.2.12修改，实验21：紧急充电机制==========
+        # 在RL决策之前，先处理紧急充电（防止车辆完全耗尽）
+        emergency_threshold = 300  # SOC < 300视为紧急状态
+        emergency_charged = 0
+
+        for i in range(len(self.car)):
+            soc = self.car[i][1]
+            remain_dist = self.car[i][2]
+
+            # 紧急充电条件：SOC < 300 且车辆静止（remain_dist=0）
+            if soc < emergency_threshold and remain_dist == 0:
+                current_zone = self.car[i][0]
+
+                # 尝试在当前区域充电
+                if current_zone in self.charging_stations:
+                    available_chargers = [
+                        s for s in self.charging_stations[current_zone]
+                        if s['occupied_by'] is None
+                    ]
+
+                    if available_chargers:
+                        # 分配充电桩
+                        charger = available_chargers[0]
+                        old_charger_id = self.car[i][3]
+
+                        # 释放旧充电桩（如果有）
+                        if old_charger_id != -1:
+                            self.release_charger(current_zone, old_charger_id)
+
+                        # 分配新充电桩
+                        self.car[i][3] = charger['charger_id']
+                        charger['occupied_by'] = i
+
+                        # 从可用车辆池移除
+                        if self.available[0][current_zone] > 0:
+                            self.available[0][current_zone] -= 1
+
+                        # 记录充电动作
+                        if current_zone not in charging_actions:
+                            charging_actions[current_zone] = 0
+                        charging_actions[current_zone] += 1
+                        emergency_charged += 1
+        # ======紧急充电结束
+
         # =========2026.2.7修改，方案D2：ε-greedy充电探索==========
         # 前30轮，10%概率随机选择一个区域进行充电
         if epoch < 30 and random.random() < 0.1:
@@ -698,13 +742,22 @@ class dclily(gym.Env):
                 return  # 本步使用随机策略，跳过RL决策
         # ======探索逻辑结束
 
-        # 步骤1：按区域收集空闲车辆（未执行任务的车辆）
+        # =========2026.2.12修改，实验21：放宽空闲车辆定义==========
+        # 步骤1：按区域收集空闲车辆（包括卡住的车辆）
         idle_vehicles_by_zone = {z: [] for z in range(ZONE_NUM)}
         for i in range(len(self.car)):
-            if self.car[i][2] == 0:  # 仅检查未执行任务的车辆
+            remain_dist = self.car[i][2]
+            soc = self.car[i][1]
+
+            # 扩展空闲车辆定义：
+            # 1. 未执行任务（remain_dist=0）
+            # 2. 或电量不足无法完成任务（remain_dist>0但SOC<remain_dist）
+            is_idle = (remain_dist == 0) or (remain_dist > 0 and soc < remain_dist)
+
+            if is_idle:
                 zone = self.car[i][0]
-                soc = self.car[i][1]
                 idle_vehicles_by_zone[zone].append((i, soc))
+        # ======修改结束
 
         # 步骤2：对每个区域，根据RL输出的充电数量决策
         for zone in range(ZONE_NUM):
@@ -1220,9 +1273,9 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # =========2026.2.12修改，实验19：大幅提升充电奖励==========
-        # 即时充电奖励：每辆充电车辆+3000（从1500提升到3000）
-        charging_bonus = 3000 * charging_count
+        # =========2026.2.12修改，实验20：激进充电奖励==========
+        # 即时充电奖励：每辆充电车辆+10000（从3000提升到10000）
+        charging_bonus = 10000 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
