@@ -4,7 +4,7 @@
   "total_reward": 2270544.818,
   "status": "OPTIMAL",
   "mip_gap": 0.0,
-  "solve_time": 11.191999912261963,
+  "solve_time": 8.753000020980835,
   "served_orders": [
     [
       [
