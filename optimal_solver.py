@@ -23,6 +23,7 @@ import pandas as pd  # 修改
 import gurobipy as gp  # 修改
 from gurobipy import GRB  # 修改
 import math  # 修改
+import glob
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -65,9 +66,20 @@ class OptimalSolver:
                 demand[t_idx, o, d] = int(row[col])  # 修改
         return demand, len(use_cols)  # 修改
 
+    def _list_training_demand_files(self, data_root):
+        pattern = os.path.join(data_root, "od_demand_*.csv")
+        candidates = []
+        for file_path in glob.glob(pattern):
+            file_name = os.path.basename(file_path)
+            stem = os.path.splitext(file_name)[0]
+            suffix = stem.replace("od_demand_", "")
+            if suffix.isdigit():
+                candidates.append(file_name)
+        return sorted(candidates, key=lambda x: int(os.path.splitext(x)[0].replace("od_demand_", "")))
+
     # =========2026.2.1修改，添加参数优化支持==========
     def solve_global_optimal(self, demand_csv="od_demand.csv", output_path="global_optimal_solution.json",
-                            mip_gap=0.05, time_limit=600):  # 修改
+                            mip_gap=0.05, time_limit=600, write_output=True):  # 修改
         cfg = self._load_config()  # 修改
         zone_num = int(cfg["ZONE_NUM"])  # 修改
         car_num = int(cfg["CAR_NUM"])  # 修改
@@ -308,73 +320,132 @@ class OptimalSolver:
         }  # 修改
         # ======修改结束
 
-        with open(output_path, "w", encoding="utf-8") as f:  # 修改
-            json.dump(result, f, indent=2)  # 修改
+        if write_output:
+            with open(output_path, "w", encoding="utf-8") as f:  # 修改
+                json.dump(result, f, indent=2)  # 修改
 
-        # 新增：输出详细动作到文本文件
-        txt_output_path = 'action/' + output_path.replace('.json', '_actions.txt')
-        with open(txt_output_path, 'w', encoding='utf-8') as f:
-            f.write("="*80 + "\n")
-            f.write("全局最优解 - 详细动作分析\n")
-            f.write("="*80 + "\n\n")
-            f.write(f"方法: {result['method']}\n")
-            f.write(f"总奖励: {result['total_reward']:.2f}\n")
-            f.write(f"状态: {result['status']}\n")
-            f.write(f"MIP Gap: {result['mip_gap']*100:.2f}%\n")
-            f.write(f"求解时间: {result['solve_time']:.2f}秒\n")
-            f.write(f"时间步数: {result['time_steps']}\n\n")
+            # 新增：输出详细动作到文本文件
+            txt_output_path = 'action/' + output_path.replace('.json', '_actions.txt')
+            with open(txt_output_path, 'w', encoding='utf-8') as f:
+                f.write("="*80 + "\n")
+                f.write("全局最优解 - 详细动作分析\n")
+                f.write("="*80 + "\n\n")
+                f.write(f"方法: {result['method']}\n")
+                f.write(f"总奖励: {result['total_reward']:.2f}\n")
+                f.write(f"状态: {result['status']}\n")
+                f.write(f"MIP Gap: {result['mip_gap']*100:.2f}%\n")
+                f.write(f"求解时间: {result['solve_time']:.2f}秒\n")
+                f.write(f"时间步数: {result['time_steps']}\n\n")
 
-            for t in range(used_time):
-                f.write(f"{'='*80}\n时间步 {t}\n{'='*80}\n\n")
+                for t in range(used_time):
+                    f.write(f"{'='*80}\n时间步 {t}\n{'='*80}\n\n")
 
-                # 服务订单
-                f.write("【服务订单】\n")
-                has_service = False
-                for i in range(zone_num):
-                    for j in range(zone_num):
-                        if served[t][i][j] > 0:
-                            f.write(f"  区域{i} → 区域{j}: {served[t][i][j]}辆\n")
-                            has_service = True
-                if not has_service:
-                    f.write("  无\n")
-                f.write("\n")
+                    # 服务订单
+                    f.write("【服务订单】\n")
+                    has_service = False
+                    for i in range(zone_num):
+                        for j in range(zone_num):
+                            if served[t][i][j] > 0:
+                                f.write(f"  区域{i} → 区域{j}: {served[t][i][j]}辆\n")
+                                has_service = True
+                    if not has_service:
+                        f.write("  无\n")
+                    f.write("\n")
 
-                # 调度动作
-                f.write("【调度动作】\n")
-                has_reposition = False
-                for i in range(zone_num):
-                    for j in range(zone_num):
-                        if repositioned[t][i][j] > 0:
-                            f.write(f"  区域{i} → 区域{j}: {repositioned[t][i][j]}辆\n")
-                            has_reposition = True
-                if not has_reposition:
-                    f.write("  无\n")
-                f.write("\n")
+                    # 调度动作
+                    f.write("【调度动作】\n")
+                    has_reposition = False
+                    for i in range(zone_num):
+                        for j in range(zone_num):
+                            if repositioned[t][i][j] > 0:
+                                f.write(f"  区域{i} → 区域{j}: {repositioned[t][i][j]}辆\n")
+                                has_reposition = True
+                    if not has_reposition:
+                        f.write("  无\n")
+                    f.write("\n")
 
-                # 充电动作
-                f.write("【充电动作】\n")
-                has_charging = False
-                for i in range(zone_num):
-                    if charging[t][i] > 0:
-                        f.write(f"  区域{i}: {charging[t][i]}辆\n")
-                        has_charging = True
-                if not has_charging:
-                    f.write("  无\n")
-                f.write("\n")
+                    # 充电动作
+                    f.write("【充电动作】\n")
+                    has_charging = False
+                    for i in range(zone_num):
+                        if charging[t][i] > 0:
+                            f.write(f"  区域{i}: {charging[t][i]}辆\n")
+                            has_charging = True
+                    if not has_charging:
+                        f.write("  无\n")
+                    f.write("\n")
 
-            # 统计
-            f.write("="*80 + "\n统计信息\n" + "="*80 + "\n")
-            total_served = sum(sum(sum(row) for row in step) for step in served)
-            total_reposition = sum(sum(sum(row) for row in step) for step in repositioned)
-            total_charging = sum(sum(step) for step in charging)
-            f.write(f"总服务订单数: {total_served}\n")
-            f.write(f"总调度次数: {total_reposition}\n")
-            f.write(f"总充电次数: {total_charging}\n")
-            f.write(f"平均每步充电: {total_charging/used_time:.2f}\n")
+                # 统计
+                f.write("="*80 + "\n统计信息\n" + "="*80 + "\n")
+                total_served = sum(sum(sum(row) for row in step) for step in served)
+                total_reposition = sum(sum(sum(row) for row in step) for step in repositioned)
+                total_charging = sum(sum(step) for step in charging)
+                f.write(f"总服务订单数: {total_served}\n")
+                f.write(f"总调度次数: {total_reposition}\n")
+                f.write(f"总充电次数: {total_charging}\n")
+                f.write(f"平均每步充电: {total_charging/used_time:.2f}\n")
 
-        print(f"详细动作已保存到: {txt_output_path}")
+            print(f"详细动作已保存到: {txt_output_path}")
 
         return result  # 修改
+
+    def solve_global_optimal_train_distribution(
+        self,
+        output_path="global_optimal_solution.json",
+        mip_gap=0.05,
+        time_limit=600,
+    ):
+        cfg = self._load_config()
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        data_root = os.path.normpath(os.path.join(base_dir, cfg["path"]))
+        demand_files = self._list_training_demand_files(data_root)
+        if not demand_files:
+            raise RuntimeError("未找到训练需求文件 od_demand_*.csv")
+
+        per_demand_results = []
+        for demand_csv in demand_files:
+            print(f"[TrainDist] solving {demand_csv} ...")
+            result = self.solve_global_optimal(
+                demand_csv=demand_csv,
+                output_path=output_path,
+                mip_gap=mip_gap,
+                time_limit=time_limit,
+                write_output=False,
+            )
+            per_demand_results.append({
+                "demand_csv": demand_csv,
+                "total_reward": float(result["total_reward"]),
+                "status": result["status"],
+                "mip_gap": float(result["mip_gap"]),
+                "solve_time": float(result["solve_time"]),
+            })
+
+        rewards = [item["total_reward"] for item in per_demand_results]
+        gaps = [item["mip_gap"] for item in per_demand_results]
+        solve_times = [item["solve_time"] for item in per_demand_results]
+        all_optimal = all(item["status"] == "OPTIMAL" for item in per_demand_results)
+
+        aggregated = {
+            "method": "Global Optimal MILP (Train Distribution)",
+            "reward_mode": "train_mix_expectation",
+            "demand_files": demand_files,
+            "time_steps": int(cfg["TIME_NUM"]),
+            "total_reward": float(np.mean(rewards)),
+            "reward_std": float(np.std(rewards)),
+            "status": "OPTIMAL" if all_optimal else "MIXED",
+            "mip_gap": float(np.mean(gaps)),
+            "solve_time": float(np.sum(solve_times)),
+            "per_demand_results": per_demand_results,
+        }
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(aggregated, f, indent=2)
+
+        print(f"训练分布全局最优结果已保存到: {output_path}")
+        print(f"  平均奖励: {aggregated['total_reward']:.2f} +- {aggregated['reward_std']:.2f}")
+        print(f"  状态: {aggregated['status']}")
+        print(f"  需求文件数: {len(demand_files)}")
+        return aggregated
 
     # =========2026.2.1修改，添加滚动时域优化==========
     def solve_rolling_horizon(self, demand_csv="od_demand.csv", output_path="rolling_horizon_solution.json",
@@ -700,6 +771,10 @@ if __name__ == "__main__":  # 修改
     parser.add_argument("--horizon", type=int, default=4, help="滚动时域长度")
     parser.add_argument("--mip_gap", type=float, default=0.05, help="全局求解的MIPGap")
     parser.add_argument("--time_limit", type=int, default=600, help="全局求解的时间限制(秒)")
+    parser.add_argument("--demand_mode", type=str, default="train_mix",
+                       choices=["single", "train_mix"],
+                       help="需求口径: single(单一demand_csv) 或 train_mix(od_demand_1..N均值)")
+    parser.add_argument("--demand_csv", type=str, default="od_demand.csv", help="single模式下使用的需求文件")
     args = parser.parse_args()
 
     env = gym.make("dclily")  # 修改
@@ -711,7 +786,7 @@ if __name__ == "__main__":  # 修改
         print(f"运行滚动时域优化 (horizon={args.horizon})")
         print("="*60)
         result_rolling = solver.solve_rolling_horizon(
-            demand_csv="od_demand.csv",
+            demand_csv=args.demand_csv,
             output_path="rolling_horizon_solution.json",
             horizon=args.horizon
         )
@@ -724,12 +799,19 @@ if __name__ == "__main__":  # 修改
         print("\n" + "="*60)
         print(f"运行全局优化 (MIPGap={args.mip_gap}, TimeLimit={args.time_limit}s)")
         print("="*60)
-        result_global = solver.solve_global_optimal(
-            demand_csv="od_demand.csv",
-            output_path="global_optimal_solution.json",
-            mip_gap=args.mip_gap,
-            time_limit=args.time_limit
-        )
+        if args.demand_mode == "train_mix":
+            result_global = solver.solve_global_optimal_train_distribution(
+                output_path="global_optimal_solution.json",
+                mip_gap=args.mip_gap,
+                time_limit=args.time_limit,
+            )
+        else:
+            result_global = solver.solve_global_optimal(
+                demand_csv=args.demand_csv,
+                output_path="global_optimal_solution.json",
+                mip_gap=args.mip_gap,
+                time_limit=args.time_limit
+            )
         print(f"\n全局优化结果:")
         print(f"  Total Reward: {result_global['total_reward']:.2f}")
         print(f"  Status: {result_global['status']}")
