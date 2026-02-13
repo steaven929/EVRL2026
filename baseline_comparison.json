@@ -2,29 +2,29 @@
   "executed_policies": [
     {
       "policy_name": "Random",
-      "reward_mean": 555982.6388888889,
-      "reward_std": 62082.362338137515,
-      "svc_mean": 106.59575488849387,
-      "svc_std": 11.62774628398444,
-      "rld_mean": 1.9541666666666664,
-      "rld_std": 0.3823129535399558,
-      "srd_mean": 106.59575488849387,
-      "srd_std": 11.62774628398444,
-      "avg_soc_mean": 1016.5277777777777,
-      "avg_soc_std": 177.5766911063494
+      "reward_mean": 1963195.1944444445,
+      "reward_std": 144539.3950057202,
+      "svc_mean": 99.61258742278963,
+      "svc_std": 17.849463244911586,
+      "rld_mean": 2.0249999999999995,
+      "rld_std": 0.44417526570788096,
+      "srd_mean": 99.61258742278963,
+      "srd_std": 17.849463244911586,
+      "avg_soc_mean": 1007.8703703703704,
+      "avg_soc_std": 141.59379934285852
     },
     {
       "policy_name": "Greedy",
-      "reward_mean": 470425.8055555557,
-      "reward_std": 5458.645997476987,
-      "svc_mean": 75.9077380952381,
-      "svc_std": 3.4726863351954282,
-      "rld_mean": 0.8958333333333333,
-      "rld_std": 0.12876280950302038,
-      "srd_mean": 75.9077380952381,
-      "srd_std": 3.4726863351954282,
-      "avg_soc_mean": 1397.4768518518517,
-      "avg_soc_std": 9.009924178957418
+      "reward_mean": 1618697.7777777775,
+      "reward_std": 30202.976454786636,
+      "svc_mean": 78.89880952380955,
+      "svc_std": 1.2339531215254702,
+      "rld_mean": 1.1291666666666669,
+      "rld_std": 0.09307628293203618,
+      "srd_mean": 78.89880952380955,
+      "srd_std": 1.2339531215254702,
+      "avg_soc_mean": 1429.8842592592591,
+      "avg_soc_std": 15.723353005402853
     },
     {
       "policy_name": "RL-DDPG",
@@ -43,10 +43,10 @@
   "theoretical_bounds": {
     "global_optimal": {
       "name": "Global-Optimal (MILP)",
-      "reward": 638014.831,
+      "reward": 2270544.818,
       "method": "Global Optimal MILP",
       "status": "OPTIMAL",
-      "solve_time": 8.791000127792358,
+      "solve_time": 11.191999912261963,
       "mip_gap": 0.0
     },
     "rolling_horizon": {

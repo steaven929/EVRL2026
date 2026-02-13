@@ -764,6 +764,26 @@ class dclily(gym.Env):
                 charge_budget = max(charge_budget, int(round(0.6 * total_idle)))
             charge_budget = max(0, min(charge_budget, total_idle))
 
+            # =========2026.2.13修改，添加强制充电约束（硬约束）==========
+            # 目的：确保车队SOC不会耗尽，保证策略稳定性
+            # 计算车队平均SOC
+            total_soc = sum(self.car[i][1] for i in range(self.CAR_NUM))
+            avg_soc = total_soc / self.CAR_NUM
+
+            # 强制充电约束：当平均SOC过低时，强制最低充电比例
+            if avg_soc < 1000:
+                # 平均SOC < 1000 (50%)，强制至少30%的idle车辆充电
+                min_charge_vehicles = max(3, int(total_idle * 0.3))
+                charge_budget = max(charge_budget, min_charge_vehicles)
+            elif avg_soc < 1200:
+                # 平均SOC < 1200 (60%)，强制至少20%的idle车辆充电
+                min_charge_vehicles = max(2, int(total_idle * 0.2))
+                charge_budget = max(charge_budget, min_charge_vehicles)
+
+            # 确保不超过总idle车辆数
+            charge_budget = min(charge_budget, total_idle)
+            # ======修改结束
+
             # =========2026.2.13修改，添加充电预算诊断==========
             # if self.episode_timestep <= 2:
             #     print(f"  Global ratio: {global_ratio:.3f}")
@@ -1093,9 +1113,15 @@ class dclily(gym.Env):
                                     break
                     # 🔍 打印前10辆车当前电量，用于验证是否存在低电量车
                     #print("🔋 前10辆车辆当前的电量可行驶距离：", [round(self.car[i][1], 1) for i in range(min(10, CAR_NUM))])
-                   # 【关键修改】只有没占桩（没在充电）的车，才放入 available 供 Gurobi 调度
-                    if planned_charger_id == -1:
-                        self.available[0][self.car[i][0]] += 1
+
+                    # =========2026.2.13修改，允许充电车辆参与服务==========
+                    # 原逻辑：充电车辆完全不可用（planned_charger_id != -1时不计入available）
+                    # 新逻辑：充电车辆仍可服务，减少充电的机会成本
+                    # 这样让RL更容易学习充电策略
+                    # 【关键修改】充电车辆也计入available
+                    self.available[0][self.car[i][0]] += 1  # 所有到达车辆都可用
+                    # ======修改结束
+
                     # # 原有逻辑：到达后判断下一步（注意：这通常是针对刚才完成移动的车）
                     # #处理充电逻辑，这一part有什么用？？？bug
                     # target_zone1 = self.car[i][0]
@@ -1307,10 +1333,11 @@ class dclily(gym.Env):
                 charging_count += 1
         # =========2026.2.12修改，实验19：大幅提升充电奖励==========
         # =========2026.2.13修改，进一步提升充电奖励==========
-        # 问题：充电奖励3000不足以抵消服务收入的吸引力
-        # 解决：提升到5000，使充电更有价值
-        # 即时充电奖励：每辆充电车辆+5000（从3000提升到5000）
-        charging_bonus = 5000 * charging_count
+        # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
+        # 问题：充电奖励5000仍不足以抵消服务收入的吸引力
+        # 解决：提升到15000，配合允许充电车辆服务，消除机会成本
+        # 即时充电奖励：每辆充电车辆+15000（从5000提升到15000）
+        charging_bonus = 15000 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1343,15 +1370,22 @@ class dclily(gym.Env):
         low_soc_count = 0
         for i in range(self.CAR_NUM):
             soc = self.car[i][1]
+            # =========2026.2.13修改，完整组合方案：添加指数级SOC惩罚==========
+            # 当SOC<400时，惩罚加倍（3x），强化低电量危机感
+            exponential_multiplier = 3.0 if soc < 400 else 1.0
+            # ======修改结束
+
             if soc >= 600:
                 penalty = 0
             elif soc >= 400:
                 penalty = 2.0 * penalty_scale * (600 - soc)
             elif soc >= 200:
                 penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * (400 - soc)
+                penalty *= exponential_multiplier  # 应用指数惩罚
                 low_soc_count += 1
             else:
                 penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * 200 + 50.0 * penalty_scale * (200 - soc)
+                penalty *= exponential_multiplier  # 应用指数惩罚
                 low_soc_count += 1
             soc_penalty += penalty
 
@@ -1360,6 +1394,7 @@ class dclily(gym.Env):
         # ======修改结束
 
         # =========2026.2.13修改，添加SOC维持奖励（Reward Shaping）==========
+        # =========2026.2.13修改，完整组合方案：增强SOC维持奖励==========
         # 目的：奖励保持高SOC的行为，而不仅仅是惩罚低SOC
         # 计算车队平均SOC，给予正向奖励
         total_soc = sum(self.car[i][1] for i in range(self.CAR_NUM))
@@ -1367,10 +1402,17 @@ class dclily(gym.Env):
 
         # SOC维持奖励：平均SOC越高，奖励越大
         # 目标：鼓励保持SOC在1200以上（60%）
+        # 从0.5提升到2.0，增强高SOC维持的激励
         if avg_soc >= 1200:
-            soc_maintain_bonus = (avg_soc - 1200) * 0.5  # 超过1200的部分，每点0.5奖励
+            soc_maintain_bonus = (avg_soc - 1200) * 2.0  # 超过1200的部分，每点2.0奖励（从0.5提升）
         else:
             soc_maintain_bonus = 0
+
+        # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
+        # 目的：额外奖励充电行为，确保充电策略的稳定性
+        # 充电维护奖励：每辆充电车辆额外+3000
+        # 与充电奖励(15000)叠加，总计18000/车
+        charging_maintenance_bonus = 3000 * charging_count
         # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
@@ -1384,9 +1426,11 @@ class dclily(gym.Env):
 
         # =========2026.2.12修改，实验19：充电奖励不缩放==========
         # =========2026.2.13修改，添加SOC维持奖励==========
+        # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
         # 新奖励函数：充电奖励单独计算，不除以10
         # 添加SOC维持奖励，鼓励保持高SOC
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + soc_maintain_bonus - fixed_penalty
+        # 添加充电维护奖励，进一步强化充电激励
+        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
