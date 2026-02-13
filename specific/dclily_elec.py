@@ -323,28 +323,32 @@ class dclily(gym.Env):
         #
         # 保证 car ↔ station 双向一致
         # ======================
-        
-        car_index = 0
-        
-        for zone_id in range(ZONE_NUM):
-            zone_car_cnt = int(zone_init_car[zone_id])
-            chargers = self.charging_stations[zone_id]
-            num_chargers = len(chargers)
-            
-            # 能使用的充电桩数量
-            use = min(zone_car_cnt, num_chargers)
-            
-            # ① 前 use 个车占用充电桩
-            for j in range(use):
-                charger = chargers[j]
-                charger["occupied_by"] = car_index
-                self.car[car_index][3] = charger["charger_id"]
-                car_index += 1
-            
-            # ② 剩余车辆只停在停车位，不占桩
-            for j in range(zone_car_cnt - use):
-                self.car[car_index][3] = -1
-                car_index += 1
+
+        # =========2026.2.13修改，修复初始化充电桩占用问题==========
+        # 问题：初始化时车辆占用充电桩，但已经满电，导致充电桩被长期占用
+        # 解决：所有车辆初始时都不占用充电桩，让RL自主决定何时充电
+        # car_index = 0
+        #
+        # for zone_id in range(ZONE_NUM):
+        #     zone_car_cnt = int(zone_init_car[zone_id])
+        #     chargers = self.charging_stations[zone_id]
+        #     num_chargers = len(chargers)
+        #
+        #     # 能使用的充电桩数量
+        #     use = min(zone_car_cnt, num_chargers)
+        #
+        #     # ① 前 use 个车占用充电桩
+        #     for j in range(use):
+        #         charger = chargers[j]
+        #         charger["occupied_by"] = car_index
+        #         self.car[car_index][3] = charger["charger_id"]
+        #         car_index += 1
+        #
+        #     # ② 剩余车辆只停在停车位，不占桩
+        #     for j in range(zone_car_cnt - use):
+        #         self.car[car_index][3] = -1
+        #         car_index += 1
+        # ======修改结束
         
         # ======================
         # 完成初始化
@@ -745,12 +749,26 @@ class dclily(gym.Env):
                 })
 
         total_idle = len(idle_vehicles_all)
+        # =========2026.2.13修改，添加充电诊断输出==========
+        # if self.episode_timestep <= 2:  # 只在前3步输出，避免刷屏
+        #     print(f"\n[Charging Debug t={self.episode_timestep}]")
+        #     print(f"  Idle vehicles: {total_idle}")
+        #     print(f"  Charge prefs: {pref_arr}")
+        #     print(f"  Max pref: {pref_arr.max():.3f}")
+        # ======修改结束
+
         if total_idle > 0 and float(pref_arr.max()) > 1e-6:
             global_ratio = float(np.clip(0.6 * pref_arr.max() + 0.4 * pref_arr.mean(), 0.0, 1.0))
             charge_budget = int(round(global_ratio * total_idle))
             if pref_arr.max() > 0.8:
                 charge_budget = max(charge_budget, int(round(0.6 * total_idle)))
             charge_budget = max(0, min(charge_budget, total_idle))
+
+            # =========2026.2.13修改，添加充电预算诊断==========
+            # if self.episode_timestep <= 2:
+            #     print(f"  Global ratio: {global_ratio:.3f}")
+            #     print(f"  Charge budget: {charge_budget}")
+            # ======修改结束
 
             # 优先充电低SOC车辆
             idle_vehicles_all.sort(key=lambda x: x[2])
@@ -775,7 +793,19 @@ class dclily(gym.Env):
                 self.car[vehicle_id][0] = target_charger
                 dist_to_charge = self.dist[current_zone][target_charger]
                 self.car[vehicle_id][2] = dist_to_charge
+
+                # Debug: 检查充电桩可用性
+                # if self.episode_timestep <= 2:
+                #     chargers_in_zone = self.charging_stations.get(target_charger, [])
+                #     occupied_count = sum(1 for ch in chargers_in_zone if ch["occupied_by"] is not None)
+                #     print(f"    Vehicle {vehicle_id} -> Zone {target_charger}: {len(chargers_in_zone)} chargers, {occupied_count} occupied")
+
                 self.assign_parking_slot(vehicle_id, is_charging_order=True)
+
+                # Debug: 检查分配结果
+                # if self.episode_timestep <= 2:
+                #     assigned_charger_id = self.car[vehicle_id][3]
+                #     print(f"      -> Assigned charger_id: {assigned_charger_id}")
 
                 if self.car[vehicle_id][3] != -1:
                     charging_actions[target_charger] = charging_actions.get(target_charger, 0) + 1
@@ -797,6 +827,12 @@ class dclily(gym.Env):
                     "score": float(charge_budget)
                 })
                 charged_count += 1
+        # ======修改结束
+
+        # =========2026.2.13修改，输出充电执行结果==========
+        # if self.episode_timestep <= 2:
+        #     print(f"  Charged count: {charged_count if 'charged_count' in locals() else 0}")
+        #     print(f"  Charging actions: {charging_actions}")
         # ======修改结束
 
         # 确保 available 不会变成负数
@@ -1004,14 +1040,33 @@ class dclily(gym.Env):
                 
                 # 更新电量
                 self.car[i][1] = min(BATTERY_CAPACITY, self.car[i][1] + added_energy)
-                if self.car[i][1] >= BATTERY_CAPACITY:
-                    self.car[i][1] = BATTERY_CAPACITY
-                
-                # (可选) 如果充满了，是否自动释放充电桩？
-                # if self.car[i][1] >= BATTERY_CAPACITY:
-                #    self.car[i][3] = -1  # 释放充电桩状态
+
+                # =========2026.2.13修改，优化充电释放策略==========
+                # 原策略：充满才释放（需要7步）
+                # 新策略：充到80%就释放（约5步），提高充电桩利用率
+                release_threshold = BATTERY_CAPACITY * 0.8  # 1600 SOC
+                if self.car[i][1] >= release_threshold:
+                    self.car[i][1] = min(BATTERY_CAPACITY, self.car[i][1])  # 确保不超过上限
+                    # 释放充电桩
+                    current_zone = self.car[i][0]
+                    charger_id = self.car[i][3]
+                    self.release_charger(current_zone, charger_id)
+                    self.car[i][3] = -1  # 释放充电桩状态
+                # ======修改结束
+
+            # =========2026.2.13修改，添加SOC消耗逻辑==========
+            # 车辆移动时消耗电量
             if self.car[i][2] > 0:
-                self.car[i][2] -= car_speed_min * TIME_LENGTH * con
+                # 计算本时间步实际移动的距离
+                max_distance = car_speed_min * TIME_LENGTH * con
+                actual_distance = min(self.car[i][2], max_distance)
+
+                # SOC消耗：1 SOC per unit distance（与最优解一致）
+                soc_consumed = actual_distance * 1.0
+                self.car[i][1] = max(0, self.car[i][1] - soc_consumed)
+                self.car[i][2] -= actual_distance
+                # ======修改结束
+
                 # === 车辆到达时刻 (Arrival) ===
                 if self.car[i][2] <= 0:
                     self.car[i][2] = 0
