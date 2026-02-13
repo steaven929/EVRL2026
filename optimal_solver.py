@@ -120,6 +120,12 @@ class OptimalSolver:
         y = model.addVars(car_num, used_time, zone_num, vtype=GRB.BINARY, name="y")  # 修改
         c = model.addVars(car_num, used_time, zone_num, vtype=GRB.BINARY, name="c")  # 修改
         soc = model.addVars(car_num, used_time + 1, lb=0.0, ub=cfg["BATTERY_CAPACITY"], vtype=GRB.CONTINUOUS, name="soc")  # 修改
+        # =========2026.1.30修改，最优解求解==========
+        low_soc_bin = model.addVars(car_num, used_time + 1, vtype=GRB.BINARY, name="low_soc_bin")
+        avg_soc_vars = model.addVars(used_time + 1, lb=0.0, ub=cfg["BATTERY_CAPACITY"], vtype=GRB.CONTINUOUS, name="avg_soc")
+        soc_maintain_pos = model.addVars(used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_maintain_pos")
+        soc_maintain_on = model.addVars(used_time + 1, vtype=GRB.BINARY, name="soc_maintain_on")
+        # ======修改结束
 
         # =========2026.2.2修改，新目标函数==========
         # 1. 服务订单收益
@@ -140,62 +146,71 @@ class OptimalSolver:
             for j in range(zone_num)
         )
 
-        # =========2026.2.12修改，实验19：提升充电奖励信号==========
-        # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # 3. 充电加分（充电奖励15000 + 维护奖励3000 = 18000）
+        # 3. 充电加分（与RL一致：15000 + 3000 = 18000）
         charging_bonus = gp.quicksum(
             18000 * c[v, t, i]  # 从5000提升到18000，与RL环境完整组合方案一致
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)
         )
-        # ======修改结束
 
-        # =========2026.2.13修改，完整组合方案：添加指数级SOC惩罚==========
-        # 4. 低电量惩罚：SOC<400时惩罚3倍
+        # =========2026.1.30修改，最优解求解==========
+        # 4. 低电量惩罚：与RL一致（分段惩罚 + SOC<400指数惩罚）
+        rl_epoch = int(cfg.get("train_eps", 0))
+        if rl_epoch < 300:
+            penalty_scale = 1.5
+            vehicle_penalty = 750.0
+        elif rl_epoch < 600:
+            progress = (rl_epoch - 300) / 300.0
+            penalty_scale = 1.5 - 0.3 * progress
+            vehicle_penalty = 750.0 - 150.0 * progress
+        else:
+            penalty_scale = 1.2
+            vehicle_penalty = 600.0
+
         soc_penalty_vars = model.addVars(car_num, used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_penalty")
 
         for v in range(car_num):
             for t in range(used_time + 1):
-                # SOC >= 600: penalty = 0
-                # 600 > SOC >= 400: penalty = 2.0 * (600 - soc)
-                model.addConstr(soc_penalty_vars[v, t] >= 2.0 * (600 - soc[v, t]))
-                # 400 > SOC >= 200: penalty = 3 * [2.0*200 + 10.0*(400-soc)] = 1200 + 30.0*(400-soc)
-                model.addConstr(soc_penalty_vars[v, t] >= 1200 + 30.0 * (400 - soc[v, t]))
-                # SOC < 200: penalty = 3 * [2.0*200 + 10.0*200 + 50.0*(200-soc)] = 3600 + 150.0*(200-soc)
-                model.addConstr(soc_penalty_vars[v, t] >= 3600 + 150.0 * (200 - soc[v, t]))
+                model.addConstr(soc_penalty_vars[v, t] >= 2.0 * penalty_scale * (600 - soc[v, t]))
+                model.addConstr(
+                    soc_penalty_vars[v, t] >= 3.0 * (2.0 * penalty_scale * 200 + 10.0 * penalty_scale * (400 - soc[v, t]))
+                )
+                model.addConstr(
+                    soc_penalty_vars[v, t] >= 3.0 * (
+                        2.0 * penalty_scale * 200 + 10.0 * penalty_scale * 200 + 50.0 * penalty_scale * (200 - soc[v, t])
+                    )
+                )
+
+                big_m = float(cfg["BATTERY_CAPACITY"])
+                eps = 1e-3
+                model.addConstr(soc[v, t] <= 400 + big_m * (1 - low_soc_bin[v, t]))
+                model.addConstr(soc[v, t] >= 400 + eps - big_m * low_soc_bin[v, t])
 
         soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(used_time + 1))
+        low_soc_vehicle_penalty = gp.quicksum(vehicle_penalty * low_soc_bin[v, t] for v in range(car_num) for t in range(used_time + 1))
+
+        # 5. SOC维持奖励：与RL一致（平均SOC>1200给予线性奖励）
+        soc_bonus_big_m = max(1.0, float(cfg["BATTERY_CAPACITY"] - 1200))
+        for t in range(used_time + 1):
+            model.addConstr(avg_soc_vars[t] == gp.quicksum(soc[v, t] for v in range(car_num)) / car_num)
+            model.addConstr(soc_maintain_pos[t] >= avg_soc_vars[t] - 1200)
+            model.addConstr(soc_maintain_pos[t] <= avg_soc_vars[t] - 1200 + soc_bonus_big_m * (1 - soc_maintain_on[t]))
+            model.addConstr(soc_maintain_pos[t] <= soc_bonus_big_m * soc_maintain_on[t])
+        soc_maintain_bonus = gp.quicksum(2.0 * soc_maintain_pos[t] for t in range(used_time + 1))
         # ======修改结束
 
-        # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
-        # 5. SOC维持奖励：暂时禁用以调试模型可行性
-        # avg_soc_vars = model.addVars(used_time + 1, lb=0.0, ub=cfg["BATTERY_CAPACITY"], vtype=GRB.CONTINUOUS, name="avg_soc")
-        # for t in range(used_time + 1):
-        #     model.addConstr(avg_soc_vars[t] == gp.quicksum(soc[v, t] for v in range(car_num)) / car_num)
-        #
-        # soc_maintain_bonus_vars = model.addVars(used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_maintain_bonus")
-        # for t in range(used_time + 1):
-        #     model.addConstr(soc_maintain_bonus_vars[t] >= 2.0 * (avg_soc_vars[t] - 1200))
-        #     model.addConstr(soc_maintain_bonus_vars[t] >= 0)
-        #
-        # soc_maintain_bonus = gp.quicksum(soc_maintain_bonus_vars[t] for t in range(used_time + 1))
-        soc_maintain_bonus = 0  # 暂时设为0
-        # ======修改结束
-
-        # =========2026.2.5修改，实验2：同步RL移除固定惩罚==========
-        # 6. 固定惩罚（移除以与RL保持一致）
+        # 6. 固定惩罚（与RL一致：移除）
         fixed_penalty = 0  # 原500 * used_time改为0
-        # ======修改结束
 
-        # =========2026.2.12修改，实验19：充电奖励不参与缩放==========
-        # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
-        # 新目标函数（充电奖励不除以10，添加SOC维持奖励和充电维护奖励）
+        # 7. 新目标函数：与RL一步奖励结构保持一致
         model.setObjective(
-            (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus + soc_maintain_bonus - fixed_penalty,
+            (service_revenue - dispatch_cost - soc_penalty - low_soc_vehicle_penalty) / 10
+            + charging_bonus
+            + soc_maintain_bonus
+            - fixed_penalty,
             GRB.MAXIMIZE
         )
-        # ======修改结束
 
         for v in range(car_num):  # 修改
             for i in range(zone_num):  # 修改

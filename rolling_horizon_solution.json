@@ -3,8 +3,8 @@
   "horizon": 4,
   "time_steps": 12,
   "total_reward": 57748.009999999995,
-  "avg_solve_time_per_step": 2.6717499693234763,
-  "total_solve_time": 32.060999631881714,
+  "avg_solve_time_per_step": 2.9022499521573386,
+  "total_solve_time": 34.82699942588806,
   "served_orders": [
     [
       [
