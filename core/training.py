@@ -59,7 +59,8 @@ def encode_custom_action(zone_to_counts, zone_from_counts=None, charge_pref=None
 
 def train(cfg, env, agent):
     print("开始训练！")
-    ou_noise = OUNoise(env.action_space)  # 动作噪声
+    is_sac = str(cfg.get('algo_name', '')).upper() == 'SAC'
+    ou_noise = None if is_sac else OUNoise(env.action_space)  # SAC不叠加OU噪声
     rewards = [] # 记录所有回合的奖励
     critic1_losses, critic2_losses, actor_losses = [], [], []
     q_values, target_q_values = [], []  # 修改：记录Q值和目标Q值用于诊断
@@ -82,7 +83,8 @@ def train(cfg, env, agent):
             exploration_actions_saved = True
         # ======修改结束
         state = env.reset()
-        ou_noise.reset()
+        if ou_noise is not None:
+            ou_noise.reset()
         ep_reward = 0
         current_ep_battery_log = []  # 修改：每个episode初始化当前episode的电池日志  # 修改
 
@@ -93,11 +95,12 @@ def train(cfg, env, agent):
             zone_to_counts = [5, 5, 4, 4]  # zone 0 ~ 3
             # 出发区域可以不指定，默认为均匀
             #action = encode_custom_action(zone_to_counts)  #0723修改，用来自定义action 来测试
-            action = ou_noise.get_action(action, i_step+1)
+            if ou_noise is not None:
+                action = ou_noise.get_action(action, i_step+1)
 
             # =========2026.2.7修改，方案D2：充电维度噪声增强==========
             # 前20轮训练，对充电维度 [8:12] 添加额外噪声
-            if i_ep < 20:
+            if (not is_sac) and i_ep < 20:
                 charging_noise = np.random.uniform(-0.3, 0.3, size=4)
                 action[8:12] = np.clip(action[8:12] + charging_noise, 0, 1)
             # ======修改结束

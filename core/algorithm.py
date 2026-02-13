@@ -575,6 +575,7 @@ class SAC:
             target_q2 = self.target_critic2(next_state, next_action)
             target_q = torch.min(target_q1, target_q2) - self.alpha * next_log_prob
             target_q = reward + (1 - done) * self.gamma * target_q
+            target_q = torch.clamp(target_q, -1e6, 1e6)
 
         current_q1 = self.critic1(state, action)
         current_q2 = self.critic2(state, action)
@@ -584,10 +585,12 @@ class SAC:
 
         self.critic1_optimizer.zero_grad()
         critic1_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), max_norm=1.0)
         self.critic1_optimizer.step()
 
         self.critic2_optimizer.zero_grad()
         critic2_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), max_norm=1.0)
         self.critic2_optimizer.step()
 
         # 更新Actor
@@ -600,6 +603,7 @@ class SAC:
 
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
         self.actor_optimizer.step()
 
         # 更新温度参数α
