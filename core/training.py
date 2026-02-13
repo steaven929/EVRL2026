@@ -134,7 +134,8 @@ def train(cfg, env, agent):
         rewards.append(ep_reward)
 
         # =========2026.2.13添加：每个episode后更新学习率==========
-        agent.step_schedulers()
+        if hasattr(agent, 'step_schedulers'):
+            agent.step_schedulers()
         # ======添加结束
 
         battery_log.extend(current_ep_battery_log)  # 修改：将当前episode的电池数据追加到总列表  # 修改
