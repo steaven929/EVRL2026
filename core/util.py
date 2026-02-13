@@ -21,9 +21,9 @@ def get_args():
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
-    parser.add_argument('--critic_lr',default=5e-5,type=float,help="learning rate of critic")  #critic学习率
+    parser.add_argument('--critic_lr',default=3e-5,type=float,help="learning rate of critic")  #critic学习率
     parser.add_argument('--actor_lr',default=2e-5,type=float,help="learning rate of actor")  #actor学习率  # 实验16：优化方案A，保持2e-5
-    parser.add_argument('--memory_capacity',default=16000,type=int,help="memory capacity")  #经验池容量
+    parser.add_argument('--memory_capacity',default=64000,type=int,help="memory capacity")  #经验池容量
     parser.add_argument('--batch_size',default=128,type=int)  #批量学习数  # 修改
     parser.add_argument('--target_update',default=2,type=int)  #目标网络更新频率
     parser.add_argument('--tau',default=5e-4,type=float)  #软更新参数
@@ -31,8 +31,11 @@ def get_args():
     parser.add_argument('--actor_hidden_dim',default=256,type=int)   #actor的dense层神经元  # 实验18：恢复256
     parser.add_argument('--critic_embed_dim',default=8,type=int)  #critic的embedding层  # 实验18：恢复8
     parser.add_argument('--actor_embed_dim',default=8,type=int)  #actor层的embedding层  # 实验18：恢复8
-    parser.add_argument('--sac_alpha',default=0.5,type=float,help="SAC initial temperature")  #SAC温度参数  # 实验16：优化方案A，保持0.5
-    parser.add_argument('--sac_alpha_lr',default=3e-4,type=float,help="SAC alpha learning rate")  #SAC alpha学习率  # 实验16：恢复默认3e-4
+    parser.add_argument('--sac_alpha',default=0.2,type=float,help="SAC initial temperature")  #SAC温度参数
+    parser.add_argument('--sac_alpha_lr',default=1e-4,type=float,help="SAC alpha learning rate")  #SAC alpha学习率
+    parser.add_argument('--reward_scale',default=1000.0,type=float,help="reward scaling factor for SAC/DDPG updates")
+    parser.add_argument('--eval_every',default=20,type=int,help="run deterministic eval every N episodes during training")
+    parser.add_argument('--eval_eps',default=3,type=int,help="number of episodes per periodic eval")
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
