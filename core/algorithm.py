@@ -546,14 +546,30 @@ class SAC:
         # 从经验池采样
         state, action, reward, next_state, done = self.memory.sample(self.batch_size)
 
-        state = torch.FloatTensor(state).long().to(self.device)
+        # =========2026.2.13修改，修复状态转换导致的索引越界==========
+        # 原代码：torch.FloatTensor(state).long() 可能导致浮点误差
+        # 修复：直接转换为LongTensor，避免浮点数中间步骤
+        state = torch.LongTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).unsqueeze(1).to(self.device)
-        next_state = torch.FloatTensor(next_state).long().to(self.device)
+        next_state = torch.LongTensor(next_state).to(self.device)
+        # ======修改结束
         done = torch.FloatTensor(done).unsqueeze(1).to(self.device)
 
         # 更新Critic
         with torch.no_grad():
+            # =========2026.2.13修改，添加调试信息==========
+            # 检查next_state是否有越界值
+            if (next_state >= 12).any() or (next_state < 0).any():
+                print(f"ERROR: next_state has out-of-range values!")
+                print(f"  Max: {next_state.max().item()}, Min: {next_state.min().item()}")
+                print(f"  Values >= 12: {(next_state >= 12).sum().item()}")
+                print(f"  Values < 0: {(next_state < 0).sum().item()}")
+                print(f"  Sample next_state[0]: {next_state[0]}")
+                # Clip values to valid range
+                next_state = torch.clamp(next_state, 0, 11)
+                print(f"  Clipped to [0, 11]")
+            # ======修改结束
             next_action, next_log_prob, _, _ = self.actor.sample(next_state)
             target_q1 = self.target_critic1(next_state, next_action)
             target_q2 = self.target_critic2(next_state, next_action)

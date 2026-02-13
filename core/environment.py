@@ -59,11 +59,14 @@ def env_agent_config(cfg):
     # 根据算法名称选择不同的agent
     if cfg['algo_name'] == 'SAC':
         memory = ReplayBuffer(cfg['memory_capacity'])
+        # =========2026.2.13修改，增加vocab_size以支持时间步特征==========
+        # 时间步特征范围0-11（TIME_NUM=12），需要vocab_size>=12
         agent = SAC(
             n_states=n_states,
             n_actions=n_actions,
             memory=memory,
-            vocab_size=10,
+            vocab_size=12,  # 从10增加到12，支持时间步特征（0-11）
+            # ======修改结束
             embedding_dims=cfg['actor_embed_dim'],
             hidden_dim=cfg['actor_hidden_dim'],
             use_dual_head=cfg.get('use_dual_head', False),  # 是否使用双头架构

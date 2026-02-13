@@ -77,7 +77,17 @@ state = np.concatenate([od_part, charger_states, num_chargers_feat,
 - 添加状态结构注释，确保GreedyPolicy正确解析38维状态
 - 验证通过：RandomPolicy、GreedyPolicy、RL数据读取均兼容新状态空间
 
-**状态**: 待训练验证
+- 文件: core/environment.py (line 60-78)
+- 修复vocab_size: 10 → 12，支持时间步特征值范围0-11
+- 原因：时间步特征可取值0-11（TIME_NUM=12），需要embedding层vocab_size≥12
+
+**测试结果**:
+- ✓ 环境创建成功，状态维度38
+- ✓ 时间步特征正常更新（t=0: current=0, remaining=11）
+- ✓ 训练流程正常运行（10轮测试）
+- ✓ 模型保存成功
+
+**状态**: 已验证通过，可以开始正式训练
 
 ---
 

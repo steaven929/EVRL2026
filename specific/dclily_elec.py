@@ -458,8 +458,9 @@ class dclily(gym.Env):
 
         # =========2026.2.13修改，状态空间增强：添加时间步信息==========
         # 5) 时间步特征（新增）
-        current_timestep = np.array([self.episode_timestep], dtype=np.int64)  # 当前时间步 (0-11)
-        remaining_timesteps = np.array([TIME_NUM - self.episode_timestep - 1], dtype=np.int64)  # 剩余时间步 (11-0)
+        # 修复：确保时间步值在有效范围[0, TIME_NUM-1]内
+        current_timestep = np.array([min(self.episode_timestep, TIME_NUM - 1)], dtype=np.int64)  # 当前时间步 (0-11)
+        remaining_timesteps = np.array([max(0, TIME_NUM - self.episode_timestep - 1)], dtype=np.int64)  # 剩余时间步 (11-0)
         # ======修改结束
 
         # 6) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC, TIMESTEP, REMAINING] * (TIME_SLICE*ZONE_NUM + ZONE_NUM + 2)
