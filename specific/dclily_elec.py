@@ -53,6 +53,10 @@ manzu_min = config['manzu_min']
 diaodu_min = config['diaodu_min']
 elec_min = config['elec_min']
 BATTERY_CAPACITY = config['BATTERY_CAPACITY']
+# =========2026.2.13修改，奖励系数重标定（与最优解同步）==========
+CHARGE_BONUS_PER_CAR = 1500
+CHARGE_MAINTENANCE_PER_CAR = 300
+# ======修改结束
 path = config['path']
 training_set_number = config['training_set_number']
 CHARGER_STATES = config['CHARGER_STATES']  # 充电区域
@@ -500,6 +504,22 @@ class dclily(gym.Env):
         """标准 Sigmoid 激活"""
         return 1.0 / (1.0 + math.exp(-x))
 
+    def _cancel_bidirectional_dispatch(self, matrix):
+        """对调度矩阵做双向净流抵消，避免同一时片 i->j 与 j->i 同时存在。"""
+        net_matrix = np.array(matrix, copy=True, dtype=float)
+        for i in range(self.ZONE_NUM):
+            net_matrix[i][i] = 0
+        for i in range(self.ZONE_NUM):
+            for j in range(i + 1, self.ZONE_NUM):
+                net = net_matrix[i][j] - net_matrix[j][i]
+                if net >= 0:
+                    net_matrix[i][j] = net
+                    net_matrix[j][i] = 0
+                else:
+                    net_matrix[i][j] = 0
+                    net_matrix[j][i] = -net
+        return net_matrix
+
     def rl_should_charge(self, vehicle_id, charge_pref):
         """
         [已废弃 - 2026.2.6方案C] 使用 RL 输出来决定是否充电（替换固定阈值法）
@@ -764,21 +784,25 @@ class dclily(gym.Env):
                 charge_budget = max(charge_budget, int(round(0.6 * total_idle)))
             charge_budget = max(0, min(charge_budget, total_idle))
 
-            # =========2026.2.13修改，添加强制充电约束（硬约束）==========
-            # 目的：确保车队SOC不会耗尽，保证策略稳定性
+            # =========2026.2.13修改，充电约束软化 + 服务侧保留预算==========
+            # 目的：避免强制充电挤占服务车辆，减少“有需求但无服务”
             # 计算车队平均SOC
             total_soc = sum(self.car[i][1] for i in range(self.CAR_NUM))
             avg_soc = total_soc / self.CAR_NUM
 
-            # 强制充电约束：当平均SOC过低时，强制最低充电比例
-            if avg_soc < 1000:
-                # 平均SOC < 1000 (50%)，强制至少30%的idle车辆充电
-                min_charge_vehicles = max(3, int(total_idle * 0.3))
+            # 弱化强制充电：仅在SOC很低时给最小充电下限
+            if avg_soc < 900:
+                min_charge_vehicles = max(1, int(total_idle * 0.10))
                 charge_budget = max(charge_budget, min_charge_vehicles)
-            elif avg_soc < 1200:
-                # 平均SOC < 1200 (60%)，强制至少20%的idle车辆充电
-                min_charge_vehicles = max(2, int(total_idle * 0.2))
+            elif avg_soc < 1100:
+                min_charge_vehicles = max(1, int(total_idle * 0.05))
                 charge_budget = max(charge_budget, min_charge_vehicles)
+
+            # 服务保留预算：按当前需求保留可调度车辆，避免充电吞噬供给
+            current_demand = int(np.sum(self.od_demand_now[0])) if self.od_demand_now.size > 0 else 0
+            reserve_for_service = min(total_idle, max(2, int(round(0.35 * current_demand))))
+            max_charge_budget = max(0, total_idle - reserve_for_service)
+            charge_budget = min(charge_budget, max_charge_budget)
 
             # 确保不超过总idle车辆数
             charge_budget = min(charge_budget, total_idle)
@@ -1169,9 +1193,11 @@ class dclily(gym.Env):
             # 上面那个是TRE的
             # =========2026.2.12修改，方案F2：避免 int 截断导致后期全零==========
             available_now = max(0, int(dispatchable_available[i]))
-            raw_limit = available_now * float(action[i])
+            # 对发车倾向做平滑放大，降低中低值动作被整型截断为0的概率
+            raw_limit = available_now * math.sqrt(max(0.0, float(action[i])))
             limit_now = int(round(raw_limit))
-            if available_now > 0 and float(action[i]) > 0.5:
+            current_out_demand = int(np.sum(self.od_demand_now[0][i]))
+            if available_now > 0 and current_out_demand > 0 and float(action[i]) > 0.15:
                 limit_now = max(1, limit_now)
             limit_now = max(0, min(limit_now, available_now))
             # ======修改结束
@@ -1226,6 +1252,10 @@ class dclily(gym.Env):
         
         prev_car = copy.deepcopy(self.car)  #对比solveproblem 前后的状态，识别哪些订单是这一轮新产生的
         
+        # =========2026.2.13修改，调度前执行双向对调净流抵消==========
+        action_table_true = self._cancel_bidirectional_dispatch(action_table_true)
+        # ======修改结束
+
         self.car, self.available, self.car_mem, reward, real_reward, rel_dispatch = gur.solveproblem(self.dist, self.available,
                                                                                             action_table_true, self.car,
                                                                                             reward, -diaodu_min,
@@ -1331,13 +1361,8 @@ class dclily(gym.Env):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # =========2026.2.12修改，实验19：大幅提升充电奖励==========
-        # =========2026.2.13修改，进一步提升充电奖励==========
-        # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # 问题：充电奖励5000仍不足以抵消服务收入的吸引力
-        # 解决：提升到15000，配合允许充电车辆服务，消除机会成本
-        # 即时充电奖励：每辆充电车辆+15000（从5000提升到15000）
-        charging_bonus = 15000 * charging_count
+        # =========2026.2.13修改，奖励重标定：降低过强充电偏置==========
+        charging_bonus = CHARGE_BONUS_PER_CAR * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1410,9 +1435,8 @@ class dclily(gym.Env):
 
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
         # 目的：额外奖励充电行为，确保充电策略的稳定性
-        # 充电维护奖励：每辆充电车辆额外+3000
-        # 与充电奖励(15000)叠加，总计18000/车
-        charging_maintenance_bonus = 3000 * charging_count
+        # 充电维护奖励：每辆充电车辆额外+300
+        charging_maintenance_bonus = CHARGE_MAINTENANCE_PER_CAR * charging_count
         # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
@@ -1455,37 +1479,41 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            # =========2026.2.12修改，方案F4：终止步奖励与中间步完全一致==========
-            charging_bonus = 3000 * charging_count
+            # =========2026.2.13修改，终止步奖励与中间步完全一致==========
+            charging_bonus = CHARGE_BONUS_PER_CAR * charging_count
+            charging_maintenance_bonus = CHARGE_MAINTENANCE_PER_CAR * charging_count
             # ======修改结束
 
-            # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
+            # =========2026.2.13修改，终止时惩罚策略与中间步对齐==========
             epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
 
-            if epoch < 200:
-                penalty_scale = 1.0
-                vehicle_penalty = 500
-            elif epoch < 400:
-                progress = (epoch - 200) / 200
-                penalty_scale = 1.0 - 0.25 * progress
-                vehicle_penalty = 500 - 125 * progress
+            if epoch < 300:
+                penalty_scale = 1.5
+                vehicle_penalty = 750
+            elif epoch < 600:
+                progress = (epoch - 300) / 300
+                penalty_scale = 1.5 - 0.3 * progress
+                vehicle_penalty = 750 - 150 * progress
             else:
-                penalty_scale = 0.75
-                vehicle_penalty = 375
+                penalty_scale = 1.2
+                vehicle_penalty = 600
 
             soc_penalty = 0
             low_soc_count = 0
             for i in range(self.CAR_NUM):
                 soc = self.car[i][1]
+                exponential_multiplier = 3.0 if soc < 400 else 1.0
                 if soc >= 600:
                     penalty = 0
                 elif soc >= 400:
                     penalty = 2.0 * penalty_scale * (600 - soc)
                 elif soc >= 200:
                     penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * (400 - soc)
+                    penalty *= exponential_multiplier
                     low_soc_count += 1
                 else:
                     penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * 200 + 50.0 * penalty_scale * (200 - soc)
+                    penalty *= exponential_multiplier
                     low_soc_count += 1
                 soc_penalty += penalty
 
@@ -1495,7 +1523,11 @@ class dclily(gym.Env):
 
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
             fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty
+            total_soc = sum(self.car[i][1] for i in range(self.CAR_NUM))
+            avg_soc = total_soc / self.CAR_NUM
+            soc_maintain_bonus = (avg_soc - 1200) * 2.0 if avg_soc >= 1200 else 0
+
+            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty
             # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info

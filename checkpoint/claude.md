@@ -290,3 +290,57 @@ state = np.concatenate([od_part, charger_states, num_chargers_feat,
 - ✅ 实验6：混合策略（中等惩罚 + 高充电奖励）
 - 备选方案A：回到实验4参数，仅提升充电奖励到3000-5000
 - 备选方案B：分阶段训练（前期高惩罚，后期降低）
+
+---
+
+## 实验22：动作-需求对齐优化 + 最优解同步（2026-02-13）
+
+**目标**:
+- 缓解“OD需求存在但服务订单为0”的时间片
+- 降低过强充电偏置对调度/服务的挤压
+- 使 `optimal_solver.py` 与环境奖励口径同步
+
+**核心修改**:
+- 文件: `specific/dclily_elec.py`
+  - 充电奖励重标定：`15000+3000 -> 1500+300`
+  - 充电预算逻辑软化：
+    - 强制充电阈值从重约束改为轻约束（仅低SOC时启用）
+    - 按当前需求预留服务车辆预算，限制最大可充电车辆数
+  - 发车映射优化：
+    - `raw_limit = available * action` 改为 `available * sqrt(action)`
+    - 在有出发需求且 `action>0.15` 时提供最小发车保底
+  - 终止步奖励公式与中间步完全对齐（含SOC维持奖励/指数SOC惩罚）
+
+- 文件: `optimal_solver.py`
+  - 全局/滚动时域求解的充电奖励系数同步为 `1500+300`
+  - Rolling Horizon 的目标函数改为与环境一致：
+    - `(service - soc_penalty - dispatch_cost)/10 + charging_bonus - fixed_penalty`
+  - SOC惩罚分段系数同步至环境口径
+  - 说明：SOC维持奖励暂不纳入MILP，避免引入非有界奖励变量
+
+**验证**:
+- `python -m py_compile specific/dclily_elec.py optimal_solver.py` 通过
+- `python optimal_solver.py --method global --mip_gap 0.1 --time_limit 30` 通过（生成 `action/global_optimal_solution_actions.txt`）
+- `python main.py --train_eps 1 --test_eps 1` 冒烟通过
+
+---
+
+## 实验23：调度对调抑制（2026-02-13）
+
+**问题**:
+- 同一时间片出现 `i->j` 与 `j->i` 双向对调，净效果接近0但产生额外调度成本。
+
+**改动**:
+- 文件: `specific/dclily_elec.py`
+  - 新增 `_cancel_bidirectional_dispatch(matrix)`：对每一对区域做净流抵消（antisym），仅保留净方向。
+  - 在第一次调度 `solveproblem` 前，对 `action_table_true` 先执行净流抵消，避免把对调意图送入优化器。
+
+- 文件: `specific/optim.py`
+  - 在调度阶段（`re < 0`）新增对调软惩罚：
+    - 新增 `swap_overlap(i,j)` 变量，约束 `swap_overlap <= zone_assignment[i][j]` 与 `swap_overlap <= zone_assignment[j][i]`
+    - 目标函数增加 `- swap_penalty * sum(swap_overlap)`（当前 `swap_penalty = 3.0`）
+  - 作用：进一步压制优化器内部残余对调流。
+
+**验证**:
+- `python -m py_compile specific/dclily_elec.py specific/optim.py` 通过
+- `python main.py --train_eps 1 --test_eps 1` 冒烟通过

@@ -26,6 +26,11 @@ import math  # 修改
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# =========2026.2.13修改，奖励系数重标定（与环境同步）==========
+CHARGE_BONUS_PER_CAR = 1500
+CHARGE_MAINTENANCE_PER_CAR = 300
+# ======修改结束
+
 register(
     id='dclily',
     entry_point='specific.dclily_elec:dclily',
@@ -140,11 +145,10 @@ class OptimalSolver:
             for j in range(zone_num)
         )
 
-        # =========2026.2.12修改，实验19：提升充电奖励信号==========
-        # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # 3. 充电加分（充电奖励15000 + 维护奖励3000 = 18000）
+        # =========2026.2.13修改，奖励重标定：与环境口径一致==========
+        # 3. 充电加分（充电奖励1500 + 维护奖励300 = 1800）
         charging_bonus = gp.quicksum(
-            18000 * c[v, t, i]  # 从5000提升到18000，与RL环境完整组合方案一致
+            (CHARGE_BONUS_PER_CAR + CHARGE_MAINTENANCE_PER_CAR) * c[v, t, i]
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)
@@ -168,19 +172,8 @@ class OptimalSolver:
         soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(used_time + 1))
         # ======修改结束
 
-        # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
-        # 5. SOC维持奖励：暂时禁用以调试模型可行性
-        # avg_soc_vars = model.addVars(used_time + 1, lb=0.0, ub=cfg["BATTERY_CAPACITY"], vtype=GRB.CONTINUOUS, name="avg_soc")
-        # for t in range(used_time + 1):
-        #     model.addConstr(avg_soc_vars[t] == gp.quicksum(soc[v, t] for v in range(car_num)) / car_num)
-        #
-        # soc_maintain_bonus_vars = model.addVars(used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_maintain_bonus")
-        # for t in range(used_time + 1):
-        #     model.addConstr(soc_maintain_bonus_vars[t] >= 2.0 * (avg_soc_vars[t] - 1200))
-        #     model.addConstr(soc_maintain_bonus_vars[t] >= 0)
-        #
-        # soc_maintain_bonus = gp.quicksum(soc_maintain_bonus_vars[t] for t in range(used_time + 1))
-        soc_maintain_bonus = 0  # 暂时设为0
+        # =========2026.2.13修改，SOC维持奖励暂不纳入MILP（避免引入非有界奖励变量）==========
+        soc_maintain_bonus = 0
         # ======修改结束
 
         # =========2026.2.5修改，实验2：同步RL移除固定惩罚==========
@@ -443,33 +436,37 @@ class OptimalSolver:
                 for j in range(zone_num)
             )
 
-            # =========2026.2.5修改，实验2：Rolling Horizon同步充电奖励==========
-            # 3. 充电加分（从50提升到500，与RL保持一致）
+            # =========2026.2.13修改，Rolling Horizon奖励口径同步==========
+            # 3. 充电加分（充电奖励1500 + 维护奖励300）
             charging_bonus = gp.quicksum(
-                500 * c[v, t, i]  # 原50改为500
+                (CHARGE_BONUS_PER_CAR + CHARGE_MAINTENANCE_PER_CAR) * c[v, t, i]
                 for v in range(car_num)
                 for t in range(actual_horizon)
                 for i in range(zone_num)
             )
             # ======修改结束
 
-            # 4. 低电量惩罚
+            # 4. 低电量惩罚（与环境保持一致）
             soc_penalty_vars = model.addVars(car_num, actual_horizon + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_penalty")
             for v in range(car_num):
                 for t in range(actual_horizon + 1):
-                    model.addConstr(soc_penalty_vars[v, t] >= 0.5 * (600 - soc[v, t]))
-                    model.addConstr(soc_penalty_vars[v, t] >= 900 - 4.5 * soc[v, t])
+                    model.addConstr(soc_penalty_vars[v, t] >= 2.0 * (600 - soc[v, t]))
+                    model.addConstr(soc_penalty_vars[v, t] >= 1200 + 30.0 * (400 - soc[v, t]))
+                    model.addConstr(soc_penalty_vars[v, t] >= 3600 + 150.0 * (200 - soc[v, t]))
 
             soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(actual_horizon + 1))
 
+            # 5. SOC维持奖励暂不纳入Rolling Horizon，保持模型稳定
+            soc_maintain_bonus = 0
+
             # =========2026.2.5修改，实验2：Rolling Horizon移除固定惩罚==========
-            # 5. 固定惩罚（移除以与RL保持一致）
+            # 6. 固定惩罚（移除以与RL保持一致）
             fixed_penalty = 0  # 原500 * actual_horizon改为0
             # ======修改结束
 
-            # 新目标函数（添加缩放因子/10）
+            # 新目标函数（与环境一致：服务/惩罚缩放，充电与SOC维持不缩放）
             model.setObjective(
-                (service_revenue + charging_bonus - soc_penalty - dispatch_cost) / 10 - fixed_penalty,
+                (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus + soc_maintain_bonus - fixed_penalty,
                 GRB.MAXIMIZE
             )
             # ======修改结束

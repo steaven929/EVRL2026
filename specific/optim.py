@@ -16,6 +16,7 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     x = len(available)
     m = len(car)
     real_reward_back = np.array([0] * x)
+    swap_penalty = 3.0 if re < 0 else 0.0
     
     # 创建问题实例
     model = gp.Model("Vehicle_Assignment")
@@ -29,6 +30,11 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     zone_assignment = [[model.addVar(lb=0, vtype=GRB.INTEGER, name=f'zone_assignment_{i}_{j}') for j in range(x)] for i
                        in range(x)]
     available_assignment = [model.addVar(lb=0, vtype=GRB.INTEGER, name=f'zone_assignment_{i}') for i in range(x)]
+    swap_overlap = {}
+    if swap_penalty > 0:
+        for i in range(x):
+            for j in range(i + 1, x):
+                swap_overlap[(i, j)] = model.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f'swap_overlap_{i}_{j}')
     # 更新模型以添加变量
     model.update()
     
@@ -41,6 +47,7 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     
     # 目标函数修改：在原有收益 car_mem[i][2] 的基础上，减去 SOC 惩罚项
     # 逻辑：如果 SOC < 600，系数变为 (原有价值 - 巨大的惩罚)，优化器为了求最大值，就会自动把该车辆的 assignment 置为 0
+    overlap_penalty_term = gp.quicksum(swap_overlap[key] for key in swap_overlap) if swap_overlap else 0
     model.setObjective(
         gp.quicksum(
             car_assignment[i][j] * (
@@ -50,7 +57,7 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
             )
             for i in range(m) for j in range(x)
         ) + gp.quicksum(
-            zone_assignment[i][j] for i in range(x) for j in range(x) if i != j),
+            zone_assignment[i][j] for i in range(x) for j in range(x) if i != j) - swap_penalty * overlap_penalty_term,
         GRB.MAXIMIZE
     )
     # ================= 修改结束 =================
@@ -87,6 +94,12 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
                     zone_assignment[i][j] ==
                     gp.quicksum(car_assignment[kk][j] for kk in range(m) if car[kk][0] == i)
                 )
+
+    if swap_penalty > 0:
+        for i in range(x):
+            for j in range(i + 1, x):
+                model.addConstr(swap_overlap[(i, j)] <= zone_assignment[i][j])
+                model.addConstr(swap_overlap[(i, j)] <= zone_assignment[j][i])
     
     # 求解问题
     model.optimize()
