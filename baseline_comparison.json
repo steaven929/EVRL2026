@@ -2,29 +2,29 @@
   "executed_policies": [
     {
       "policy_name": "Random",
-      "reward_mean": 2022143.9166666667,
-      "reward_std": 181440.2913556028,
-      "svc_mean": 93.1676200127487,
-      "svc_std": 17.328961243606173,
-      "rld_mean": 1.925,
-      "rld_std": 0.3139134700306227,
-      "srd_mean": 93.1676200127487,
-      "srd_std": 17.328961243606173,
-      "avg_soc_mean": 1096.0648148148148,
-      "avg_soc_std": 178.51869260979677
+      "reward_mean": 2035413.0,
+      "reward_std": 139021.9276670606,
+      "svc_mean": 99.10541740734755,
+      "svc_std": 17.9364412135053,
+      "rld_mean": 1.9416666666666669,
+      "rld_std": 0.38468962958612635,
+      "srd_mean": 99.10541740734755,
+      "srd_std": 17.9364412135053,
+      "avg_soc_mean": 1078.0092592592594,
+      "avg_soc_std": 143.97444754760906
     },
     {
       "policy_name": "Greedy",
-      "reward_mean": 1625049.1111111108,
-      "reward_std": 38688.029473191295,
-      "svc_mean": 78.53608630952382,
-      "svc_std": 1.8599506992271295,
-      "rld_mean": 1.091666666666667,
-      "rld_std": 0.1464866319270579,
-      "srd_mean": 78.53608630952382,
-      "srd_std": 1.8599506992271295,
-      "avg_soc_mean": 1433.587962962963,
-      "avg_soc_std": 14.429653960119024
+      "reward_mean": 1604321.9166666665,
+      "reward_std": 26123.11967565768,
+      "svc_mean": 78.82068452380955,
+      "svc_std": 1.6103561007941065,
+      "rld_mean": 1.1208333333333336,
+      "rld_std": 0.14784329166008478,
+      "srd_mean": 78.82068452380955,
+      "srd_std": 1.6103561007941065,
+      "avg_soc_mean": 1433.5416666666665,
+      "avg_soc_std": 17.354304221143515
     },
     {
       "policy_name": "RL-DDPG",
@@ -43,10 +43,10 @@
   "theoretical_bounds": {
     "global_optimal": {
       "name": "Global-Optimal (MILP)",
-      "reward": 2270544.818,
+      "reward": 2316865.9381111115,
       "method": "Global Optimal MILP",
       "status": "OPTIMAL",
-      "solve_time": 8.868000030517578,
+      "solve_time": 146.09999990463257,
       "mip_gap": 0.0
     },
     "rolling_horizon": {
