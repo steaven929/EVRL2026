@@ -87,9 +87,18 @@ class GreedyPolicy(BaselinePolicy):
         # 发车倾向：均匀
         action[0:self.zone_num] = 1.0 / self.zone_num
 
+        # =========2026.2.13修改，添加状态结构说明==========
         # 目的地倾向：根据 OD 需求（state 的前半部分）
-        # 这里简化处理，实际需要解析 state
+        # 状态结构（总维度38）：
+        #   [0:16]   = OD demand (od_in + od_out, 2*TIME_SLICE*ZONE_NUM)
+        #   [16:24]  = Charger states (TIME_SLICE*ZONE_NUM)
+        #   [24:32]  = Num chargers (TIME_SLICE*ZONE_NUM)
+        #   [32:36]  = Avg SOC per zone (ZONE_NUM)
+        #   [36]     = Current timestep
+        #   [37]     = Remaining timesteps
+        # state[0:4] = od_in for current time slice, all zones
         demand_in = state[0:self.zone_num]
+        # ======修改结束
         demand_sum = np.sum(demand_in) + 1e-6
         action[self.zone_num:2*self.zone_num] = demand_in / demand_sum
 

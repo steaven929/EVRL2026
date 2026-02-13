@@ -33,6 +33,54 @@
 
 ---
 
+# 实验进展记录 (2026.02.13)
+
+## 实验20：状态空间增强 - 添加时间步信息
+
+**日期**: 2026-02-13
+**问题诊断**:
+- RL在t=0过早充电（6辆 vs 最优0辆）
+- RL无法学习时间依赖策略（如"t=0不充电，t=1开始充电"）
+- 原因：状态空间缺少时间步信息
+
+**修改内容**:
+- 文件: specific/dclily_elec.py (line 92-96, 454-469)
+- 状态空间维度：36 → 38
+- 新增特征：
+  1. 当前时间步 (0-11)
+  2. 剩余时间步 (11-0)
+
+**技术细节**:
+```python
+# 观测空间定义 (line 92-96)
+OBS_SPACE = spaces.MultiDiscrete(
+    (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES, NUM_CHARGERS] +
+    ZONE_NUM * [10] +  # SOC特征
+    [TIME_NUM, TIME_NUM]  # 新增：当前时间步、剩余时间步
+)
+
+# 状态构造 (line 454-469)
+current_timestep = np.array([self.episode_timestep], dtype=np.int64)
+remaining_timesteps = np.array([TIME_NUM - self.episode_timestep - 1], dtype=np.int64)
+state = np.concatenate([od_part, charger_states, num_chargers_feat,
+                        avg_soc_per_zone, current_timestep, remaining_timesteps])
+```
+
+**预期效果**:
+- RL能学习"t=0不充电，t≥1充电"策略
+- 充电时机与最优解对齐
+- 充电总量提升（64 → 80+）
+- 服务不崩溃（持续到t=11）
+
+**同步修改**:
+- 文件: baseline_comparison.py (line 77-100)
+- 添加状态结构注释，确保GreedyPolicy正确解析38维状态
+- 验证通过：RandomPolicy、GreedyPolicy、RL数据读取均兼容新状态空间
+
+**状态**: 待训练验证
+
+---
+
 # 实验进展记录 (2026.02.11)
 
 ## 实验对比总结 - 达到最优解的62.9%

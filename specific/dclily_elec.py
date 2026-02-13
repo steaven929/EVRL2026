@@ -89,9 +89,11 @@ ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
 # 当前动作为：发车倾向、目的地倾向、充电倾向
 
 # =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
+# =========2026.2.13修改，状态空间增强：添加时间步信息==========
 OBS_SPACE = spaces.MultiDiscrete(
     (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES, NUM_CHARGERS] +
-    ZONE_NUM * [10]  # 新增：4个区域的SOC (0-9)
+    ZONE_NUM * [10] +  # 4个区域的SOC (0-9)
+    [TIME_NUM, TIME_NUM]  # 新增：当前时间步(0-11)、剩余时间步(0-11)
 )
 # ======修改结束
 
@@ -454,11 +456,17 @@ class dclily(gym.Env):
         avg_soc_per_zone = np.array(avg_soc_per_zone, dtype=np.int64)
         # ======修改结束
 
-        # 5) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC] * (TIME_SLICE*ZONE_NUM + ZONE_NUM)
-        state = np.concatenate([od_part, charger_states, num_chargers_feat, avg_soc_per_zone])
-        # 保险断言：长度必须满足 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM
-        assert state.shape[0] == 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM, \
-            f"state dim {state.shape[0]} != 4*ZONE_NUM*TIME_SLICE + ZONE_NUM (expected {4 * ZONE_NUM * TIME_SLICE + ZONE_NUM})"
+        # =========2026.2.13修改，状态空间增强：添加时间步信息==========
+        # 5) 时间步特征（新增）
+        current_timestep = np.array([self.episode_timestep], dtype=np.int64)  # 当前时间步 (0-11)
+        remaining_timesteps = np.array([TIME_NUM - self.episode_timestep - 1], dtype=np.int64)  # 剩余时间步 (11-0)
+        # ======修改结束
+
+        # 6) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC, TIMESTEP, REMAINING] * (TIME_SLICE*ZONE_NUM + ZONE_NUM + 2)
+        state = np.concatenate([od_part, charger_states, num_chargers_feat, avg_soc_per_zone, current_timestep, remaining_timesteps])
+        # 保险断言：长度必须满足 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM + 2
+        assert state.shape[0] == 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM + 2, \
+            f"state dim {state.shape[0]} != 4*ZONE_NUM*TIME_SLICE + ZONE_NUM + 2 (expected {4 * ZONE_NUM * TIME_SLICE + ZONE_NUM + 2})"
         return state
         
         # return np.concatenate([od_part, np.array(charger_states)])
