@@ -77,9 +77,24 @@ class OptimalSolver:
                 candidates.append(file_name)
         return sorted(candidates, key=lambda x: int(os.path.splitext(x)[0].replace("od_demand_", "")))
 
+    def _apply_solver_params(self, model, mip_gap, time_limit, solver_tuning=None):
+        model.setParam("OutputFlag", 1)
+        model.setParam("MIPGap", mip_gap)
+        model.setParam("TimeLimit", time_limit)
+
+        tuning = solver_tuning or {}
+        model.setParam("MIPFocus", int(tuning.get("mip_focus", 1)))
+        model.setParam("Heuristics", float(tuning.get("heuristics", 0.2)))
+        model.setParam("Cuts", int(tuning.get("cuts", 2)))
+        model.setParam("Presolve", int(tuning.get("presolve", 2)))
+
+        threads = int(tuning.get("threads", 0))
+        if threads > 0:
+            model.setParam("Threads", threads)
+
     # =========2026.2.1修改，添加参数优化支持==========
     def solve_global_optimal(self, demand_csv="od_demand.csv", output_path="global_optimal_solution.json",
-                            mip_gap=0.05, time_limit=600, write_output=True):  # 修改
+                            mip_gap=0.05, time_limit=600, write_output=True, solver_tuning=None):  # 修改
         cfg = self._load_config()  # 修改
         zone_num = int(cfg["ZONE_NUM"])  # 修改
         car_num = int(cfg["CAR_NUM"])  # 修改
@@ -121,9 +136,7 @@ class OptimalSolver:
             initial_zones.extend([zone_id] * int(initial_counts[zone_id]))  # 修改
 
         model = gp.Model("Global_Optimal_Solver")  # 修改
-        model.setParam("OutputFlag", 1)  # 修改
-        model.setParam("MIPGap", mip_gap)  # 修改
-        model.setParam("TimeLimit", time_limit)  # 修改
+        self._apply_solver_params(model, mip_gap, time_limit, solver_tuning)
     # ======修改结束
 
         z = model.addVars(car_num, used_time + 1, zone_num, vtype=GRB.BINARY, name="z")  # 修改
@@ -394,6 +407,7 @@ class OptimalSolver:
         output_path="global_optimal_solution.json",
         mip_gap=0.05,
         time_limit=600,
+        solver_tuning=None,
     ):
         cfg = self._load_config()
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -411,6 +425,7 @@ class OptimalSolver:
                 mip_gap=mip_gap,
                 time_limit=time_limit,
                 write_output=False,
+                solver_tuning=solver_tuning,
             )
             per_demand_results.append({
                 "demand_csv": demand_csv,
@@ -449,7 +464,7 @@ class OptimalSolver:
 
     # =========2026.2.1修改，添加滚动时域优化==========
     def solve_rolling_horizon(self, demand_csv="od_demand.csv", output_path="rolling_horizon_solution.json",
-                              horizon=4, mip_gap=0.01, time_limit_per_step=30):
+                              horizon=4, mip_gap=0.01, time_limit_per_step=30, solver_tuning=None):
         """
         滚动时域优化方法
         每次只优化未来 horizon 步，然后执行第一步，滚动前进
@@ -499,9 +514,7 @@ class OptimalSolver:
             actual_horizon = min(horizon, remaining_steps)
 
             model = gp.Model(f"RollingHorizon_Step{current_step}")
-            model.setParam("OutputFlag", 0)
-            model.setParam("MIPGap", mip_gap)
-            model.setParam("TimeLimit", time_limit_per_step)
+            self._apply_solver_params(model, mip_gap, time_limit_per_step, solver_tuning)
 
             z = model.addVars(car_num, actual_horizon + 1, zone_num, vtype=GRB.BINARY, name="z")
             x = model.addVars(car_num, actual_horizon, zone_num, zone_num, vtype=GRB.BINARY, name="x")
@@ -775,7 +788,20 @@ if __name__ == "__main__":  # 修改
                        choices=["single", "train_mix"],
                        help="需求口径: single(单一demand_csv) 或 train_mix(od_demand_1..N均值)")
     parser.add_argument("--demand_csv", type=str, default="od_demand.csv", help="single模式下使用的需求文件")
+    parser.add_argument("--mip_focus", type=int, default=1, choices=[0, 1, 2, 3], help="Gurobi MIPFocus")
+    parser.add_argument("--heuristics", type=float, default=0.2, help="Gurobi Heuristics [0,1]")
+    parser.add_argument("--cuts", type=int, default=2, choices=[-1, 0, 1, 2, 3], help="Gurobi Cuts")
+    parser.add_argument("--presolve", type=int, default=2, choices=[-1, 0, 1, 2], help="Gurobi Presolve")
+    parser.add_argument("--threads", type=int, default=0, help="Gurobi Threads, 0=auto")
     args = parser.parse_args()
+
+    solver_tuning = {
+        "mip_focus": args.mip_focus,
+        "heuristics": args.heuristics,
+        "cuts": args.cuts,
+        "presolve": args.presolve,
+        "threads": args.threads,
+    }
 
     env = gym.make("dclily")  # 修改
     env.set_training_mode(0)  # 修改
@@ -788,7 +814,8 @@ if __name__ == "__main__":  # 修改
         result_rolling = solver.solve_rolling_horizon(
             demand_csv=args.demand_csv,
             output_path="rolling_horizon_solution.json",
-            horizon=args.horizon
+            horizon=args.horizon,
+            solver_tuning=solver_tuning,
         )
         print(f"\n滚动时域优化结果:")
         print(f"  Total Reward: {result_rolling['total_reward']:.2f}")
@@ -804,13 +831,15 @@ if __name__ == "__main__":  # 修改
                 output_path="global_optimal_solution.json",
                 mip_gap=args.mip_gap,
                 time_limit=args.time_limit,
+                solver_tuning=solver_tuning,
             )
         else:
             result_global = solver.solve_global_optimal(
                 demand_csv=args.demand_csv,
                 output_path="global_optimal_solution.json",
                 mip_gap=args.mip_gap,
-                time_limit=args.time_limit
+                time_limit=args.time_limit,
+                solver_tuning=solver_tuning,
             )
         print(f"\n全局优化结果:")
         print(f"  Total Reward: {result_global['total_reward']:.2f}")
