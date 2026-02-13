@@ -27,6 +27,15 @@ class DDPG:
         self.critic_optimizer = optim.Adam(
             self.critic.parameters(),  lr=cfg['critic_lr'])
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=cfg['actor_lr'])
+
+        # =========2026.2.13添加：学习率调度器==========
+        # 每300个episode降低学习率到原来的0.85倍
+        self.critic_scheduler = optim.lr_scheduler.StepLR(
+            self.critic_optimizer, step_size=300, gamma=0.85)
+        self.actor_scheduler = optim.lr_scheduler.StepLR(
+            self.actor_optimizer, step_size=300, gamma=0.85)
+        # ======添加结束
+
         self.memory = memories['memory']
         self.batch_size = cfg['batch_size']
         self.gamma = cfg['gamma']
@@ -100,6 +109,13 @@ class DDPG:
             "q_value": float(policy_q_values.mean().item()),  # 修改：记录Q值本身，训练良好时应上升（变得不那么负）
             "target_q": float(target_value.mean().item()),  # 修改：记录目标Q值，用于诊断
         }
+
+    # =========2026.2.13添加：学习率调度器步进==========
+    def step_schedulers(self):
+        """每个episode结束后调用，降低学习率"""
+        self.critic_scheduler.step()
+        self.actor_scheduler.step()
+    # ======添加结束
 
     # =========2026.1.31修改，添加模型保存和加载功能==========
     def save_model(self, path):

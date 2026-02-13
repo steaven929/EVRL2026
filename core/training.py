@@ -11,7 +11,7 @@ import random
 class OUNoise(object):
     '''Ornstein–Uhlenbeck噪声
     '''
-    def __init__(self, action_space, mu=0.0, theta=0.15, max_sigma=0.05, min_sigma=0.005, decay_period=10000):
+    def __init__(self, action_space, mu=0.0, theta=0.15, max_sigma=0.12, min_sigma=0.01, decay_period=15000):
         self.mu           = mu # OU噪声的参数
         self.theta        = theta # OU噪声的参数
         self.sigma        = max_sigma # OU噪声的参数
@@ -132,6 +132,11 @@ def train(cfg, env, agent):
         if 1: #(i_ep+1)%1 == 0:
             print(f"回合：{i_ep+1}/{cfg['train_eps']}，奖励：{ep_reward:.2f}")
         rewards.append(ep_reward)
+
+        # =========2026.2.13添加：每个episode后更新学习率==========
+        agent.step_schedulers()
+        # ======添加结束
+
         battery_log.extend(current_ep_battery_log)  # 修改：将当前episode的电池数据追加到总列表  # 修改
     print("完成训练！")
     return {'rewards': rewards,

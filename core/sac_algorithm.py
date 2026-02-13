@@ -114,6 +114,16 @@ class SAC:
         self.alpha = alpha
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=alpha_lr)
 
+        # =========2026.2.13添加：学习率调度器==========
+        # 每300个episode降低学习率到原来的0.85倍
+        self.actor_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.actor_optimizer, step_size=300, gamma=0.85)
+        self.critic1_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.critic1_optimizer, step_size=300, gamma=0.85)
+        self.critic2_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.critic2_optimizer, step_size=300, gamma=0.85)
+        # ======添加结束
+
     def select_action(self, state, evaluate=False):
         """选择动作"""
         state = torch.FloatTensor(state).unsqueeze(0).long().to(self.device)
