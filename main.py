@@ -71,6 +71,8 @@ if res_dic.get('q_values'):  # 修改
 if res_dic.get('target_q_values'):  # 修改
     np.save('target_q_values.npy', res_dic['target_q_values'])  # 修改
 np.save('rewards.npy', res_dic['rewards'])  # 修改：保存 episode rewards
+np.save('eval_rewards.npy', res_dic.get('eval_rewards', []))
+np.save('eval_episodes.npy', res_dic.get('eval_episodes', []))
 np.save('rld_history.npy', res_dic['rld_history'])  # 修改
 np.save('svc_history.npy', res_dic['svc_history'])  # 修改
 np.save('srd_history.npy', res_dic['srd_history'])  # 修改
@@ -162,6 +164,11 @@ if rewards.size > 0:
             axes[7].plot(smooth(rewards), label='smoothed', linewidth=2.0)  # 修改
         except Exception as e:
             print(f"平滑计算出错: {e}")
+
+    eval_rewards = np.asarray(res_dic.get('eval_rewards', []), dtype=float)
+    eval_episodes = np.asarray(res_dic.get('eval_episodes', []), dtype=float)
+    if eval_rewards.size > 0 and eval_episodes.size == eval_rewards.size:
+        axes[7].plot(eval_episodes - 1, eval_rewards, 'o-', label='eval_reward', linewidth=1.5, markersize=4)
 
 axes[7].set_xlabel('Episode')  # 修改
 axes[7].set_ylabel('Reward')  # 修改

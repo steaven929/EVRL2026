@@ -8,6 +8,23 @@ Created on Tue Sep  3 19:24:55 2024
 import numpy as np
 import random
 
+
+def _evaluate_policy(cfg, env, agent, num_episodes):
+    rewards = []
+    for _ in range(num_episodes):
+        env.set_training_mode(0)
+        state = env.reset()
+        ep_reward = 0.0
+        for _ in range(cfg['max_steps']):
+            action = agent.predict_action(state)
+            next_state, reward, done, _ = env.step(action)
+            ep_reward += reward
+            state = next_state
+            if done:
+                break
+        rewards.append(ep_reward)
+    return float(np.mean(rewards)) if rewards else 0.0
+
 class OUNoise(object):
     '''Ornstein–Uhlenbeck噪声
     '''
@@ -61,10 +78,16 @@ def train(cfg, env, agent):
     print("开始训练！")
     is_sac = str(cfg.get('algo_name', '')).upper() == 'SAC'
     ou_noise = None if is_sac else OUNoise(env.action_space)  # SAC不叠加OU噪声
+    reward_scale = float(cfg.get('reward_scale', 1.0))
+    if reward_scale <= 0:
+        reward_scale = 1.0
+    eval_every = int(cfg.get('eval_every', 0))
+    eval_eps = max(1, int(cfg.get('eval_eps', 1)))
     rewards = [] # 记录所有回合的奖励
     critic1_losses, critic2_losses, actor_losses = [], [], []
     q_values, target_q_values = [], []  # 修改：记录Q值和目标Q值用于诊断
     rld_history, svc_history, srd_history = [], [], []  # 修改
+    eval_rewards, eval_episodes = [], []
 
     battery_log = []  # 修改：在所有episode之前初始化，用于存储所有episode的电池数据  # 修改
 
@@ -119,7 +142,8 @@ def train(cfg, env, agent):
             battery_snapshot = [car[1] for car in env.car]  # 20250726添加，画图1用 # 每步记录所有车辆电量
             current_ep_battery_log.append(battery_snapshot) # 20250726添加，画图1用
 
-            agent.memory.push((state, action, reward, next_state, done))
+            scaled_reward = reward / reward_scale
+            agent.memory.push((state, action, scaled_reward, next_state, done))
             #agent.update()  #2026.1.22修改
             loss_info = agent.update()  # 让它返回 dict
             if loss_info is not None:
@@ -135,9 +159,17 @@ def train(cfg, env, agent):
         if 1: #(i_ep+1)%1 == 0:
             print(f"回合：{i_ep+1}/{cfg['train_eps']}，奖励：{ep_reward:.2f}")
         rewards.append(ep_reward)
+
+        if eval_every > 0 and (i_ep + 1) % eval_every == 0:
+            eval_reward = _evaluate_policy(cfg, env, agent, eval_eps)
+            eval_rewards.append(eval_reward)
+            eval_episodes.append(i_ep + 1)
+            print(f"  [Eval] Episode {i_ep+1}: mean reward={eval_reward:.2f} over {eval_eps} eps")
         battery_log.extend(current_ep_battery_log)  # 修改：将当前episode的电池数据追加到总列表  # 修改
     print("完成训练！")
     return {'rewards': rewards,
+    'eval_rewards': eval_rewards,
+    'eval_episodes': eval_episodes,
     'battery_log': battery_log,
     'critic1_losses': critic1_losses,
     'critic2_losses': critic2_losses,
