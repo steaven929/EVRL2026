@@ -35,6 +35,48 @@
 
 # 实验进展记录 (2026.02.13)
 
+## 实验21：修复充电桩释放逻辑 - 关键Bug修复
+
+**日期**: 2026-02-13
+**问题诊断**:
+- RL输出充电偏好但执行0充电动作
+- 充电预算正常计算（1-3辆车）
+- `charged_count`正常递增
+- 但`charging_actions`字典始终为空
+
+**根本原因**:
+- 充电桩初始化时被占满（`write_ini_cap()` line 327-347）
+- 车辆充电到满电后，释放逻辑被注释（line 1043-1044）
+- 导致充电桩永久占用，无法分配给新车辆
+
+**修改内容**:
+- 文件: specific/dclily_elec.py (line 1037-1045)
+- 启用充电桩释放逻辑：
+```python
+if self.car[i][1] >= BATTERY_CAPACITY:
+    self.car[i][1] = BATTERY_CAPACITY
+    # 充满后释放充电桩
+    current_zone = self.car[i][0]
+    charger_id = self.car[i][3]
+    self.release_charger(current_zone, charger_id)
+    self.car[i][3] = -1  # 释放充电桩状态
+```
+
+**测试结果**:
+- Episode 1: 0 charging actions (充电桩全满)
+- Episode 2: 4 charging actions at t=0 (充电桩开始释放)
+- Episode 3: 3+2+1=6 charging actions (充电桩正常循环)
+- 充电桩状态正常：占用 → 充电 → 满电 → 释放 → 可用
+
+**影响**:
+- 修复前：0 charging actions/episode
+- 修复后：4-10 charging actions/episode
+- 这是充电功能的基础性修复，所有之前的实验结果可能受此Bug影响
+
+**状态**: 已修复，正在进行1000轮训练验证
+
+---
+
 ## 实验20：状态空间增强 - 添加时间步信息
 
 **日期**: 2026-02-13

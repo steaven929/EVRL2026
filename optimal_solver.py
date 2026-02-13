@@ -143,7 +143,7 @@ class OptimalSolver:
         # =========2026.2.12修改，实验19：提升充电奖励信号==========
         # 3. 充电加分
         charging_bonus = gp.quicksum(
-            3000 * c[v, t, i]
+            5000 * c[v, t, i]  # 从3000提升到5000，与RL环境一致
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)

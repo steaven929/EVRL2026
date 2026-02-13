@@ -1306,8 +1306,11 @@ class dclily(gym.Env):
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
         # =========2026.2.12修改，实验19：大幅提升充电奖励==========
-        # 即时充电奖励：每辆充电车辆+3000（从1500提升到3000）
-        charging_bonus = 3000 * charging_count
+        # =========2026.2.13修改，进一步提升充电奖励==========
+        # 问题：充电奖励3000不足以抵消服务收入的吸引力
+        # 解决：提升到5000，使充电更有价值
+        # 即时充电奖励：每辆充电车辆+5000（从3000提升到5000）
+        charging_bonus = 5000 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1315,22 +1318,26 @@ class dclily(gym.Env):
         # 根据当前训练轮数动态调整SOC惩罚强度
         epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
 
-        # 阶段1（0-200轮）：高惩罚，强制学习充电
-        # 阶段2（200-400轮）：中等惩罚，优化策略
-        # 阶段3（400+轮）：低惩罚，平衡收益
-        if epoch < 200:
+        # =========2026.2.13修改，修正Curriculum Learning策略==========
+        # 问题：后期惩罚过低，导致策略不稳定
+        # 解决：保持较高的SOC惩罚，确保策略稳定性
+        # 阶段1（0-300轮）：高惩罚，强制学习充电
+        # 阶段2（300-600轮）：中等惩罚，优化策略
+        # 阶段3（600+轮）：稳定惩罚，保持性能
+        if epoch < 300:
             # 高惩罚阶段
-            penalty_scale = 1.0
-            vehicle_penalty = 500
-        elif epoch < 400:
+            penalty_scale = 1.5
+            vehicle_penalty = 750
+        elif epoch < 600:
             # 中等惩罚阶段（线性衰减）
-            progress = (epoch - 200) / 200  # 0到1
-            penalty_scale = 1.0 - 0.25 * progress  # 1.0衰减到0.75
-            vehicle_penalty = 500 - 125 * progress  # 500衰减到375
+            progress = (epoch - 300) / 300  # 0到1
+            penalty_scale = 1.5 - 0.3 * progress  # 1.5衰减到1.2
+            vehicle_penalty = 750 - 150 * progress  # 750衰减到600
         else:
-            # 低惩罚阶段
-            penalty_scale = 0.75
-            vehicle_penalty = 375
+            # 稳定惩罚阶段（不再降低）
+            penalty_scale = 1.2
+            vehicle_penalty = 600
+        # ======修改结束
 
         soc_penalty = 0
         low_soc_count = 0
@@ -1352,6 +1359,20 @@ class dclily(gym.Env):
         soc_penalty += low_soc_vehicle_penalty
         # ======修改结束
 
+        # =========2026.2.13修改，添加SOC维持奖励（Reward Shaping）==========
+        # 目的：奖励保持高SOC的行为，而不仅仅是惩罚低SOC
+        # 计算车队平均SOC，给予正向奖励
+        total_soc = sum(self.car[i][1] for i in range(self.CAR_NUM))
+        avg_soc = total_soc / self.CAR_NUM
+
+        # SOC维持奖励：平均SOC越高，奖励越大
+        # 目标：鼓励保持SOC在1200以上（60%）
+        if avg_soc >= 1200:
+            soc_maintain_bonus = (avg_soc - 1200) * 0.5  # 超过1200的部分，每点0.5奖励
+        else:
+            soc_maintain_bonus = 0
+        # ======修改结束
+
         # 4. 调度成本（已在real_reward中，但需要单独计算）
         # 注意：第一次solveproblem的real_reward包含调度成本（负值）
         # 这里不需要额外减去，因为已经在real_reward中了
@@ -1362,9 +1383,10 @@ class dclily(gym.Env):
         # ======修改结束
 
         # =========2026.2.12修改，实验19：充电奖励不缩放==========
+        # =========2026.2.13修改，添加SOC维持奖励==========
         # 新奖励函数：充电奖励单独计算，不除以10
-        # 这样充电奖励的信号更强
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty
+        # 添加SOC维持奖励，鼓励保持高SOC
+        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + soc_maintain_bonus - fixed_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
