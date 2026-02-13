@@ -1446,59 +1446,8 @@ class dclily(gym.Env):
         # ======修改结束
 
         if self.terminal:
-            # 如果采用平均reward，是否需要计算还剩下的油费和租费
-            # =========2026.2.5修改，终止时也使用即时奖励逻辑==========
-            # 计算新奖励函数的各个部分
-            service_revenue = sum(real_reward)
-
-            charging_count = 0
-            for i in range(self.CAR_NUM):
-                if self.car[i][3] != -1 and self.car[i][2] == 0:
-                    charging_count += 1
-            # =========2026.2.12修改，方案F4：终止步奖励与中间步完全一致==========
-            charging_bonus = 3000 * charging_count
-            # ======修改结束
-
-            # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
-            epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
-
-            if epoch < 200:
-                penalty_scale = 1.0
-                vehicle_penalty = 500
-            elif epoch < 400:
-                progress = (epoch - 200) / 200
-                penalty_scale = 1.0 - 0.25 * progress
-                vehicle_penalty = 500 - 125 * progress
-            else:
-                penalty_scale = 0.75
-                vehicle_penalty = 375
-
-            soc_penalty = 0
-            low_soc_count = 0
-            for i in range(self.CAR_NUM):
-                soc = self.car[i][1]
-                if soc >= 600:
-                    penalty = 0
-                elif soc >= 400:
-                    penalty = 2.0 * penalty_scale * (600 - soc)
-                elif soc >= 200:
-                    penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * (400 - soc)
-                    low_soc_count += 1
-                else:
-                    penalty = 2.0 * penalty_scale * 200 + 10.0 * penalty_scale * 200 + 50.0 * penalty_scale * (200 - soc)
-                    low_soc_count += 1
-                soc_penalty += penalty
-
-            low_soc_vehicle_penalty = low_soc_count * vehicle_penalty
-            soc_penalty += low_soc_vehicle_penalty
-            # ======修改结束
-
-            # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
-            fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty
-            # ======修改结束
-            # ======修改结束
-            return self.state, final_reward, self.terminal, info
+            # =========2026.2.14修改，终止步奖励与非终止步严格一致==========
+            return self.state, reward_value, self.terminal, info
         else:
             self._last_episode_timestep = self.episode_timestep
             
