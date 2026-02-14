@@ -267,6 +267,54 @@ def evaluate_policy(env, policy, num_episodes=10, policy_name="Unknown", save_ac
     return results
 
 
+def save_vehicle_distribution(vehicle_distribution):
+    """
+    保存车辆分布数据到文件（表格格式）
+
+    Args:
+        vehicle_distribution: 车辆分布数据列表，每个元素包含 {'step': int, 'zone_counts': list}
+    """
+    ZONE_NUM = 4
+
+    output_file = 'action/vehicle_distribution_per_timestep.txt'
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write("="*80 + "\n")
+        f.write("车辆分布 - 每个时间步各区域的车辆数量（所有车辆）\n")
+        f.write("="*80 + "\n\n")
+
+        # 表格标题
+        f.write("时间步 | 区域0 | 区域1 | 区域2 | 区域3 | 总计\n")
+        f.write("-------|-------|-------|-------|-------|------\n")
+
+        # 表格内容
+        for data in vehicle_distribution:
+            timestep = data['step']
+            zone_counts = data['zone_counts']
+            total = sum(zone_counts)
+
+            f.write(f"  {timestep:2d}   |  {zone_counts[0]:3d}  |  {zone_counts[1]:3d}  |  {zone_counts[2]:3d}  |  {zone_counts[3]:3d}  | {total:4d}\n")
+
+        # 添加统计信息
+        f.write("\n" + "="*80 + "\n")
+        f.write("统计信息\n")
+        f.write("="*80 + "\n\n")
+
+        # 计算每个区域的平均车辆数
+        zone_totals = [0] * ZONE_NUM
+        for data in vehicle_distribution:
+            for zone in range(ZONE_NUM):
+                zone_totals[zone] += data['zone_counts'][zone]
+
+        f.write("各区域平均车辆数:\n")
+        for zone in range(ZONE_NUM):
+            avg = zone_totals[zone] / len(vehicle_distribution) if vehicle_distribution else 0
+            f.write(f"  区域{zone}: {avg:.2f}辆\n")
+
+        # 添加总体统计
+        total_avg = sum(zone_totals) / len(vehicle_distribution) if vehicle_distribution else 0
+        f.write(f"\n平均车辆总数: {total_avg:.2f}辆\n")
+
+
 def main():
     print("="*60)
     print("基准测试：对比不同策略的性能")
@@ -367,8 +415,25 @@ def main():
         # 记录每个时间步的详细动作
         detailed_actions = []
 
+        # =========2026.2.14修改，记录车辆分布==========
+        vehicle_distribution = []
+        # ======修改结束
+
         while not done:
             action = agent.predict_action(state)
+
+            # =========2026.2.14修改，记录当前时间步的车辆分布==========
+            # 统计各区域的车辆数（所有状态的车辆）
+            zone_vehicle_counts = [0] * test_env.ZONE_NUM
+            for car in test_env.car:
+                zone = int(car[0])  # car[0]是车辆所在区域
+                zone_vehicle_counts[zone] += 1
+
+            vehicle_distribution.append({
+                'step': step,
+                'zone_counts': zone_vehicle_counts.copy()
+            })
+            # ======修改结束
 
             # =========2026.2.4修改，使用环境返回的真实动作==========
             next_state, reward, done, info = test_env.step(action)
@@ -459,6 +524,16 @@ def main():
                 f.write(f"  {action_data['action']}\n\n")
 
         print(f"[INFO] 动作文件已保存到: {action_file}")
+
+        # =========2026.2.14修改，保存车辆分布信息==========
+        # 保存车辆分布到文件
+        print("\n[INFO] 保存车辆分布信息...")
+        try:
+            save_vehicle_distribution(vehicle_distribution)
+            print("[INFO] 车辆分布信息已保存到: action/vehicle_distribution_per_timestep.txt")
+        except Exception as dist_error:
+            print(f"[WARNING] 保存车辆分布失败: {dist_error}")
+        # ======修改结束
         # ======修改结束
 
     except Exception as e:

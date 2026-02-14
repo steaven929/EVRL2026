@@ -16,7 +16,7 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     x = len(available)
     m = len(car)
     real_reward_back = np.array([0] * x)
-    
+
     # 创建问题实例
     model = gp.Model("Vehicle_Assignment")
     
@@ -69,7 +69,7 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
             for k in range(m):
                 if car[k][0] == i and (dist[i][j] > car[k][1] or i == j):  # 扫描所有i-j，找所有起点为i的车，如果到不了则置为0，如果i=j自己到自己也置为0
                     model.addConstr(car_assignment[k][j] == 0)
-    
+
     for i in range(m):
         if car[i][2] <= 0:
             model.addConstr(gp.quicksum(car_assignment[i]) <= 1)  # 不在路上的分配一个位置
@@ -90,11 +90,11 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     
     # 求解问题
     model.optimize()
-    
+
     # 处理解
-    
+
     zone_assignment_np = np.zeros((x, x), dtype=int)
-    
+
     avail[1] = np.array([var.X for var in available_assignment])
     
     if re > 0 and revise >= 3:

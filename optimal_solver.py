@@ -196,6 +196,34 @@ class OptimalSolver:
         soc_maintain_bonus = gp.quicksum(soc_maintain_bonus_vars[t] for t in range(used_time + 1))
         # ======修改结束
 
+        # =========2026.2.14修改，添加车辆分布平衡奖励==========
+        # 7. 车辆分布平衡奖励：鼓励车辆在各区域均衡分布
+        # 计算每个时间步每个区域的车辆数
+        zone_counts = model.addVars(used_time + 1, zone_num, lb=0, vtype=GRB.CONTINUOUS, name="zone_counts")
+        for t in range(used_time + 1):
+            for i in range(zone_num):
+                # 统计在区域i且未在充电的车辆数（y[v,t,i]=1表示车辆v在时间t停留在区域i）
+                model.addConstr(zone_counts[t, i] == gp.quicksum(
+                    z[v, t, i] - (c[v, t, i] if t < used_time else 0)
+                    for v in range(car_num)
+                ))
+
+        # 计算分布标准差的平方（方差）
+        ideal_count = car_num / zone_num
+        distribution_variance = model.addVars(used_time + 1, lb=0, vtype=GRB.CONTINUOUS, name="dist_var")
+        for t in range(used_time + 1):
+            # 方差 = sum((count - ideal)^2) / zone_num
+            # 使用二次约束
+            model.addConstr(distribution_variance[t] == gp.quicksum(
+                (zone_counts[t, i] - ideal_count) * (zone_counts[t, i] - ideal_count)
+                for i in range(zone_num)
+            ) / zone_num)
+
+        # 分布平衡奖励：方差越小越好
+        # 简化：直接惩罚方差（避免使用平方根）
+        distribution_balance_bonus = -gp.quicksum(distribution_variance[t] * 100 for t in range(used_time + 1))
+        # ======修改结束
+
         # =========2026.2.5修改，实验2：同步RL移除固定惩罚==========
         # 6. 固定惩罚（移除以与RL保持一致）
         fixed_penalty = 0  # 原500 * used_time改为0
@@ -204,11 +232,11 @@ class OptimalSolver:
         # =========2026.2.12修改，实验19：充电奖励不参与缩放==========
         # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
         # =========2026.2.14修改，修正目标函数与RL环境完全一致==========
+        # =========2026.2.14修改，添加车辆分布平衡奖励==========
         # 新目标函数：与RL环境reward_value完全一致
-        # RL: (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus
-        # 注意：service_revenue已经包含了dispatch_cost（作为负值），所以不需要再减dispatch_cost
+        # RL: (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus + distribution_balance_bonus
         model.setObjective(
-            (service_revenue - dispatch_cost - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty,
+            (service_revenue - dispatch_cost - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus + distribution_balance_bonus - fixed_penalty,
             GRB.MAXIMIZE
         )
         # ======修改结束

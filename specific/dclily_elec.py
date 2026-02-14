@@ -159,7 +159,7 @@ class dclily(gym.Env):
             ]
             for zone_id, zone_cfg in enumerate(ZONES)
         }      #充电桩对象列表，目前有充电桩编号、充电桩类型、被占了没有，电量
-        
+
         # Log extraction initialization
         self.log_data = []
         self.current_step_logs = {}
@@ -1310,7 +1310,7 @@ class dclily(gym.Env):
         # ======修改结束
 
         prev_car = copy.deepcopy(self.car)  #对比solveproblem 前后的状态，识别哪些订单是这一轮新产生的
-        
+
         self.car, self.available, self.car_mem, reward, real_reward, rel_dispatch = gur.solveproblem(self.dist, self.available,
                                                                                             action_table_true, self.car,
                                                                                             reward, -diaodu_min,
@@ -1500,6 +1500,42 @@ class dclily(gym.Env):
         charging_maintenance_bonus = 3000 * charging_count
         # ======修改结束
 
+        # =========2026.2.14修改，添加车辆分布平衡奖励==========
+        # 目的：鼓励车辆在各区域均衡分布，避免某些区域拥堵、某些区域空闲
+        # 计算每个区域的可用车辆数
+        zone_vehicle_counts = [0] * self.ZONE_NUM
+        for i in range(self.CAR_NUM):
+            # 只统计静止且未在充电的车辆（可立即调度的车辆）
+            if self.car[i][2] == 0 and self.car[i][3] == -1:
+                zone = int(self.car[i][0])
+                zone_vehicle_counts[zone] += 1
+
+        # 计算理想分布（平均分布）
+        ideal_count = self.CAR_NUM / self.ZONE_NUM  # 18/4 = 4.5
+
+        # 计算分布不平衡惩罚（使用标准差）
+        variance = sum((count - ideal_count) ** 2 for count in zone_vehicle_counts) / self.ZONE_NUM
+        std_dev = variance ** 0.5
+
+        # 分布平衡奖励：标准差越小，奖励越高
+        # 当标准差=0（完全平衡）时，奖励最高
+        # 当标准差>3时，开始惩罚
+        if std_dev <= 2.0:
+            distribution_balance_bonus = (2.0 - std_dev) * 500  # 最高1000奖励
+        else:
+            distribution_balance_bonus = -(std_dev - 2.0) * 800  # 惩罚不平衡
+
+        # 额外惩罚极端情况（某区域车辆=0或>10）
+        extreme_penalty = 0
+        for count in zone_vehicle_counts:
+            if count == 0:
+                extreme_penalty += 2000  # 区域完全无车，严重惩罚
+            elif count >= 10:
+                extreme_penalty += (count - 10) * 300  # 区域过度拥堵
+
+        distribution_balance_bonus -= extreme_penalty
+        # ======修改结束
+
         # 4. 调度成本（已在real_reward中，但需要单独计算）
         # 注意：第一次solveproblem的real_reward包含调度成本（负值）
         # 这里不需要额外减去，因为已经在real_reward中了
@@ -1512,10 +1548,12 @@ class dclily(gym.Env):
         # =========2026.2.12修改，实验19：充电奖励不缩放==========
         # =========2026.2.13修改，添加SOC维持奖励==========
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
+        # =========2026.2.14修改，添加车辆分布平衡奖励==========
         # 新奖励函数：充电奖励单独计算，不除以10
         # 添加SOC维持奖励，鼓励保持高SOC
         # 添加充电维护奖励，进一步强化充电激励
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty
+        # 添加分布平衡奖励，鼓励车辆均衡分布
+        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus + distribution_balance_bonus - fixed_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
@@ -1578,9 +1616,38 @@ class dclily(gym.Env):
             soc_penalty += low_soc_vehicle_penalty
             # ======修改结束
 
+            # =========2026.2.14修改，终止步也添加车辆分布平衡奖励==========
+            # 计算每个区域的可用车辆数
+            zone_vehicle_counts = [0] * self.ZONE_NUM
+            for i in range(self.CAR_NUM):
+                if self.car[i][2] == 0 and self.car[i][3] == -1:
+                    zone = int(self.car[i][0])
+                    zone_vehicle_counts[zone] += 1
+
+            # 计算分布不平衡惩罚
+            ideal_count = self.CAR_NUM / self.ZONE_NUM
+            variance = sum((count - ideal_count) ** 2 for count in zone_vehicle_counts) / self.ZONE_NUM
+            std_dev = variance ** 0.5
+
+            if std_dev <= 2.0:
+                distribution_balance_bonus = (2.0 - std_dev) * 500
+            else:
+                distribution_balance_bonus = -(std_dev - 2.0) * 800
+
+            extreme_penalty = 0
+            for count in zone_vehicle_counts:
+                if count == 0:
+                    extreme_penalty += 2000
+                elif count >= 10:
+                    extreme_penalty += (count - 10) * 300
+
+            distribution_balance_bonus -= extreme_penalty
+            # ======修改结束
+
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
+            # =========2026.2.14修改，终止步也添加分布平衡奖励==========
             fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty
+            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus + distribution_balance_bonus - fixed_penalty
             # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info
