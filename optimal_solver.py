@@ -142,9 +142,17 @@ class OptimalSolver:
 
         # =========2026.2.12修改，实验19：提升充电奖励信号==========
         # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # 3. 充电加分（充电奖励15000 + 维护奖励3000 = 18000）
+        # 3. 充电奖励：分为两部分以与RL环境完全一致
+        # 充电奖励：15000/车
         charging_bonus = gp.quicksum(
-            18000 * c[v, t, i]  # 从5000提升到18000，与RL环境完整组合方案一致
+            15000 * c[v, t, i]
+            for v in range(car_num)
+            for t in range(used_time)
+            for i in range(zone_num)
+        )
+        # 充电维护奖励：3000/车
+        charging_maintenance_bonus = gp.quicksum(
+            3000 * c[v, t, i]
             for v in range(car_num)
             for t in range(used_time)
             for i in range(zone_num)
@@ -195,9 +203,12 @@ class OptimalSolver:
 
         # =========2026.2.12修改，实验19：充电奖励不参与缩放==========
         # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
-        # 新目标函数（充电奖励不除以10，添加SOC维持奖励和充电维护奖励）
+        # =========2026.2.14修改，修正目标函数与RL环境完全一致==========
+        # 新目标函数：与RL环境reward_value完全一致
+        # RL: (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus
+        # 注意：service_revenue已经包含了dispatch_cost（作为负值），所以不需要再减dispatch_cost
         model.setObjective(
-            (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus + soc_maintain_bonus - fixed_penalty,
+            (service_revenue - dispatch_cost - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty,
             GRB.MAXIMIZE
         )
         # ======修改结束
