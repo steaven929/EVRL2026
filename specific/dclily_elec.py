@@ -115,6 +115,11 @@ class dclily(gym.Env):
         self.current_epoch = 0  # 当前训练轮数（用于探索策略衰减）
         # ======修改结束
 
+        # =========2026.2.14修改，实验方案开关==========
+        # baseline/a1/a2/b1/b2/c1
+        self.exp_variant = str(self.config.get('EXP_VARIANT', 'baseline')).lower()
+        # ======修改结束
+
         # 自行定义
 
         self._last_episode_timestep = 0  # 1上一回合的时间步数
@@ -516,6 +521,15 @@ class dclily(gym.Env):
                     net_matrix[i][j] = 0
                     net_matrix[j][i] = -net
         return net_matrix
+    # ======修改结束
+
+    # =========2026.2.14修改，实验方案B2前瞻需求==========
+    def _get_future_out_demand(self, step_offset=1):
+        """返回未来 step_offset 时间片的各区域出发需求向量。"""
+        idx = int(self.episode_timestep + step_offset)
+        if self.od_out.size == 0 or idx < 0 or idx >= self.od_out.shape[1]:
+            return np.zeros(self.ZONE_NUM, dtype=float)
+        return np.asarray(self.od_out[:, idx], dtype=float)
     # ======修改结束
 
     def rl_should_charge(self, vehicle_id, charge_pref):
@@ -1181,19 +1195,67 @@ class dclily(gym.Env):
         dispatchable_available = self._compute_dispatchable_counts()
         # ======修改结束
 
+        # =========2026.2.14修改，实验A/B动作解码逻辑==========
+        variant = getattr(self, 'exp_variant', 'baseline')
+        enable_a1 = variant in ('a1', 'a2', 'b1', 'b2', 'c1')
+        enable_a2 = variant in ('a2', 'b1', 'b2', 'c1')
+        enable_b1 = variant in ('b1', 'b2', 'c1')
+        enable_b2 = variant in ('b2', 'c1')
+
+        current_total_demand = int(np.sum(self.od_demand_now[0])) if self.od_demand_now.size > 0 else 0
+        no_order_mode = (current_total_demand <= 0)
+
+        if enable_b2:
+            next_out_vector = self._get_future_out_demand(step_offset=1)
+            next2_out_vector = self._get_future_out_demand(step_offset=2)
+            lookahead_out = 0.7 * next_out_vector + 0.3 * next2_out_vector
+            lookahead_total = float(np.sum(lookahead_out))
+            if lookahead_total > 0:
+                lookahead_dest_pref = lookahead_out / lookahead_total
+            else:
+                lookahead_dest_pref = np.zeros(self.ZONE_NUM, dtype=float)
+        else:
+            lookahead_total = 0.0
+            lookahead_dest_pref = np.zeros(self.ZONE_NUM, dtype=float)
+        # ======修改结束
+
         for i in range(0, ZONE_NUM):
             # 先对可发出的车进行一次限制
             # limit_now=int(max(0,(self.available[0][i]-self.od_out[i][self.episode_timestep]/e)*float(action[i])))
             # 上面那个是TRE的
-            # =========2026.2.12修改，方案F2：避免 int 截断导致后期全零==========
+            # =========2026.2.14修改，实验A/B动作解码逻辑==========
             available_now = max(0, int(dispatchable_available[i]))
-            raw_limit = available_now * float(action[i])
-            limit_now = int(round(raw_limit))
-            if available_now > 0 and float(action[i]) > 0.5:
-                limit_now = max(1, limit_now)
+            current_out_demand = int(np.sum(self.od_demand_now[0][i])) if self.od_demand_now.size > 0 else 0
+
+            if enable_b1 and no_order_mode:
+                if enable_b2 and lookahead_total > 0:
+                    preposition_ratio = min(0.35, 0.10 + 0.25 * max(0.0, float(action[i])))
+                    raw_limit = available_now * preposition_ratio
+                    limit_now = int(round(raw_limit))
+                    if available_now > 0 and float(action[i]) > 0.20:
+                        limit_now = max(1, limit_now)
+                    action_table = np.array(lookahead_dest_pref, dtype=float)
+                    action_table[i] = 0.0
+                else:
+                    limit_now = 0
+                    action_table = np.array(real_act[i], copy=True)
+            else:
+                if enable_a1:
+                    raw_limit = available_now * math.sqrt(max(0.0, float(action[i])))
+                else:
+                    raw_limit = available_now * float(action[i])
+                limit_now = int(round(raw_limit))
+
+                if enable_a2:
+                    if available_now > 0 and current_out_demand > 0 and float(action[i]) > 0.15:
+                        limit_now = max(1, limit_now)
+                else:
+                    if available_now > 0 and float(action[i]) > 0.5:
+                        limit_now = max(1, limit_now)
+                action_table = np.array(real_act[i], copy=True)
+
             limit_now = max(0, min(limit_now, available_now))
             # ======修改结束
-            action_table = real_act[i]
 
             while limit_now > 0:
                 a = -1
@@ -1584,6 +1646,12 @@ class dclily(gym.Env):
     def set_epoch(self, epoch):
         """设置当前训练轮数（用于探索策略衰减）"""
         self.current_epoch = epoch
+    # ======修改结束
+
+    # =========2026.2.14修改，实验方案开关==========
+    def set_experiment_variant(self, variant):
+        """设置实验方案：baseline/a1/a2/b1/b2/c1。"""
+        self.exp_variant = str(variant).lower()
     # ======修改结束
 
     def reset(self):

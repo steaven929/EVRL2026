@@ -77,6 +77,9 @@ def encode_custom_action(zone_to_counts, zone_from_counts=None, charge_pref=None
 def train(cfg, env, agent):
     print("开始训练！")
     is_sac = str(cfg.get('algo_name', '')).upper() == 'SAC'
+    exp_variant = str(cfg.get('exp_variant', 'baseline')).lower()
+    if hasattr(env, 'set_experiment_variant'):
+        env.set_experiment_variant(exp_variant)
     ou_noise = None if is_sac else OUNoise(env.action_space)  # SAC不叠加OU噪声
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
@@ -120,6 +123,18 @@ def train(cfg, env, agent):
             #action = encode_custom_action(zone_to_counts)  #0723修改，用来自定义action 来测试
             if ou_noise is not None:
                 action = ou_noise.get_action(action, i_step+1)
+
+            # =========2026.2.14修改，实验C1：需求感知探索噪声==========
+            if is_sac and exp_variant == 'c1':
+                demand_now = 0.0
+                if hasattr(env, 'od_demand_now') and getattr(env, 'od_demand_now', np.array([])).size > 0:
+                    demand_now = float(np.sum(env.od_demand_now[0]))
+                demand_factor = demand_now / (demand_now + 12.0)
+                noise_sigma = 0.12 - 0.09 * demand_factor  # 低需求高噪声，高需求低噪声
+                noise_sigma = max(0.03, min(0.12, noise_sigma))
+                action_noise = np.random.normal(0.0, noise_sigma, size=action.shape[0])
+                action = np.clip(action + action_noise, 0.0, 1.0)
+            # ======修改结束
 
             # =========2026.2.7修改，方案D2：充电维度噪声增强==========
             # 前20轮训练，对充电维度 [8:12] 添加额外噪声
@@ -182,6 +197,9 @@ def train(cfg, env, agent):
 
 def test(cfg, env, agent):
     print("开始测试！")
+    exp_variant = str(cfg.get('exp_variant', 'baseline')).lower()
+    if hasattr(env, 'set_experiment_variant'):
+        env.set_experiment_variant(exp_variant)
     rewards = [] # 记录所有回合的奖励
     for i_ep in range(cfg['test_eps']):
         env.set_training_mode(0)
