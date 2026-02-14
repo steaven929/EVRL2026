@@ -77,7 +77,9 @@ def encode_custom_action(zone_to_counts, zone_from_counts=None, charge_pref=None
 def train(cfg, env, agent):
     print("开始训练！")
     is_sac = str(cfg.get('algo_name', '')).upper() == 'SAC'
-    exp_variant = str(cfg.get('exp_variant', 'baseline')).lower()
+    # =========2026.2.14修改，实验顺序执行==========
+    # 按用户要求固定跑第一个实验（A1），不走命令行配置
+    exp_variant = 'a1'
     if hasattr(env, 'set_experiment_variant'):
         env.set_experiment_variant(exp_variant)
     ou_noise = None if is_sac else OUNoise(env.action_space)  # SAC不叠加OU噪声
@@ -197,7 +199,8 @@ def train(cfg, env, agent):
 
 def test(cfg, env, agent):
     print("开始测试！")
-    exp_variant = str(cfg.get('exp_variant', 'baseline')).lower()
+    # =========2026.2.14修改，实验顺序执行==========
+    exp_variant = 'a1'
     if hasattr(env, 'set_experiment_variant'):
         env.set_experiment_variant(exp_variant)
     rewards = [] # 记录所有回合的奖励
