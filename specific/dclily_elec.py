@@ -500,6 +500,17 @@ class dclily(gym.Env):
         self.available[0] = self._compute_dispatchable_counts().astype(self.available[0].dtype, copy=False)
     # ======修改结束
 
+    # =========2026.1.30修改，最优解求解==========
+    def _get_future_out_demand(self, step_offset=1):
+        """返回未来 step_offset 时间片的各区域出发需求向量。"""
+        idx = int(self.episode_timestep + step_offset)
+        if idx < 0 or self.od_out.size == 0:
+            return np.zeros(self.ZONE_NUM, dtype=float)
+        if idx >= self.od_out.shape[1]:
+            return np.zeros(self.ZONE_NUM, dtype=float)
+        return np.asarray(self.od_out[:, idx], dtype=float)
+    # ======修改结束
+
     def _sigmoid(self, x):
         """标准 Sigmoid 激活"""
         return 1.0 / (1.0 + math.exp(-x))
@@ -798,9 +809,25 @@ class dclily(gym.Env):
                 min_charge_vehicles = max(1, int(total_idle * 0.05))
                 charge_budget = max(charge_budget, min_charge_vehicles)
 
-            # 服务保留预算：按当前需求保留可调度车辆，避免充电吞噬供给
+            # =========2026.1.30修改，最优解求解==========
+            # 服务保留预算：当前需求 + 短期前瞻需求联合决定
             current_demand = int(np.sum(self.od_demand_now[0])) if self.od_demand_now.size > 0 else 0
-            reserve_for_service = min(total_idle, max(2, int(round(0.35 * current_demand))))
+            next_out_demand = float(np.sum(self._get_future_out_demand(step_offset=1)))
+            next2_out_demand = float(np.sum(self._get_future_out_demand(step_offset=2)))
+            lookahead_demand = 0.7 * next_out_demand + 0.3 * next2_out_demand
+
+            if current_demand <= 0:
+                if lookahead_demand <= 0:
+                    reserve_ratio = 0.05
+                else:
+                    reserve_ratio = min(0.35, 0.12 + 0.18 * (lookahead_demand / (lookahead_demand + 8.0)))
+                reserve_for_service = int(round(total_idle * reserve_ratio))
+            else:
+                reserve_for_service = int(round(0.30 * current_demand + 0.15 * lookahead_demand))
+                reserve_for_service = max(2, reserve_for_service)
+
+            reserve_for_service = min(total_idle, max(0, reserve_for_service))
+            # ======修改结束
             max_charge_budget = max(0, total_idle - reserve_for_service)
             charge_budget = min(charge_budget, max_charge_budget)
 
@@ -1187,21 +1214,50 @@ class dclily(gym.Env):
         dispatchable_available = self._compute_dispatchable_counts()
         # ======修改结束
 
+        # =========2026.1.30修改，最优解求解==========
+        # 无订单时间片策略：停止盲目调度，改为基于未来需求的预部署
+        current_total_demand = int(np.sum(self.od_demand_now[0])) if self.od_demand_now.size > 0 else 0
+        next_out_vector = self._get_future_out_demand(step_offset=1)
+        next2_out_vector = self._get_future_out_demand(step_offset=2)
+        lookahead_out = 0.7 * next_out_vector + 0.3 * next2_out_vector
+        lookahead_total = float(np.sum(lookahead_out))
+        no_order_mode = current_total_demand <= 0
+        if lookahead_total > 0:
+            lookahead_dest_pref = lookahead_out / lookahead_total
+        else:
+            lookahead_dest_pref = np.zeros(self.ZONE_NUM, dtype=float)
+        # ======修改结束
+
         for i in range(0, ZONE_NUM):
             # 先对可发出的车进行一次限制
             # limit_now=int(max(0,(self.available[0][i]-self.od_out[i][self.episode_timestep]/e)*float(action[i])))
             # 上面那个是TRE的
             # =========2026.2.12修改，方案F2：避免 int 截断导致后期全零==========
             available_now = max(0, int(dispatchable_available[i]))
-            # 对发车倾向做平滑放大，降低中低值动作被整型截断为0的概率
-            raw_limit = available_now * math.sqrt(max(0.0, float(action[i])))
-            limit_now = int(round(raw_limit))
-            current_out_demand = int(np.sum(self.od_demand_now[0][i]))
-            if available_now > 0 and current_out_demand > 0 and float(action[i]) > 0.15:
-                limit_now = max(1, limit_now)
-            limit_now = max(0, min(limit_now, available_now))
+            # =========2026.1.30修改，最优解求解==========
+            if no_order_mode:
+                if lookahead_total <= 0:
+                    limit_now = 0
+                else:
+                    preposition_ratio = min(0.35, 0.10 + 0.25 * max(0.0, float(action[i])))
+                    raw_limit = available_now * preposition_ratio
+                    limit_now = int(round(raw_limit))
+                    if available_now > 0 and float(action[i]) > 0.20 and lookahead_total > 0:
+                        limit_now = max(1, limit_now)
+                limit_now = max(0, min(limit_now, available_now))
+                action_table = np.array(lookahead_dest_pref, dtype=float)
+                action_table[i] = 0.0
+            else:
+                # 对发车倾向做平滑放大，降低中低值动作被整型截断为0的概率
+                raw_limit = available_now * math.sqrt(max(0.0, float(action[i])))
+                limit_now = int(round(raw_limit))
+                current_out_demand = int(np.sum(self.od_demand_now[0][i]))
+                if available_now > 0 and current_out_demand > 0 and float(action[i]) > 0.15:
+                    limit_now = max(1, limit_now)
+                limit_now = max(0, min(limit_now, available_now))
+                action_table = np.array(real_act[i], copy=True)
             # ======修改结束
-            action_table = real_act[i]
+            # ======修改结束
 
             while limit_now > 0:
                 a = -1
@@ -1254,6 +1310,10 @@ class dclily(gym.Env):
         
         # =========2026.2.13修改，调度前执行双向对调净流抵消==========
         action_table_true = self._cancel_bidirectional_dispatch(action_table_true)
+        # ======修改结束
+
+        # =========2026.1.30修改，最优解求解==========
+        idle_dispatch_orders = int(np.sum(action_table_true)) if no_order_mode else 0
         # ======修改结束
 
         self.car, self.available, self.car_mem, reward, real_reward, rel_dispatch = gur.solveproblem(self.dist, self.available,
@@ -1451,10 +1511,31 @@ class dclily(gym.Env):
         # =========2026.2.12修改，实验19：充电奖励不缩放==========
         # =========2026.2.13修改，添加SOC维持奖励==========
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
+        # =========2026.1.30修改，最优解求解==========
+        # 需求准备度奖励：当前无单时奖励“为下一步需求准备好可服务车辆”
+        if lookahead_total > 0:
+            demand_weights = lookahead_out / (lookahead_total + 1e-6)
+            dispatchable_now = self._compute_dispatchable_counts().astype(float)
+            avg_soc_ratio = float(np.mean(np.clip(self.car[:, 1] / BATTERY_CAPACITY, 0.0, 1.0)))
+            readiness_supply = float(np.sum(dispatchable_now * demand_weights))
+            readiness_bonus = 40.0 * readiness_supply * (0.5 + 0.5 * avg_soc_ratio)
+        else:
+            readiness_bonus = 0.0
+
+        # 无订单调度惩罚：无单期抑制无效迁移；对前瞻预部署给予减免
+        idle_dispatch_penalty = 0.0
+        if no_order_mode and idle_dispatch_orders > 0:
+            idle_dispatch_penalty = 35.0 * float(idle_dispatch_orders)
+            if lookahead_total > 0:
+                effective_preposition = min(idle_dispatch_orders, int(round(0.5 * lookahead_total)))
+                idle_dispatch_penalty -= 15.0 * float(effective_preposition)
+            idle_dispatch_penalty = max(0.0, idle_dispatch_penalty)
+        # ======修改结束
+
         # 新奖励函数：充电奖励单独计算，不除以10
         # 添加SOC维持奖励，鼓励保持高SOC
         # 添加充电维护奖励，进一步强化充电激励
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty
+        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus + readiness_bonus - idle_dispatch_penalty - fixed_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
@@ -1465,7 +1546,9 @@ class dclily(gym.Env):
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
             "demand_orders": rel_demand,  # 需求订单矩阵
             "charging_actions": charging_actions,  # 充电动作记录
-            "action_table_true": action_table_true  # RL调度倾向矩阵
+            "action_table_true": action_table_true,  # RL调度倾向矩阵
+            "readiness_bonus": readiness_bonus,
+            "idle_dispatch_penalty": idle_dispatch_penalty
         }           ##0729 计算trb论文指标加入
         # ======修改结束
 
@@ -1527,7 +1610,26 @@ class dclily(gym.Env):
             avg_soc = total_soc / self.CAR_NUM
             soc_maintain_bonus = (avg_soc - 1200) * 2.0 if avg_soc >= 1200 else 0
 
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty
+            # =========2026.1.30修改，最优解求解==========
+            if lookahead_total > 0:
+                demand_weights = lookahead_out / (lookahead_total + 1e-6)
+                dispatchable_now = self._compute_dispatchable_counts().astype(float)
+                avg_soc_ratio = float(np.mean(np.clip(self.car[:, 1] / BATTERY_CAPACITY, 0.0, 1.0)))
+                readiness_supply = float(np.sum(dispatchable_now * demand_weights))
+                readiness_bonus = 40.0 * readiness_supply * (0.5 + 0.5 * avg_soc_ratio)
+            else:
+                readiness_bonus = 0.0
+
+            idle_dispatch_penalty = 0.0
+            if no_order_mode and idle_dispatch_orders > 0:
+                idle_dispatch_penalty = 35.0 * float(idle_dispatch_orders)
+                if lookahead_total > 0:
+                    effective_preposition = min(idle_dispatch_orders, int(round(0.5 * lookahead_total)))
+                    idle_dispatch_penalty -= 15.0 * float(effective_preposition)
+                idle_dispatch_penalty = max(0.0, idle_dispatch_penalty)
+
+            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus + readiness_bonus - idle_dispatch_penalty - fixed_penalty
+            # ======修改结束
             # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info
