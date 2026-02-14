@@ -169,18 +169,23 @@ class OptimalSolver:
         # ======修改结束
 
         # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
-        # 5. SOC维持奖励：暂时禁用以调试模型可行性
-        # avg_soc_vars = model.addVars(used_time + 1, lb=0.0, ub=cfg["BATTERY_CAPACITY"], vtype=GRB.CONTINUOUS, name="avg_soc")
-        # for t in range(used_time + 1):
-        #     model.addConstr(avg_soc_vars[t] == gp.quicksum(soc[v, t] for v in range(car_num)) / car_num)
-        #
-        # soc_maintain_bonus_vars = model.addVars(used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_maintain_bonus")
-        # for t in range(used_time + 1):
-        #     model.addConstr(soc_maintain_bonus_vars[t] >= 2.0 * (avg_soc_vars[t] - 1200))
-        #     model.addConstr(soc_maintain_bonus_vars[t] >= 0)
-        #
-        # soc_maintain_bonus = gp.quicksum(soc_maintain_bonus_vars[t] for t in range(used_time + 1))
-        soc_maintain_bonus = 0  # 暂时设为0
+        # 5. SOC维持奖励：与RL环境保持一致
+        # 简化实现：直接使用max(0, 2.0 * (avg_soc - 1200))
+        avg_soc_vars = model.addVars(used_time + 1, lb=0.0, ub=cfg["BATTERY_CAPACITY"], vtype=GRB.CONTINUOUS, name="avg_soc")
+        for t in range(used_time + 1):
+            model.addConstr(avg_soc_vars[t] == gp.quicksum(soc[v, t] for v in range(car_num)) / car_num)
+
+        # 创建辅助变量用于 2.0 * (avg_soc - 1200)
+        soc_diff_vars = model.addVars(used_time + 1, lb=-2400, ub=1600, vtype=GRB.CONTINUOUS, name="soc_diff")
+        for t in range(used_time + 1):
+            model.addConstr(soc_diff_vars[t] == 2.0 * (avg_soc_vars[t] - 1200))
+
+        # 使用Gurobi的max_函数建模 max(0, soc_diff)
+        soc_maintain_bonus_vars = model.addVars(used_time + 1, lb=0.0, vtype=GRB.CONTINUOUS, name="soc_maintain_bonus")
+        for t in range(used_time + 1):
+            model.addGenConstrMax(soc_maintain_bonus_vars[t], [soc_diff_vars[t]], 0.0, name=f"soc_bonus_max_{t}")
+
+        soc_maintain_bonus = gp.quicksum(soc_maintain_bonus_vars[t] for t in range(used_time + 1))
         # ======修改结束
 
         # =========2026.2.5修改，实验2：同步RL移除固定惩罚==========
