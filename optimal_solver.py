@@ -201,14 +201,35 @@ class OptimalSolver:
         fixed_penalty = 0  # 原500 * used_time改为0
         # ======修改结束
 
+        # =========2026.2.14修改，添加服务率惩罚==========
+        # 7. 服务率惩罚：与RL环境保持一致
+        # 对每个时间步，如果服务率 < 0.5，惩罚 = (0.5 - service_rate) * 8000
+        service_rate_penalty_vars = model.addVars(used_time, lb=0.0, vtype=GRB.CONTINUOUS, name="service_rate_penalty")
+
+        for t in range(used_time):
+            # 计算该时间步的总需求（常数）
+            total_demand_t = float(np.sum(demand[t, :, :]))
+
+            if total_demand_t > 0:
+                # 计算该时间步的服务订单数
+                served_orders_t = gp.quicksum(x[v, t, i, j] for v in range(car_num) for i in range(zone_num) for j in range(zone_num))
+
+                # 服务率 = served_orders_t / total_demand_t
+                # 惩罚 = max(0, (0.5 - service_rate) * 8000)
+                #      = max(0, 4000 - 8000 * served_orders_t / total_demand_t)
+                model.addConstr(service_rate_penalty_vars[t] >= 4000 - 8000 * served_orders_t / total_demand_t)
+
+        service_rate_penalty = gp.quicksum(service_rate_penalty_vars[t] for t in range(used_time))
+        # ======修改结束
+
         # =========2026.2.12修改，实验19：充电奖励不参与缩放==========
         # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
         # =========2026.2.14修改，修正目标函数与RL环境完全一致==========
+        # =========2026.2.14修改，添加服务率惩罚==========
         # 新目标函数：与RL环境reward_value完全一致
-        # RL: (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus
-        # 注意：service_revenue已经包含了dispatch_cost（作为负值），所以不需要再减dispatch_cost
+        # RL: (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - service_rate_penalty
         model.setObjective(
-            (service_revenue - dispatch_cost - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty,
+            (service_revenue - dispatch_cost - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty - service_rate_penalty,
             GRB.MAXIMIZE
         )
         # ======修改结束

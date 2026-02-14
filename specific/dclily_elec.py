@@ -1372,6 +1372,20 @@ class dclily(gym.Env):
         total_demand = np.sum(demand)##0729 计算trb论文指标加入
         self._last_svc = np.sum(real_reward) / total_demand if total_demand > 0 else 0#0729 计算trb论文指标加入
         self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0  # 修改
+
+        # =========2026.2.14修改，添加服务率惩罚==========
+        # 计算服务率：实际服务的订单数 / 总需求数
+        served_orders = np.sum(rel_demand)  # 实际服务的订单数
+        service_rate = served_orders / total_demand if total_demand > 0 else 1.0
+
+        # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
+        service_rate_penalty = 0
+        if service_rate < 0.5:  # 服务率低于50%时开始惩罚
+            # 惩罚力度：(0.5 - service_rate) * 8000
+            # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
+            service_rate_penalty = (0.5 - service_rate) * 8000
+        # ======修改结束
+
         # ====== Debug log start ======
         #print(f"\n[Step {self.episode_timestep}] Action received:")
 
@@ -1512,10 +1526,12 @@ class dclily(gym.Env):
         # =========2026.2.12修改，实验19：充电奖励不缩放==========
         # =========2026.2.13修改，添加SOC维持奖励==========
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
+        # =========2026.2.14修改，添加服务率惩罚==========
         # 新奖励函数：充电奖励单独计算，不除以10
         # 添加SOC维持奖励，鼓励保持高SOC
         # 添加充电维护奖励，进一步强化充电激励
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty
+        # 添加服务率惩罚，鼓励服务更多订单
+        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty - service_rate_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
@@ -1578,9 +1594,22 @@ class dclily(gym.Env):
             soc_penalty += low_soc_vehicle_penalty
             # ======修改结束
 
+            # =========2026.2.14修改，终止时也添加服务率惩罚==========
+            # 计算服务率：实际服务的订单数 / 总需求数
+            served_orders = np.sum(rel_demand)  # 实际服务的订单数
+            service_rate = served_orders / total_demand if total_demand > 0 else 1.0
+
+            # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
+            service_rate_penalty = 0
+            if service_rate < 0.5:  # 服务率低于50%时开始惩罚
+                # 惩罚力度：(0.5 - service_rate) * 8000
+                # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
+                service_rate_penalty = (0.5 - service_rate) * 8000
+            # ======修改结束
+
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
             fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty
+            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty - service_rate_penalty
             # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info
