@@ -29,6 +29,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # =========2026.2.13修改，奖励系数重标定（与环境同步）==========
 CHARGE_BONUS_PER_CAR = 1500
 CHARGE_MAINTENANCE_PER_CAR = 300
+# =========2026.1.30修改，最优解求解==========
+IDLE_DISPATCH_BASE_PENALTY = 35.0
+IDLE_DISPATCH_RELIEF_MAX = 15.0
 # ======修改结束
 
 register(
@@ -69,6 +72,29 @@ class OptimalSolver:
             for t_idx, col in enumerate(use_cols):  # 修改
                 demand[t_idx, o, d] = int(row[col])  # 修改
         return demand, len(use_cols)  # 修改
+
+    # =========2026.1.30修改，最优解求解==========
+    def _idle_dispatch_penalty_coeffs(self, demand):
+        """按时间片预计算无订单调度惩罚系数（考虑短期前瞻减免）。"""
+        used_time = int(demand.shape[0])
+        total_demand_per_step = np.asarray([float(np.sum(demand[t])) for t in range(used_time)], dtype=float)
+        coeffs = np.zeros(used_time, dtype=float)
+
+        for t in range(used_time):
+            current_total = total_demand_per_step[t]
+            if current_total > 0:
+                coeffs[t] = 0.0
+                continue
+
+            next_total = total_demand_per_step[t + 1] if (t + 1) < used_time else 0.0
+            next2_total = total_demand_per_step[t + 2] if (t + 2) < used_time else 0.0
+            lookahead_total = 0.7 * next_total + 0.3 * next2_total
+
+            relief = IDLE_DISPATCH_RELIEF_MAX * (lookahead_total / (lookahead_total + 8.0)) if lookahead_total > 0 else 0.0
+            coeffs[t] = max(0.0, IDLE_DISPATCH_BASE_PENALTY - relief)
+
+        return coeffs
+    # ======修改结束
 
     # =========2026.2.1修改，添加参数优化支持==========
     def solve_global_optimal(self, demand_csv="od_demand.csv", output_path="global_optimal_solution.json",
@@ -172,6 +198,17 @@ class OptimalSolver:
         soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(used_time + 1))
         # ======修改结束
 
+        # =========2026.1.30修改，最优解求解==========
+        idle_dispatch_penalty_coeffs = self._idle_dispatch_penalty_coeffs(demand)
+        idle_dispatch_penalty = gp.quicksum(
+            float(idle_dispatch_penalty_coeffs[t]) * r[v, t, i, j]
+            for v in range(car_num)
+            for t in range(used_time)
+            for i in range(zone_num)
+            for j in range(zone_num)
+        )
+        # ======修改结束
+
         # =========2026.2.13修改，SOC维持奖励暂不纳入MILP（避免引入非有界奖励变量）==========
         soc_maintain_bonus = 0
         # ======修改结束
@@ -185,7 +222,7 @@ class OptimalSolver:
         # =========2026.2.13修改，完整组合方案：添加SOC维持奖励==========
         # 新目标函数（充电奖励不除以10，添加SOC维持奖励和充电维护奖励）
         model.setObjective(
-            (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus + soc_maintain_bonus - fixed_penalty,
+            (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus + soc_maintain_bonus - idle_dispatch_penalty - fixed_penalty,
             GRB.MAXIMIZE
         )
         # ======修改结束
@@ -282,7 +319,13 @@ class OptimalSolver:
             "solve_time": float(model.Runtime),  # 修改
             "served_orders": served,  # 修改
             "repositioned_orders": repositioned,  # 新增：调度订单
-            "charging_actions": charging  # 新增：充电动作
+            "charging_actions": charging,  # 新增：充电动作
+            # =========2026.1.30修改，最优解求解==========
+            "idle_dispatch_penalty_synced": True,
+            "idle_dispatch_base_penalty": IDLE_DISPATCH_BASE_PENALTY,
+            "idle_dispatch_relief_max": IDLE_DISPATCH_RELIEF_MAX,
+            "readiness_bonus_in_milp": False
+            # ======修改结束
         }  # 修改
         # ======修改结束
 
@@ -456,6 +499,27 @@ class OptimalSolver:
 
             soc_penalty = gp.quicksum(soc_penalty_vars[v, t] for v in range(car_num) for t in range(actual_horizon + 1))
 
+            # =========2026.1.30修改，最优解求解==========
+            rolling_idle_dispatch_penalty = gp.quicksum(
+                float(max(
+                    0.0,
+                    IDLE_DISPATCH_BASE_PENALTY - IDLE_DISPATCH_RELIEF_MAX * (
+                        (0.7 * (float(np.sum(demand[current_step + t + 1])) if (current_step + t + 1) < total_time else 0.0)
+                         + 0.3 * (float(np.sum(demand[current_step + t + 2])) if (current_step + t + 2) < total_time else 0.0)) /
+                        ((0.7 * (float(np.sum(demand[current_step + t + 1])) if (current_step + t + 1) < total_time else 0.0)
+                          + 0.3 * (float(np.sum(demand[current_step + t + 2])) if (current_step + t + 2) < total_time else 0.0)) + 8.0)
+                        if (0.7 * (float(np.sum(demand[current_step + t + 1])) if (current_step + t + 1) < total_time else 0.0)
+                            + 0.3 * (float(np.sum(demand[current_step + t + 2])) if (current_step + t + 2) < total_time else 0.0)) > 0 else 0.0
+                    )
+                )) * r[v, t, i, j]
+                for v in range(car_num)
+                for t in range(actual_horizon)
+                for i in range(zone_num)
+                for j in range(zone_num)
+                if float(np.sum(demand[current_step + t])) <= 0
+            )
+            # ======修改结束
+
             # 5. SOC维持奖励暂不纳入Rolling Horizon，保持模型稳定
             soc_maintain_bonus = 0
 
@@ -466,7 +530,7 @@ class OptimalSolver:
 
             # 新目标函数（与环境一致：服务/惩罚缩放，充电与SOC维持不缩放）
             model.setObjective(
-                (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus + soc_maintain_bonus - fixed_penalty,
+                (service_revenue - soc_penalty - dispatch_cost) / 10 + charging_bonus + soc_maintain_bonus - rolling_idle_dispatch_penalty - fixed_penalty,
                 GRB.MAXIMIZE
             )
             # ======修改结束
