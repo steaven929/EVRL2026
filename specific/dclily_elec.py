@@ -500,6 +500,24 @@ class dclily(gym.Env):
         """标准 Sigmoid 激活"""
         return 1.0 / (1.0 + math.exp(-x))
 
+    # =========2026.1.30修改，最优解求解==========
+    def _cancel_bidirectional_dispatch(self, matrix):
+        """对调度矩阵做双向净流抵消，避免同时出现 i->j 与 j->i。"""
+        net_matrix = np.array(matrix, copy=True, dtype=float)
+        for i in range(self.ZONE_NUM):
+            net_matrix[i][i] = 0
+        for i in range(self.ZONE_NUM):
+            for j in range(i + 1, self.ZONE_NUM):
+                net = net_matrix[i][j] - net_matrix[j][i]
+                if net >= 0:
+                    net_matrix[i][j] = net
+                    net_matrix[j][i] = 0
+                else:
+                    net_matrix[i][j] = 0
+                    net_matrix[j][i] = -net
+        return net_matrix
+    # ======修改结束
+
     def rl_should_charge(self, vehicle_id, charge_pref):
         """
         [已废弃 - 2026.2.6方案C] 使用 RL 输出来决定是否充电（替换固定阈值法）
@@ -1224,6 +1242,11 @@ class dclily(gym.Env):
         
         # 我这篇文章用的是优化方法，你可以不用弄，reward单智能体应该用不上，我就直接让他等同于real_reward
         
+        # =========2026.1.30修改，最优解求解==========
+        # 调度前执行双向对调净流抵消
+        action_table_true = self._cancel_bidirectional_dispatch(action_table_true)
+        # ======修改结束
+
         prev_car = copy.deepcopy(self.car)  #对比solveproblem 前后的状态，识别哪些订单是这一轮新产生的
         
         self.car, self.available, self.car_mem, reward, real_reward, rel_dispatch = gur.solveproblem(self.dist, self.available,
