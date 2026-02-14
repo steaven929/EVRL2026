@@ -2,40 +2,40 @@
   "executed_policies": [
     {
       "policy_name": "Random",
-      "reward_mean": 2025937.5833333333,
-      "reward_std": 101521.61092857608,
-      "svc_mean": 98.9636359351433,
-      "svc_std": 18.618491417971857,
-      "rld_mean": 2.095833333333333,
-      "rld_std": 0.29846249531743696,
-      "srd_mean": 98.9636359351433,
-      "srd_std": 18.618491417971857,
-      "avg_soc_mean": 1016.6666666666666,
-      "avg_soc_std": 119.01903500167423
+      "reward_mean": 4468.416666666666,
+      "reward_std": 42107.1744327756,
+      "svc_mean": 108.99475014364721,
+      "svc_std": 10.772309373028836,
+      "rld_mean": 2.1125,
+      "rld_std": 0.383038836151114,
+      "srd_mean": 108.99475014364721,
+      "srd_std": 10.772309373028836,
+      "avg_soc_mean": 892.8935185185186,
+      "avg_soc_std": 80.88246181625632
     },
     {
       "policy_name": "Greedy",
-      "reward_mean": 1602135.833333333,
-      "reward_std": 42350.23689990876,
-      "svc_mean": 77.32514880952382,
-      "svc_std": 3.582832657510251,
-      "rld_mean": 1.079166666666667,
-      "rld_std": 0.21159939875991035,
-      "srd_mean": 77.32514880952382,
-      "srd_std": 3.582832657510251,
-      "avg_soc_mean": 1435.8564814814815,
-      "avg_soc_std": 20.19414248674685
+      "reward_mean": 164251.8055555556,
+      "reward_std": 4762.4598954113235,
+      "svc_mean": 60.40116567460317,
+      "svc_std": 0.601928890542537,
+      "rld_mean": 0.6666666666666665,
+      "rld_std": 1.1102230246251565e-16,
+      "srd_mean": 60.40116567460317,
+      "srd_std": 0.601928890542537,
+      "avg_soc_mean": 1487.662037037037,
+      "avg_soc_std": 6.774581504494726
     },
     {
       "policy_name": "RL-DDPG",
-      "reward_mean": 2394605.076111111,
-      "reward_std": 319215.61164977186,
-      "svc_mean": 97.97695709862892,
-      "svc_std": 98.16975490177306,
-      "rld_mean": 0.64,
-      "rld_std": 1.7636326148038883,
-      "srd_mean": 97.97695709862892,
-      "srd_std": 98.16975490177306,
+      "reward_mean": 103355.21333333333,
+      "reward_std": 15924.801170522089,
+      "svc_mean": 111.95066652258991,
+      "svc_std": 108.79237738173532,
+      "rld_mean": 0.42,
+      "rld_std": 0.8964373932405989,
+      "srd_mean": 111.95066652258991,
+      "srd_std": 108.79237738173532,
       "avg_soc_mean": 0.0,
       "avg_soc_std": 0.0
     }
@@ -43,10 +43,10 @@
   "theoretical_bounds": {
     "global_optimal": {
       "name": "Global-Optimal (MILP)",
-      "reward": 2270544.818,
+      "reward": 233009.83,
       "method": "Global Optimal MILP",
       "status": "OPTIMAL",
-      "solve_time": 8.753000020980835,
+      "solve_time": 24.361000061035156,
       "mip_gap": 0.0
     },
     "rolling_horizon": {
