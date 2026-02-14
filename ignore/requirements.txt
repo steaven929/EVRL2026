@@ -1,0 +1,21 @@
+# EVRL2026 Project Dependencies
+# Created for PyCharm setup
+# Run: pip install -r requirements.txt
+
+# Core dependencies
+matplotlib>=3.5.0
+numpy<2.0.0
+gym==0.21.0
+torch==2.0.1
+torchvision==0.15.2
+seaborn>=0.11.0
+
+# Data processing
+pandas>=1.3.0
+
+# Machine learning
+scikit-learn>=0.24.0
+
+# Optimization (for specific/optim.py)
+# Note: Gurobi requires separate installation
+# gurobipy>=10.0.0  # Requires Gurobi optimizer license
