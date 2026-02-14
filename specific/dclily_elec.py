@@ -116,8 +116,8 @@ class dclily(gym.Env):
         # ======修改结束
 
         # =========2026.2.14修改，实验方案开关==========
-        # baseline/a1/a2/b1/b2/c1
-        self.exp_variant = str(self.config.get('EXP_VARIANT', 'baseline')).lower()
+        # 按用户要求固定为第一个实验（A1），不通过命令行切换
+        self.exp_variant = 'a1'
         # ======修改结束
 
         # 自行定义
