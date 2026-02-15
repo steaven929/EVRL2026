@@ -88,14 +88,14 @@ class GreedyPolicy(BaselinePolicy):
         action[0:self.zone_num] = 1.0 / self.zone_num
 
         # =========2026.2.13修改，添加状态结构说明==========
+        # =========2026.2.15修改，更新状态结构（38→33维）==========
         # 目的地倾向：根据 OD 需求（state 的前半部分）
-        # 状态结构（总维度38）：
+        # 状态结构（总维度33）：
         #   [0:16]   = OD demand (od_in + od_out, 2*TIME_SLICE*ZONE_NUM)
         #   [16:24]  = Charger states (TIME_SLICE*ZONE_NUM)
-        #   [24:32]  = Num chargers (TIME_SLICE*ZONE_NUM)
-        #   [32:36]  = Avg SOC per zone (ZONE_NUM)
-        #   [36]     = Current timestep
-        #   [37]     = Remaining timesteps
+        #   [24:28]  = Num chargers (ZONE_NUM, 移除TIME_SLICE重复)
+        #   [28:32]  = Avg SOC per zone (ZONE_NUM)
+        #   [32]     = Current timestep (移除remaining_timesteps)
         # state[0:4] = od_in for current time slice, all zones
         demand_in = state[0:self.zone_num]
         # ======修改结束

@@ -90,10 +90,14 @@ ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
 
 # =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
 # =========2026.2.13修改，状态空间增强：添加时间步信息==========
+# =========2026.2.15修改，状态空间优化：移除冗余特征（38→33维）==========
+# 移除：1) remaining_timesteps（与current_timestep线性相关）
+#       2) num_chargers的TIME_SLICE重复（静态配置无需重复）
 OBS_SPACE = spaces.MultiDiscrete(
-    (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES, NUM_CHARGERS] +
+    (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES] +  # OD需求 + 充电桩状态
+    ZONE_NUM * [NUM_CHARGERS] +  # 充电桩数量（移除TIME_SLICE重复）
     ZONE_NUM * [10] +  # 4个区域的SOC (0-9)
-    [TIME_NUM, TIME_NUM]  # 新增：当前时间步(0-11)、剩余时间步(0-11)
+    [TIME_NUM]  # 当前时间步(0-11)，移除remaining_timesteps
 )
 # ======修改结束
 
@@ -432,19 +436,22 @@ class dclily(gym.Env):
             charger_states.extend([val] * TIME_SLICE)
         charger_states = np.array(charger_states, dtype=np.int64)
         
+        # =========2026.2.15修改，状态空间优化：移除num_chargers的TIME_SLICE重复==========
         # 3) 充电桩数量 (第4段)：每区装配的桩数，clip 到 0..NUM_CHARGERS-1
+        # 优化：移除TIME_SLICE重复，因为充电桩数量是静态配置
         num_chargers_feat = []
         for zone in range(ZONE_NUM):
             installed = 0
             if zone < len(CHARGER_PER_ZONE) and isinstance(CHARGER_PER_ZONE[zone], (list, tuple)):
                 installed = len(CHARGER_PER_ZONE[zone])
-            # 若想放“可用充电位数”，可在此用占用信息计算；这里先放装配数量
+            # 若想放"可用充电位数"，可在此用占用信息计算；这里先放装配数量
             if NUM_CHARGERS > 0:
                 installed = max(0, min(NUM_CHARGERS - 1, installed))
             else:
                 installed = 0
-            num_chargers_feat.extend([installed] * TIME_SLICE)
+            num_chargers_feat.append(installed)  # 移除TIME_SLICE重复
         num_chargers_feat = np.array(num_chargers_feat, dtype=np.int64)
+        # ======修改结束
 
         # =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
         # 4) 区域平均 SOC (新增)
@@ -466,17 +473,22 @@ class dclily(gym.Env):
         # ======修改结束
 
         # =========2026.2.13修改，状态空间增强：添加时间步信息==========
+        # =========2026.2.15修改，状态空间优化：移除remaining_timesteps==========
         # 5) 时间步特征（新增）
         # 修复：确保时间步值在有效范围[0, TIME_NUM-1]内
+        # 优化：移除remaining_timesteps，因为它与current_timestep线性相关
         current_timestep = np.array([min(self.episode_timestep, TIME_NUM - 1)], dtype=np.int64)  # 当前时间步 (0-11)
-        remaining_timesteps = np.array([max(0, TIME_NUM - self.episode_timestep - 1)], dtype=np.int64)  # 剩余时间步 (11-0)
         # ======修改结束
 
-        # 6) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC, TIMESTEP, REMAINING] * (TIME_SLICE*ZONE_NUM + ZONE_NUM + 2)
-        state = np.concatenate([od_part, charger_states, num_chargers_feat, avg_soc_per_zone, current_timestep, remaining_timesteps])
-        # 保险断言：长度必须满足 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM + 2
-        assert state.shape[0] == 4 * ZONE_NUM * TIME_SLICE + ZONE_NUM + 2, \
-            f"state dim {state.shape[0]} != 4*ZONE_NUM*TIME_SLICE + ZONE_NUM + 2 (expected {4 * ZONE_NUM * TIME_SLICE + ZONE_NUM + 2})"
+        # =========2026.2.15修改，状态空间优化：更新状态拼接和维度断言==========
+        # 6) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC, TIMESTEP]
+        # 维度：(TIME_SLICE*ZONE_NUM)*3 + ZONE_NUM + ZONE_NUM + 1 = 24 + 4 + 4 + 1 = 33
+        state = np.concatenate([od_part, charger_states, num_chargers_feat, avg_soc_per_zone, current_timestep])
+        # 保险断言：长度必须满足 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
+        expected_dim = 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
+        assert state.shape[0] == expected_dim, \
+            f"state dim {state.shape[0]} != 3*ZONE_NUM*TIME_SLICE + 2*ZONE_NUM + 1 (expected {expected_dim})"
+        # ======修改结束
         return state
         
         # return np.concatenate([od_part, np.array(charger_states)])
