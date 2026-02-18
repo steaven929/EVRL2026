@@ -1,0 +1,45 @@
+{  
+  "PL_NUM": 9,  
+  "ZONE_NUM": 4,
+  "CAR_NUM": 18,  
+  "TIME_NUM": 12,  
+  "TIME_LENGTH": 10,  
+  "TIME_SLICE": 2,  
+  "OD_MAX": 6,  
+  "DIST_MAX": 1600,
+  "car_speed_min": 100,
+  "manzu_min": 1.5,  
+  "diaodu_min": 0.0001,
+  "elec_min": 0.1,  
+  "BATTERY_CAPACITY": 2000,
+  "path": ".\\data\\toy_network\\",
+  "training_set_number":1,
+
+  "CHARGER_STATES":4,
+
+  "CHARGER_ZONES":3,
+
+  "ZONES": [
+  {
+    "zone_id": 0,
+    "num_parking_slots": 5,
+    "charging_slots": [0,1,2]
+  },
+  {
+    "zone_id": 1,
+    "num_parking_slots": 4,
+    "charging_slots": [0.1]
+  },
+  {
+    "zone_id": 2,
+    "num_parking_slots": 8,
+    "charging_slots": [0,1,2,3]
+  },
+  {
+    "zone_id": 3,
+    "num_parking_slots": 7,
+    "charging_slots": [0,1,2,3]
+  }
+
+]
+}

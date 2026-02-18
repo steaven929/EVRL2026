@@ -1,0 +1,118 @@
+============================================================
+Reward Function D2 Implementation Summary
+============================================================
+Date: 2026-02-18
+Status: COMPLETED
+
+============================================================
+Key Changes:
+============================================================
+
+1. Service Revenue: /10 -> x2.0 (20x increase)
+   - Old: service_revenue / 10
+   - New: service_revenue * 2.0
+   - Impact: Service becomes primary reward source
+
+2. Charging Bonus: 15000 -> 1500 (10x decrease)
+   - Old: 15000 * charging_count
+   - New: 1500 * charging_count
+   - Impact: Charging still rewarded but not dominant
+
+3. Charging Maintenance: 3000 -> 300 (10x decrease)
+   - Old: 3000 * charging_count
+   - New: 300 * charging_count
+   - Total charging reward: 18000 -> 1800 per vehicle
+
+4. Service Rate Threshold Bonus: NEW
+   - Condition: service_rate > 10%
+   - Reward: +5000
+   - Impact: Clear performance target
+
+============================================================
+Expected Behavior Change:
+============================================================
+
+Before D2:
+  - Charging 1 vehicle: +18000
+  - Serving 1 order: ~+10-20
+  - Strategy: Only charge (optimal!)
+
+After D2:
+  - Charging 1 vehicle: +1800
+  - Serving 1 order: ~+200-400
+  - Serving 10 orders: ~+2000-4000
+  - Service rate >10%: +5000 bonus
+  - Strategy: Serve orders + maintain charging
+
+============================================================
+Reward Function Formula:
+============================================================
+
+Middle Steps:
+reward = (service_revenue * 2.0 - soc_penalty)
+         + charging_bonus (1500 * count)
+         + charging_maintenance_bonus (300 * count)
+         + soc_maintain_bonus
+         + service_rate_threshold_bonus (5000 if rate>10%)
+         - fixed_penalty
+         - service_rate_penalty
+
+Terminal Step:
+final_reward = (service_revenue * 2.0 - soc_penalty)
+               + charging_bonus (300 * count)
+               + service_rate_threshold_bonus (5000 if rate>10%)
+               - fixed_penalty
+               - service_rate_penalty
+
+============================================================
+Training Recommendations:
+============================================================
+
+1. Training Duration:
+   - Minimum: 300 episodes
+   - Recommended: 500 episodes
+   - Extended: 1000 episodes (if needed)
+
+2. Success Metrics:
+   - Service rate >15% (target)
+   - Service rate >10% (acceptable)
+   - Reward increasing trend
+   - Service distance >0.5
+
+3. Monitoring Points:
+   - Episode 50: Service rate should be >5%
+   - Episode 100: Service rate should be >10%
+   - Episode 200: Service rate should be >15%
+
+4. Failure Signals:
+   - Service rate <5% after 100 episodes
+   - Service rate declining trend
+   - Reward not increasing
+
+5. Next Actions if Failed:
+   - Consider more aggressive D1 (service x5, charging x0.05)
+   - Consider extreme D3 (remove charging rewards)
+   - Implement curriculum learning
+
+============================================================
+Files Modified:
+============================================================
+- specific/dclily_elec.py
+  - Line ~1533: charging_bonus = 1500 * charging_count
+  - Line ~1608: charging_maintenance_bonus = 300 * charging_count
+  - Line ~1628: reward_value formula updated
+  - Line ~1654: terminal charging_bonus = 300 * charging_count
+  - Line ~1706: final_reward formula updated
+
+============================================================
+Ready to Train:
+============================================================
+Command: python main.py --train_eps 500
+
+Expected Results:
+- Service rate: 1.17% -> 15-30%
+- Reward: 12M -> 18-25M
+- Training stability: Improved
+- Convergence: 300-500 episodes
+
+============================================================

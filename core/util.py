@@ -17,27 +17,44 @@ def get_args():
     parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=800,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--train_eps',default=100,type=int,help="episodes of training") #训练轮数  # 2026.2.18修改：100→800，251维状态需要更长训练
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
-    parser.add_argument('--critic_lr',default=3e-5,type=float,help="learning rate of critic")  #critic学习率
-    parser.add_argument('--actor_lr',default=2e-5,type=float,help="learning rate of actor")  #actor学习率  # 实验16：优化方案A，保持2e-5
-    parser.add_argument('--memory_capacity',default=64000,type=int,help="memory capacity")  #经验池容量
-    parser.add_argument('--batch_size',default=128,type=int)  #批量学习数  # 修改
+    # =========2026.2.18修改，方案B：增大网络容量以处理251维状态==========
+    parser.add_argument('--critic_lr',default=1e-4,type=float,help="learning rate of critic")  # 1.5e-4 → 1e-4，大网络需要小lr
+    parser.add_argument('--actor_lr',default=3e-5,type=float,help="learning rate of actor")  # 4e-5 → 3e-5，大网络需要小lr
+    # ======修改结束
+    parser.add_argument('--memory_capacity',default=500000,type=int,help="memory capacity")  #经验池容量
+    # =========2026.2.16修改，方案A：稳定性优化==========
+    # =========2026.2.17修改，快速改进：增大batch size==========
+    parser.add_argument('--batch_size',default=1024,type=int)  # 256 → 1024，高维空间需要更大批量
+    # ======修改结束
     parser.add_argument('--target_update',default=2,type=int)  #目标网络更新频率
     parser.add_argument('--tau',default=5e-4,type=float)  #软更新参数
-    parser.add_argument('--critic_hidden_dim',default=256,type=int)  #critic的dense层神经元  # 实验18：恢复256
-    parser.add_argument('--actor_hidden_dim',default=256,type=int)   #actor的dense层神经元  # 实验18：恢复256
-    parser.add_argument('--critic_embed_dim',default=8,type=int)  #critic的embedding层  # 实验18：恢复8
-    parser.add_argument('--actor_embed_dim',default=8,type=int)  #actor层的embedding层  # 实验18：恢复8
-    parser.add_argument('--sac_alpha',default=0.2,type=float,help="SAC initial temperature")  #SAC温度参数
+    # =========2026.2.18修改，方案B：增大网络容量以处理251维状态==========
+    parser.add_argument('--critic_hidden_dim',default=768,type=int)  # 512 → 768，增加50%容量
+    parser.add_argument('--actor_hidden_dim',default=768,type=int)   # 512 → 768，增加50%容量
+    # ======修改结束
+    parser.add_argument('--critic_embed_dim',default=48,type=int)  #critic的embedding层  # 2026.2.18修改：32→48
+    parser.add_argument('--actor_embed_dim',default=48,type=int)  #actor层的embedding层  # 2026.2.18修改：32→48
+    # =========2026.2.18修改，方案B：降低探索强度==========
+    parser.add_argument('--sac_alpha',default=0.10,type=float,help="SAC initial temperature")  # 0.25 → 0.10，减少过度探索
+    # ======修改结束
     parser.add_argument('--sac_alpha_lr',default=1e-4,type=float,help="SAC alpha learning rate")  #SAC alpha学习率
-    parser.add_argument('--reward_scale',default=1000.0,type=float,help="reward scaling factor for SAC/DDPG updates")
+    # =========2026.2.18修改，方案B：降低reward scale修复Q值过低==========
+    parser.add_argument('--reward_scale',default=2500.0,type=float,help="reward scaling factor for SAC/DDPG updates")  # 8000 → 2500，让Q值恢复正常范围
+    # ======修改结束
     parser.add_argument('--eval_every',default=20,type=int,help="run deterministic eval every N episodes during training")
     parser.add_argument('--eval_eps',default=3,type=int,help="number of episodes per periodic eval")
-    parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
-    parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
+    # =========2026.2.17修改，快速改进：启用双头Actor==========
+    parser.add_argument('--use_dual_head',default=True,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构，分离调度和充电决策
+    # ======修改结束
+    # =========2026.2.15修改，GPU训练：自动检测GPU可用性==========
+    import torch
+    default_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    parser.add_argument('--device',default=default_device,type=str,help="cpu or cuda")  #运算方法（自动检测GPU）
+    # ======修改结束
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
     # =========2026.2.13修改，修复命令行参数解析==========
     # 原代码：args = parser.parse_args([])  # 传入空列表会忽略命令行参数！

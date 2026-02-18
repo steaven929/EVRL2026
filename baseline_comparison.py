@@ -88,16 +88,16 @@ class GreedyPolicy(BaselinePolicy):
         action[0:self.zone_num] = 1.0 / self.zone_num
 
         # =========2026.2.13修改，添加状态结构说明==========
-        # =========2026.2.15修改，更新状态结构（38→33维）==========
+        # =========2026.2.15修改，更新状态结构（38→33→29维）==========
+        # =========2026.2.16修改，SIP数据集：更新状态结构（29→201维）==========
         # 目的地倾向：根据 OD 需求（state 的前半部分）
-        # 状态结构（总维度33）：
-        #   [0:16]   = OD demand (od_in + od_out, 2*TIME_SLICE*ZONE_NUM)
-        #   [16:24]  = Charger states (TIME_SLICE*ZONE_NUM)
-        #   [24:28]  = Num chargers (ZONE_NUM, 移除TIME_SLICE重复)
-        #   [28:32]  = Avg SOC per zone (ZONE_NUM)
-        #   [32]     = Current timestep (移除remaining_timesteps)
-        # state[0:4] = od_in for current time slice, all zones
-        demand_in = state[0:self.zone_num]
+        # 状态结构（SIP数据集，总维度201）：
+        #   [0:100]   = OD demand (od_in + od_out, 2*TIME_SLICE*ZONE_NUM = 2*1*50)
+        #   [100:150] = Charger states (TIME_SLICE*ZONE_NUM = 1*50)
+        #   [150:200] = Avg SOC per zone (ZONE_NUM = 50)
+        #   [200]     = Current timestep (0-25)
+        # state[0:50] = od_in for current time slice, all zones
+        demand_in = state[0:self.zone_num]  # 取前ZONE_NUM个元素作为od_in
         # ======修改结束
         demand_sum = np.sum(demand_in) + 1e-6
         action[self.zone_num:2*self.zone_num] = demand_in / demand_sum

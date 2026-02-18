@@ -48,6 +48,18 @@ TIME_LENGTH = config['TIME_LENGTH']
 TIME_SLICE = config['TIME_SLICE']
 OD_MAX = config['OD_MAX']
 DIST_MAX = config['DIST_MAX']
+
+# =========2026.2.15修改，SIP数据集：强制覆盖配置参数==========
+# 临时解决方案：直接覆盖配置以使用SIP数据集
+ZONE_NUM = 50
+CAR_NUM = 200
+TIME_NUM = 26
+TIME_LENGTH = 30
+TIME_SLICE = 1
+OD_MAX = 13
+DIST_MAX = 200
+# ======修改结束
+
 car_speed_min = config['car_speed_min']
 manzu_min = config['manzu_min']
 diaodu_min = config['diaodu_min']
@@ -55,12 +67,29 @@ elec_min = config['elec_min']
 BATTERY_CAPACITY = config['BATTERY_CAPACITY']
 path = config['path']
 training_set_number = config['training_set_number']
+
+# =========2026.2.15修改，SIP数据集：强制覆盖path==========
+# 临时解决方案：直接覆盖path以使用SIP数据集
+path = './data/SIP/'
+training_set_number = 30
+# ======修改结束
+
 CHARGER_STATES = config['CHARGER_STATES']  # 充电区域
 #NUM_CHARGERS = config['NUM_CHARGERS']  # 充电桩数量，弃用
 #NO_CHARGER_ZONES = config['NO_CHARGER_ZONES']
 CHARGER_ZONES = config['CHARGER_ZONES']  #弃置，原来按区域分的有充电桩区和无充电桩区
 #CHARGER_PER_ZONE = config.get('CHARGER_PER_ZONE', [0]*ZONE_NUM)
 ZONES = config['ZONES']
+
+# =========2026.2.15修改，SIP数据集：加载SIP的ZONES配置==========
+# 临时解决方案：直接从SIP配置文件加载ZONES
+import json as json_module
+sip_config_path = os.path.join(current_dir, '..', 'data', 'SIP', 'config_sip.json')
+with open(sip_config_path, 'r', encoding='utf-8') as f:
+    sip_config = json_module.load(f)
+ZONES = sip_config['ZONES']
+CHARGER_ZONES = sip_config['CHARGER_ZONES']
+# ======修改结束
 
 
 # Convert CHARGER_ZONES to list if it's not already
@@ -69,8 +98,10 @@ if isinstance(CHARGER_ZONES, int):
 
 #251007加入
 if "ZONES" in config:
-    NUM_CHARGERS = sum(len(zone.get("charging_slots", [])) for zone in config["ZONES"])   # 充电桩数量
-    CHARGER_PER_ZONE = [zone.get("charging_slots", []) for zone in config["ZONES"]]  #充电桩二维列表
+    # =========2026.2.15修改，SIP数据集：使用sip_config计算CHARGER_PER_ZONE==========
+    NUM_CHARGERS = sum(len(zone.get("charging_slots", [])) for zone in sip_config["ZONES"])   # 充电桩数量
+    CHARGER_PER_ZONE = [zone.get("charging_slots", []) for zone in sip_config["ZONES"]]  #充电桩二维列表
+    # ======修改结束
     CHARGER_ZONES = [zone["zone_id"] for zone in config["ZONES"] if zone.get("charging_slots")]   #弃置，原来定义的充电区域与非充电区域
     #NO_CHARGER_ZONES = [zone["zone_id"] for zone in config["ZONES"] if not zone.get("charging_slots")] #弃置，无用变量
 else:
@@ -91,13 +122,24 @@ ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
 # =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
 # =========2026.2.13修改，状态空间增强：添加时间步信息==========
 # =========2026.2.15修改，状态空间优化：移除冗余特征（38→33维）==========
+# =========2026.2.15修改，方案1：移除静态充电桩数量特征（33→29维）==========
+# =========2026.2.15修改，SIP数据集：更新观察空间定义==========
+# =========2026.2.17修改，快速改进：添加车辆分布特征（201→251维）==========
 # 移除：1) remaining_timesteps（与current_timestep线性相关）
 #       2) num_chargers的TIME_SLICE重复（静态配置无需重复）
+#       3) num_chargers特征（静态配置，网络可通过经验学习）
+# 新增：4) 车辆分布特征（每个区域的车辆数量，离散化为20档）
+# 状态空间结构：
+#   - OD需求（in+out）: TIME_SLICE * ZONE_NUM * 2 维，每维范围 [0, OD_MAX-1]
+#   - 充电桩状态: TIME_SLICE * ZONE_NUM 维，每维范围 [0, CHARGER_STATES-1]
+#   - 区域平均SOC: ZONE_NUM 维，每维范围 [0, 9]
+#   - 区域车辆数量: ZONE_NUM 维，每维范围 [0, 19]
+#   - 当前时间步: 1 维，范围 [0, TIME_NUM-1]
 OBS_SPACE = spaces.MultiDiscrete(
     (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES] +  # OD需求 + 充电桩状态
-    ZONE_NUM * [NUM_CHARGERS] +  # 充电桩数量（移除TIME_SLICE重复）
-    ZONE_NUM * [10] +  # 4个区域的SOC (0-9)
-    [TIME_NUM]  # 当前时间步(0-11)，移除remaining_timesteps
+    ZONE_NUM * [10] +  # ZONE_NUM个区域的SOC (0-9)
+    ZONE_NUM * [20] +  # ZONE_NUM个区域的车辆数量 (0-19)
+    [TIME_NUM]  # 当前时间步(0到TIME_NUM-1)
 )
 # ======修改结束
 
@@ -212,28 +254,56 @@ class dclily(gym.Env):
                 f.write(f"{t},{v.id},{v.origin},{v.destination},{v.soc:.2f},"
                         f"{v.current_zone},{v.target_zone},{v.distance_to_target:.2f}\n")
     
+    # =========2026.2.15修改，SIP数据集：重写OD需求加载逻辑==========
+    def load_sip_demand(self, file_path):
+        """
+        加载SIP格式的OD需求数据
+        SIP格式：dataset_id, origin, dest, timestep, demand
+        返回：[timestep][origin][dest] 格式的需求矩阵
+        """
+        # 读取CSV，跳过前26行header
+        df = pd.read_csv(file_path, header=None, skiprows=26)
+
+        # 初始化需求矩阵 [timestep][origin][dest]
+        demand_matrix = np.zeros((TIME_NUM, ZONE_NUM, ZONE_NUM))
+
+        # 填充需求数据
+        for _, row in df.iterrows():
+            t = int(row[3])  # timestep
+            o = int(row[1])  # origin
+            d = int(row[2])  # destination
+            demand = int(row[4])  # demand count
+
+            # 边界检查
+            if 0 <= t < TIME_NUM and 0 <= o < ZONE_NUM and 0 <= d < ZONE_NUM:
+                demand_matrix[t][o][d] = demand
+
+        return demand_matrix
+    # ======修改结束
+
     def write_od_left(self, new):
         if self.training:  # 根据 self.training 的标志判断当前模式是训练模式还是测试模式，然后选择不同的文件来加载 OD（Origin-Destination）需求数据，并计算每个区域的 OD 流量（流入和流出量）
             if new:
+                # =========2026.2.15修改，SIP数据集：使用q_X.csv格式==========
                 for tr in range(training_set_number):
-                    OD_demand = pd.read_csv(path + 'od_demand_' + str(tr + 1) + '.csv')
-                    df_od = np.array([[[0] * ZONE_NUM] * ZONE_NUM] * (OD_demand.shape[1] - 2))
-                    if np.any(df_od > OD_MAX):
-                        print("Warning: OD demand exceeded the maximum value.")
+                    # SIP格式：q_0.csv, q_1.csv, ..., q_29.csv
+                    file_path = path + 'demand_original/q_' + str(tr) + '.csv'
+                    df_od = self.load_sip_demand(file_path)
 
-                    for i in range(OD_demand.shape[0]):
-                        for j in range(2, OD_demand.shape[1]):
-                            df_od[j - 2][int(OD_demand.iloc[i]['O'])][int(OD_demand.iloc[i]['D'])] = int(
-                                OD_demand.iloc[i][j])
-                    df_od = np.array(df_od)
+                    if np.any(df_od > OD_MAX):
+                        print(f"Warning: OD demand in q_{tr}.csv exceeded the maximum value.")
+
                     self.mem_od_demand.append(copy.deepcopy(df_od))
+
+                    # 计算od_in和od_out
                     od_in = []
                     od_out = []
                     for ins in range(ZONE_NUM):
-                        od_in.append(np.array([sum(row[:, ins]) for row in df_od]))  # 存这个
-                        od_out.append(np.array([sum(row[ins, :]) for row in df_od]))  # 存这个
+                        od_in.append(np.array([sum(row[:, ins]) for row in df_od]))  # 流入
+                        od_out.append(np.array([sum(row[ins, :]) for row in df_od]))  # 流出
                     self.mem_od_in.append(od_in)
                     self.mem_od_out.append(od_out)
+                # ======修改结束
 
             a = random.randint(0, training_set_number - 1)
             OD_demand = self.mem_od_demand[a]
@@ -241,13 +311,12 @@ class dclily(gym.Env):
             od_in = self.mem_od_in[a]
             od_out = self.mem_od_out[a]
         else:
-            # 目前默认只有一个测试场景
-            OD_demand = pd.read_csv(path + 'od_demand_test.csv')
-            df_od = np.array([[[0] * ZONE_NUM] * ZONE_NUM] * (OD_demand.shape[1] - 2))
-            for i in range(OD_demand.shape[0]):
-                for j in range(2, OD_demand.shape[1]):
-                    df_od[j - 2][OD_demand.iloc[i]['O']][OD_demand.iloc[i]['D']] = OD_demand.iloc[i][j]
-            df_od = np.array(df_od)
+            # =========2026.2.15修改，SIP数据集：测试集使用q_29.csv==========
+            # 使用最后一天作为测试集
+            file_path = path + 'demand_original/q_29.csv'
+            df_od = self.load_sip_demand(file_path)
+            # ======修改结束
+
             od_in = []
             od_out = []
             for ins in range(ZONE_NUM):
@@ -435,22 +504,10 @@ class dclily(gym.Env):
             val = max(0, min(CHARGER_STATES - 1, val))
             charger_states.extend([val] * TIME_SLICE)
         charger_states = np.array(charger_states, dtype=np.int64)
-        
-        # =========2026.2.15修改，状态空间优化：移除num_chargers的TIME_SLICE重复==========
-        # 3) 充电桩数量 (第4段)：每区装配的桩数，clip 到 0..NUM_CHARGERS-1
-        # 优化：移除TIME_SLICE重复，因为充电桩数量是静态配置
-        num_chargers_feat = []
-        for zone in range(ZONE_NUM):
-            installed = 0
-            if zone < len(CHARGER_PER_ZONE) and isinstance(CHARGER_PER_ZONE[zone], (list, tuple)):
-                installed = len(CHARGER_PER_ZONE[zone])
-            # 若想放"可用充电位数"，可在此用占用信息计算；这里先放装配数量
-            if NUM_CHARGERS > 0:
-                installed = max(0, min(NUM_CHARGERS - 1, installed))
-            else:
-                installed = 0
-            num_chargers_feat.append(installed)  # 移除TIME_SLICE重复
-        num_chargers_feat = np.array(num_chargers_feat, dtype=np.int64)
+
+        # =========2026.2.15修改，方案1：移除num_chargers特征==========
+        # 原因：充电桩数量是静态配置，网络可以通过经验学习
+        # 移除num_chargers_feat构造逻辑
         # ======修改结束
 
         # =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
@@ -472,18 +529,36 @@ class dclily(gym.Env):
         avg_soc_per_zone = np.array(avg_soc_per_zone, dtype=np.int64)
         # ======修改结束
 
+        # =========2026.2.17修改，快速改进：添加车辆分布信息==========
+        # 5) 区域车辆数量（新增）
+        vehicle_counts_per_zone = []
+        for zone in range(ZONE_NUM):
+            # 计算该区域所有静止且未占用充电桩的车辆数量
+            count = sum(1 for i in range(len(self.car))
+                       if self.car[i][0] == zone and self.car[i][2] == 0)
+            # 离散化为20档 (0-19)：0-9直接映射，10+按5辆一档
+            if count <= 9:
+                count_discrete = count
+            else:
+                count_discrete = min(19, 9 + (count - 9) // 5)
+            vehicle_counts_per_zone.append(count_discrete)
+
+        vehicle_counts_per_zone = np.array(vehicle_counts_per_zone, dtype=np.int64)
+        # ======修改结束
+
         # =========2026.2.13修改，状态空间增强：添加时间步信息==========
         # =========2026.2.15修改，状态空间优化：移除remaining_timesteps==========
-        # 5) 时间步特征（新增）
+        # 6) 时间步特征（新增）
         # 修复：确保时间步值在有效范围[0, TIME_NUM-1]内
         # 优化：移除remaining_timesteps，因为它与current_timestep线性相关
         current_timestep = np.array([min(self.episode_timestep, TIME_NUM - 1)], dtype=np.int64)  # 当前时间步 (0-11)
         # ======修改结束
 
-        # =========2026.2.15修改，状态空间优化：更新状态拼接和维度断言==========
-        # 6) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC, TIMESTEP]
-        # 维度：(TIME_SLICE*ZONE_NUM)*3 + ZONE_NUM + ZONE_NUM + 1 = 24 + 4 + 4 + 1 = 33
-        state = np.concatenate([od_part, charger_states, num_chargers_feat, avg_soc_per_zone, current_timestep])
+        # =========2026.2.15修改，方案1：更新状态拼接（移除num_chargers）==========
+        # =========2026.2.17修改，快速改进：添加车辆分布到状态==========
+        # 7) 拼接成 [OD, OD, CHARGER_STATES, AVG_SOC, VEHICLE_COUNTS, TIMESTEP]
+        # 维度：2*TIME_SLICE*ZONE_NUM + TIME_SLICE*ZONE_NUM + ZONE_NUM + ZONE_NUM + 1
+        state = np.concatenate([od_part, charger_states, avg_soc_per_zone, vehicle_counts_per_zone, current_timestep])
         # 保险断言：长度必须满足 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
         expected_dim = 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
         assert state.shape[0] == expected_dim, \
@@ -1422,6 +1497,13 @@ class dclily(gym.Env):
          #   row += "  ".join(["{:d}".format(int(action_table_true[i][j])) for j in range(ZONE_NUM)])
          #   print(row)
         # ====== Debug log end ======
+
+        # =========2026.2.15修改，SIP数据集：缓存当前状态避免终止时越界==========
+        # 在递增episode_timestep之前缓存当前状态
+        # 因为终止时episode_timestep会超出有效范围，导致get_micro_state()越界
+        current_state = self.state  # 缓存当前有效状态
+        # ======修改结束
+
         self.episode_timestep += 1
 
         # 写入新的状态
@@ -1438,17 +1520,28 @@ class dclily(gym.Env):
         # 2. 充电加分：统计正在充电的车辆数
         charging_bonus = 0
         charging_count = 0
+        idle_vehicle_count = 0  # 统计空闲车辆数（可用于充电的车辆）
         for i in range(self.CAR_NUM):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
                 charging_count += 1
-        # =========2026.2.12修改，实验19：大幅提升充电奖励==========
-        # =========2026.2.13修改，进一步提升充电奖励==========
-        # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # 问题：充电奖励5000仍不足以抵消服务收入的吸引力
-        # 解决：提升到15000，配合允许充电车辆服务，消除机会成本
-        # 即时充电奖励：每辆充电车辆+15000（从5000提升到15000）
-        charging_bonus = 15000 * charging_count
+            # 统计空闲车辆（静止且未充电）
+            if self.car[i][2] == 0 and self.car[i][3] == -1:
+                idle_vehicle_count += 1
+
+        # =========2026.2.18修改，规模自适应奖励：相对充电奖励==========
+        # 问题：绝对充电奖励（1500*count）在大规模场景下会爆炸
+        #       小样本（18车）：充电3辆 = +4500
+        #       大样本（200车）：充电40辆 = +60000（主导奖励）
+        # 解决：使用相对奖励（充电比例），规模不变
+        #       充电比例 = charging_count / (charging_count + idle_vehicle_count)
+        #       最大奖励固定为1500，不随车队规模变化
+        total_available = charging_count + idle_vehicle_count
+        if total_available > 0:
+            charging_ratio = charging_count / total_available
+            charging_bonus = 1500 * charging_ratio  # 最大1500
+        else:
+            charging_bonus = 0
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1520,10 +1613,13 @@ class dclily(gym.Env):
             soc_maintain_bonus = 0
 
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
-        # 目的：额外奖励充电行为，确保充电策略的稳定性
-        # 充电维护奖励：每辆充电车辆额外+3000
-        # 与充电奖励(15000)叠加，总计18000/车
-        charging_maintenance_bonus = 3000 * charging_count
+        # =========2026.2.18修改，规模自适应奖励：相对充电维护奖励==========
+        # 目的：充电维护奖励也使用相对值，避免规模爆炸
+        # 充电维护奖励：按充电比例计算，最大300
+        if total_available > 0:
+            charging_maintenance_bonus = 300 * charging_ratio
+        else:
+            charging_maintenance_bonus = 0
         # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
@@ -1539,11 +1635,20 @@ class dclily(gym.Env):
         # =========2026.2.13修改，添加SOC维持奖励==========
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
         # =========2026.2.14修改，添加服务率惩罚==========
-        # 新奖励函数：充电奖励单独计算，不除以10
-        # 添加SOC维持奖励，鼓励保持高SOC
-        # 添加充电维护奖励，进一步强化充电激励
-        # 添加服务率惩罚，鼓励服务更多订单
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty - service_rate_penalty
+        # =========2026.2.18修改，方案D2：重新平衡奖励权重==========
+        # 核心修改：
+        # 1. 服务收益 ×2（从/10改为×2），大幅提升服务激励
+        # 2. 充电奖励已降低到1500（×0.1）
+        # 3. 充电维护奖励已降低到300（×0.1）
+        # 4. 添加服务率阈值奖励：服务率>10%时+5000
+
+        # 服务率阈值奖励
+        service_rate_threshold_bonus = 0
+        if service_rate > 0.10:  # 服务率超过10%
+            service_rate_threshold_bonus = 5000
+
+        # 新奖励函数：服务激励×2，充电奖励×0.1，添加服务率阈值奖励
+        reward_value = (service_revenue * 2.0 - soc_penalty) + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus + service_rate_threshold_bonus - fixed_penalty - service_rate_penalty
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
@@ -1565,11 +1670,21 @@ class dclily(gym.Env):
             service_revenue = sum(real_reward)
 
             charging_count = 0
+            idle_vehicle_count = 0
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            # =========2026.2.12修改，方案F4：终止步奖励与中间步完全一致==========
-            charging_bonus = 3000 * charging_count
+                if self.car[i][2] == 0 and self.car[i][3] == -1:
+                    idle_vehicle_count += 1
+
+            # =========2026.2.18修改，规模自适应奖励：终止步也使用相对充电奖励==========
+            # 与中间步保持一致，使用相对奖励
+            total_available = charging_count + idle_vehicle_count
+            if total_available > 0:
+                charging_ratio = charging_count / total_available
+                charging_bonus = 300 * charging_ratio  # 终止步奖励稍低
+            else:
+                charging_bonus = 0
             # ======修改结束
 
             # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
@@ -1620,11 +1735,22 @@ class dclily(gym.Env):
             # ======修改结束
 
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
+            # =========2026.2.18修改，方案D2：终止步也应用新奖励函数==========
+            # 服务率阈值奖励
+            service_rate_threshold_bonus = 0
+            if service_rate > 0.10:  # 服务率超过10%
+                service_rate_threshold_bonus = 5000
+
             fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty - service_rate_penalty
+            # 终止奖励：服务激励×2，充电奖励×0.1，添加服务率阈值奖励
+            final_reward = (service_revenue * 2.0 - soc_penalty) + charging_bonus + service_rate_threshold_bonus - fixed_penalty - service_rate_penalty
             # ======修改结束
             # ======修改结束
-            return self.state, final_reward, self.terminal, info
+
+            # =========2026.2.15修改，SIP数据集：终止时使用缓存的状态==========
+            # 使用之前缓存的current_state，避免访问越界的self.state
+            return current_state, final_reward, self.terminal, info
+            # ======修改结束
         else:
             self._last_episode_timestep = self.episode_timestep
             

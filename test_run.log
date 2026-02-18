@@ -1,0 +1,79 @@
+训练参数如下：
+================================================================================
+        参数名         	        参数值         	        参数类型        
+     algo_name      	        SAC         	   <class 'str'>    
+      env_name      	       dclily       	   <class 'str'>    
+    data_folder     	 data\toy_network\  	   <class 'str'>    
+     train_eps      	         1          	   <class 'int'>    
+      test_eps      	         1          	   <class 'int'>    
+     max_steps      	       100000       	   <class 'int'>    
+       gamma        	        0.95        	  <class 'float'>   
+     critic_lr      	       0.0001       	  <class 'float'>   
+      actor_lr      	       3e-05        	  <class 'float'>   
+  memory_capacity   	       500000       	   <class 'int'>    
+     batch_size     	        256         	   <class 'int'>    
+   target_update    	         2          	   <class 'int'>    
+        tau         	       0.0005       	  <class 'float'>   
+ critic_hidden_dim  	        512         	   <class 'int'>    
+  actor_hidden_dim  	        512         	   <class 'int'>    
+  critic_embed_dim  	         32         	   <class 'int'>    
+  actor_embed_dim   	         32         	   <class 'int'>    
+     sac_alpha      	        0.2         	  <class 'float'>   
+    sac_alpha_lr    	       0.0001       	  <class 'float'>   
+    reward_scale    	      10000.0       	  <class 'float'>   
+     eval_every     	         20         	   <class 'int'>    
+      eval_eps      	         3          	   <class 'int'>    
+   use_dual_head    	         0          	   <class 'bool'>   
+       device       	        cuda        	   <class 'str'>    
+        seed        	         2          	   <class 'int'>    
+================================================================================
+开始训练！
+Set parameter Username
+Set parameter LicenseID to value 2776172
+Academic license - for non-commercial use only - expires 2027-02-06
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:174: UserWarning: [33mWARN: Future gym versions will require that `Env.reset` can be passed a `seed` instead of using `Env.seed` for resetting the environment random number generator.[0m
+  logger.warn(
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:187: UserWarning: [33mWARN: Future gym versions will require that `Env.reset` can be passed `options` to allow the environment initialisation to be passed additional information.[0m
+  logger.warn(
+C:\Users\cheng\PycharmProjects\EVRL2026\specific\dclily_elec.py:349: FutureWarning: ChainedAssignmentError: behaviour will change in pandas 3.0!
+You are setting values through chained assignment. Currently this works in certain cases, but when using Copy-on-Write (which will become the default behaviour in pandas 3.0) this will never work to update the original DataFrame or Series, because the intermediate object on which we are setting values will behave as a copy.
+A typical example is when you are setting values in a column of a DataFrame, like:
+
+df["col"][row_indexer] = value
+
+Use `df.loc[row_indexer, "col"] = values` instead, to perform the assignment in a single step and ensure this keeps updating the original `df`.
+
+See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
+
+  available.iloc[1][str(i)] -= available.iloc[0][str(i)]
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:195: UserWarning: [33mWARN: The result returned by `env.reset()` was not a tuple of the form `(obs, info)`, where `obs` is a observation and `info` is a dictionary containing additional information. Actual type: `<class 'numpy.ndarray'>`[0m
+  logger.warn(
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:219: DeprecationWarning: [33mWARN: Core environment is written in old step API which returns one bool instead of two. It is recommended to rewrite the environment with new step API. [0m
+  logger.deprecation(
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:225: DeprecationWarning: `np.bool8` is a deprecated alias for `np.bool_`.  (Deprecated NumPy 1.24)
+  if not isinstance(done, (bool, np.bool8)):
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:226: UserWarning: [33mWARN: Expects `done` signal to be a boolean, actual type: <class 'int'>[0m
+  logger.warn(
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:165: UserWarning: [33mWARN: The obs returned by the `step()` method is not within the observation space.[0m
+  logger.warn(f"{pre} is not within the observation space.")
+C:\Users\cheng\PycharmProjects\EVRL2026\main.py:109: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  axes[1].legend()  # 修改
+C:\Users\cheng\PycharmProjects\EVRL2026\main.py:118: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  axes[2].legend()  # 修改
+C:\Users\cheng\PycharmProjects\EVRL2026\main.py:127: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  axes[3].legend()  # 修改
+回合：1/1，奖励：15221558.10
+完成训练！
+Loss数据和指标已保存
+SAC模型已保存到: trained_model.pth
+训练完成，模型已保存到: trained_model.pth
+[plot_critic_losses] train: empty losses, skip.
+综合指标图已保存: final_metrics.png
+电池热力图已保存: battery_heatmap.png
+开始测试！
+回合：1/1，奖励：23973248.36
+完成测试！

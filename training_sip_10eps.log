@@ -1,0 +1,69 @@
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:174: UserWarning: [33mWARN: Future gym versions will require that `Env.reset` can be passed a `seed` instead of using `Env.seed` for resetting the environment random number generator.[0m
+  logger.warn(
+C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py:187: UserWarning: [33mWARN: Future gym versions will require that `Env.reset` can be passed `options` to allow the environment initialisation to be passed additional information.[0m
+  logger.warn(
+C:\Users\cheng\PycharmProjects\EVRL2026\specific\dclily_elec.py:331: FutureWarning: ChainedAssignmentError: behaviour will change in pandas 3.0!
+You are setting values through chained assignment. Currently this works in certain cases, but when using Copy-on-Write (which will become the default behaviour in pandas 3.0) this will never work to update the original DataFrame or Series, because the intermediate object on which we are setting values will behave as a copy.
+A typical example is when you are setting values in a column of a DataFrame, like:
+
+df["col"][row_indexer] = value
+
+Use `df.loc[row_indexer, "col"] = values` instead, to perform the assignment in a single step and ensure this keeps updating the original `df`.
+
+See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
+
+  available.iloc[1][str(i)] -= available.iloc[0][str(i)]
+训练参数如下：
+================================================================================
+        参数名         	        参数值         	        参数类型        
+     algo_name      	        SAC         	   <class 'str'>    
+      env_name      	       dclily       	   <class 'str'>    
+    data_folder     	 data\toy_network\  	   <class 'str'>    
+     train_eps      	         10         	   <class 'int'>    
+      test_eps      	         10         	   <class 'int'>    
+     max_steps      	       100000       	   <class 'int'>    
+       gamma        	        0.95        	  <class 'float'>   
+     critic_lr      	       0.0003       	  <class 'float'>   
+      actor_lr      	       0.0001       	  <class 'float'>   
+  memory_capacity   	       500000       	   <class 'int'>    
+     batch_size     	        512         	   <class 'int'>    
+   target_update    	         2          	   <class 'int'>    
+        tau         	       0.0005       	  <class 'float'>   
+ critic_hidden_dim  	        1024        	   <class 'int'>    
+  actor_hidden_dim  	        1024        	   <class 'int'>    
+  critic_embed_dim  	         32         	   <class 'int'>    
+  actor_embed_dim   	         32         	   <class 'int'>    
+     sac_alpha      	        0.2         	  <class 'float'>   
+    sac_alpha_lr    	       0.0001       	  <class 'float'>   
+    reward_scale    	       1000.0       	  <class 'float'>   
+     eval_every     	         20         	   <class 'int'>    
+      eval_eps      	         3          	   <class 'int'>    
+   use_dual_head    	         0          	   <class 'bool'>   
+       device       	        cpu         	   <class 'str'>    
+        seed        	         2          	   <class 'int'>    
+================================================================================
+开始训练！
+Traceback (most recent call last):
+  File "C:\Users\cheng\PycharmProjects\EVRL2026\main.py", line 61, in <module>
+    res_dic = dclilytrain.train(cfg, env, agent)
+  File "C:\Users\cheng\PycharmProjects\EVRL2026\core\training.py", line 113, in train
+    state = env.reset()
+  File "C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\core.py", line 323, in reset
+    return self.env.reset(**kwargs)
+  File "C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\wrappers\order_enforcing.py", line 42, in reset
+    return self.env.reset(**kwargs)
+  File "C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\wrappers\env_checker.py", line 45, in reset
+    return env_reset_passive_checker(self.env, **kwargs)
+  File "C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\site-packages\gym\utils\passive_env_checker.py", line 192, in env_reset_passive_checker
+    result = env.reset(**kwargs)
+  File "C:\Users\cheng\PycharmProjects\EVRL2026\specific\dclily_elec.py", line 1743, in reset
+    self.write_ini_cap(new)
+  File "C:\Users\cheng\PycharmProjects\EVRL2026\specific\dclily_elec.py", line 362, in write_ini_cap
+    self.charging_stations = {
+  File "C:\Users\cheng\PycharmProjects\EVRL2026\specific\dclily_elec.py", line 370, in <dictcomp>
+    for cid in ZONES[zone_id]["charging_slots"]
+IndexError: list index out of range
