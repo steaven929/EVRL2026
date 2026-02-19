@@ -49,60 +49,38 @@ TIME_SLICE = config['TIME_SLICE']
 OD_MAX = config['OD_MAX']
 DIST_MAX = config['DIST_MAX']
 
-# =========2026.2.19修改，切换到SIP大规模数据集==========
-# 强制覆盖配置参数以使用SIP数据集（50区域，200车辆）
-ZONE_NUM = 50
-CAR_NUM = 200
-TIME_NUM = 26
-TIME_LENGTH = 30
-TIME_SLICE = 1
-OD_MAX = 13
-DIST_MAX = 200
-# ======修改结束
-
 car_speed_min = config['car_speed_min']
 manzu_min = config['manzu_min']
 diaodu_min = config['diaodu_min']
 elec_min = config['elec_min']
 BATTERY_CAPACITY = config['BATTERY_CAPACITY']
 
-# =========2026.2.19修改，切换到SIP数据集路径==========
-path = './data/SIP/'
-training_set_number = 30
-BATTERY_CAPACITY = 3000  # SIP数据集使用3000容量
-# ======修改结束
+path = config['path']
+training_set_number = config['training_set_number']
 CHARGER_STATES = config['CHARGER_STATES']  # 充电区域
 #NUM_CHARGERS = config['NUM_CHARGERS']  # 充电桩数量，弃用
 #NO_CHARGER_ZONES = config['NO_CHARGER_ZONES']
 
-# =========2026.2.19修改，加载SIP数据集的ZONES配置==========
-import json as json_module
-sip_config_path = os.path.join(current_dir, '..', 'data', 'SIP', 'config_sip.json')
-with open(sip_config_path, 'r', encoding='utf-8') as f:
-    sip_config = json_module.load(f)
-ZONES = sip_config['ZONES']
-CHARGER_ZONES = sip_config['CHARGER_ZONES']
-# ======修改结束
+ZONES = config['ZONES']
+CHARGER_ZONES = config['CHARGER_ZONES']
 
 
-# Convert CHARGER_ZONES to list if it's not already
+# =========2026.1.30修改，最优解求解==========
+# CHARGER_ZONES 既兼容“区域数量”，也兼容“区域列表”
 if isinstance(CHARGER_ZONES, int):
-    CHARGER_ZONES = [CHARGER_ZONES]
+    CHARGER_ZONES = [zone["zone_id"] for zone in ZONES if len(zone.get("charging_slots", [])) > 0]
+# ======修改结束
 
 #251007加入
-# =========2026.2.19修改，使用SIP配置生成CHARGER_PER_ZONE==========
-if "ZONES" in sip_config:
-    NUM_CHARGERS = sum(len(zone.get("charging_slots", [])) for zone in sip_config["ZONES"])   # 充电桩数量
-    CHARGER_PER_ZONE = [zone.get("charging_slots", []) for zone in sip_config["ZONES"]]  #充电桩二维列表
-    # CHARGER_ZONES已经从sip_config加载，不需要重复
-    #NO_CHARGER_ZONES = [zone["zone_id"] for zone in sip_config["ZONES"] if not zone.get("charging_slots")] #弃置，无用变量
+# =========2026.1.30修改，最优解求解==========
+NUM_CHARGERS = sum(len(zone.get("charging_slots", [])) for zone in ZONES)
+CHARGER_PER_ZONE = [zone.get("charging_slots", []) for zone in ZONES]
+
+if len(CHARGER_PER_ZONE) != ZONE_NUM:
+    raise ValueError(
+        f"CHARGER_PER_ZONE length {len(CHARGER_PER_ZONE)} does not match ZONE_NUM {ZONE_NUM}"
+    )
 # ======修改结束
-else:
-    # 向后兼容旧配置
-    NUM_CHARGERS = config.get('NUM_CHARGERS', 0)
-    CHARGER_PER_ZONE = config.get('CHARGER_PER_ZONE', [0]*ZONE_NUM)
-    CHARGER_ZONES = config.get('CHARGER_ZONES', [])
-#    NO_CHARGER_ZONES = config.get('NO_CHARGER_ZONES', [])
 
 # 定义动作、状态
 
@@ -726,6 +704,10 @@ class dclily(gym.Env):
     def find_preferred_charger(self, current_zone, charge_pref):
         candidates = []
         for zone in range(ZONE_NUM):
+            # =========2026.1.30修改，最优解求解==========
+            if zone >= len(CHARGER_PER_ZONE):
+                continue
+            # ======修改结束
             if len(CHARGER_PER_ZONE[zone]) == 0:
                 continue
             has_available_slot = any(self.available[1][zone] > slot for slot in CHARGER_PER_ZONE[zone])

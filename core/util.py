@@ -16,8 +16,10 @@ def get_args():
     parser = argparse.ArgumentParser(description="hyperparameters")      
     parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
-    parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=100,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    # =========2026.1.30修改，最优解求解==========
+    parser.add_argument('--data_folder',default='data\\SIP\\',type=str,help="name of environment") #数据位置
+    # ======修改结束
+    parser.add_argument('--train_eps',default=1,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
@@ -192,7 +194,19 @@ import os
 import shutil  
   
 def cp(source_path):
- 
-    target_path = 'config.json'  # 目标路径是当前文件夹下的config.json  
-      
-    shutil.copy2(source_path+"config.json", target_path) 
+
+    # =========2026.1.30修改，最优解求解==========
+    target_path = 'config.json'  # 目标路径是当前文件夹下的config.json
+
+    primary_config = os.path.join(source_path, "config.json")
+    sip_config = os.path.join(source_path, "config_sip.json")
+
+    if os.path.exists(primary_config):
+        shutil.copy2(primary_config, target_path)
+    elif os.path.exists(sip_config):
+        shutil.copy2(sip_config, target_path)
+    else:
+        raise FileNotFoundError(
+            f"No config file found in {source_path}. Expected config.json or config_sip.json"
+        )
+    # ======修改结束

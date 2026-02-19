@@ -138,11 +138,16 @@ def train(cfg, env, agent):
                 action = np.clip(action + action_noise, 0.0, 1.0)
             # ======修改结束
 
-            # =========2026.2.7修改，方案D2：充电维度噪声增强==========
-            # 前20轮训练，对充电维度 [8:12] 添加额外噪声
+            # =========2026.1.30修改，最优解求解==========
+            # 前20轮训练，对“充电子向量”添加额外噪声（按 ZONE_NUM 动态切片）
             if (not is_sac) and i_ep < 20:
-                charging_noise = np.random.uniform(-0.3, 0.3, size=4)
-                action[8:12] = np.clip(action[8:12] + charging_noise, 0, 1)
+                zone_num = int(action.shape[0] // 3)
+                charge_start = 2 * zone_num
+                charge_end = 3 * zone_num
+                charging_noise = np.random.uniform(-0.3, 0.3, size=zone_num)
+                action[charge_start:charge_end] = np.clip(
+                    action[charge_start:charge_end] + charging_noise, 0, 1
+                )
             # ======修改结束
 
             next_state, reward, done, info = env.step(action)  # 修改：移除epoch参数
