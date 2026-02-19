@@ -12,7 +12,9 @@
       "Bash(findstr:*)",
       "Bash(iconv:*)",
       "Bash(timeout:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(gh repo view:*)",
+      "WebFetch(domain:github.com)"
     ]
   },
   "enabledPlugins": {

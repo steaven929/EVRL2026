@@ -542,8 +542,89 @@ class dclily(gym.Env):
             f"state dim {state.shape[0]} != 3*ZONE_NUM*TIME_SLICE + 2*ZONE_NUM + 1 (expected {expected_dim})"
         # ======修改结束
         return state
-        
+
         # return np.concatenate([od_part, np.array(charger_states)])
+
+    # =========2026.2.19修改，MARL Phase-1：添加多智能体视图接口==========
+    def get_agent_obs(self, agent_id):
+        """
+        获取区域级智能体的局部观测（7维）
+
+        Args:
+            agent_id: 区域编号 (0 to ZONE_NUM-1)
+
+        Returns:
+            obs: 7维numpy数组
+                [0] od_in_local: 本区域当前入需求
+                [1] od_out_local: 本区域当前出需求
+                [2] vehicle_count_local: 本区域可用车辆数
+                [3] avg_soc_local: 本区域平均SOC（归一化）
+                [4] charger_occ_local: 本区域充电桩占用率
+                [5] timestep_norm: 当前时间步归一化值
+                [6] agent_id: 区域编号（用于embedding）
+        """
+        # 确保episode_timestep不超出范围
+        timestep = min(self.episode_timestep, self.od_in.shape[1] - 1)
+        timestep = max(0, timestep)
+
+        # 1) 本区域OD需求
+        od_in_local = float(self.od_in[agent_id, timestep])
+        od_out_local = float(self.od_out[agent_id, timestep])
+
+        # 2) 本区域可用车辆数（不在服务中、不在充电中）
+        vehicle_count_local = sum(1 for i in range(len(self.car))
+                                 if self.car[i][0] == agent_id and self.car[i][2] <= 0 and self.car[i][3] == -1)
+
+        # 3) 本区域平均SOC（归一化到0-1）
+        zone_vehicles = [self.car[i][1] for i in range(len(self.car))
+                        if self.car[i][0] == agent_id and self.car[i][2] == 0]
+        if zone_vehicles:
+            avg_soc_local = np.mean(zone_vehicles) / BATTERY_CAPACITY
+        else:
+            avg_soc_local = 0.5  # 默认值
+
+        # 4) 本区域充电桩占用率
+        if agent_id < len(CHARGER_PER_ZONE) and isinstance(CHARGER_PER_ZONE[agent_id], (list, tuple)):
+            total_chargers = len(CHARGER_PER_ZONE[agent_id])
+            if total_chargers > 0:
+                charger_occ_local = self.available[0][agent_id] / (self.mem_available[0][agent_id] + 1e-5)
+            else:
+                charger_occ_local = 0.0
+        else:
+            charger_occ_local = 0.0
+
+        # 5) 当前时间步归一化
+        timestep_norm = float(self.episode_timestep) / (TIME_NUM - 1) if TIME_NUM > 1 else 0.0
+
+        # 6) 区域编号（用于embedding，不归一化）
+        agent_id_val = float(agent_id)
+
+        obs = np.array([
+            od_in_local,
+            od_out_local,
+            vehicle_count_local,
+            avg_soc_local,
+            charger_occ_local,
+            timestep_norm,
+            agent_id_val
+        ], dtype=np.float32)
+
+        return obs
+
+    def get_global_state(self):
+        """
+        获取全局状态（用于centralized critic）
+
+        Returns:
+            global_state: 与get_micro_state()相同的全局状态向量
+        """
+        return self.get_micro_state()
+
+    @property
+    def n_agents(self):
+        """返回智能体数量（区域数）"""
+        return ZONE_NUM
+    # ======修改结束
 
     @property
     def state(self):
@@ -1108,6 +1189,21 @@ class dclily(gym.Env):
             return
     
     def step(self, action):
+        # =========2026.2.19修改，MARL Phase-1：支持joint action输入==========
+        # 支持两种输入格式：
+        # 1) 单智能体：action.shape = (3*ZONE_NUM,)
+        # 2) 多智能体：action.shape = (ZONE_NUM, 3) 或 (3*ZONE_NUM,)
+        action = np.array(action)
+        if action.ndim == 2:
+            # 多智能体格式：(n_agents, 3) -> (3*ZONE_NUM,)
+            assert action.shape == (ZONE_NUM, 3), \
+                f"Multi-agent action shape {action.shape} != (ZONE_NUM={ZONE_NUM}, 3)"
+            action = action.reshape(-1)  # 展平为一维
+        else:
+            # 单智能体格式：(3*ZONE_NUM,)
+            assert action.shape[0] == 3 * ZONE_NUM, \
+                f"Single-agent action shape {action.shape} != (3*ZONE_NUM={3*ZONE_NUM},)"
+        # ======修改结束
 
         charge_pref = action[2 * ZONE_NUM: 3 * ZONE_NUM]
         # print(f"\n--- 时间片 {self.episode_timestep} ---")#20251201
@@ -1497,10 +1593,11 @@ class dclily(gym.Env):
         # =========2026.2.12修改，实验19：大幅提升充电奖励==========
         # =========2026.2.13修改，进一步提升充电奖励==========
         # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # 问题：充电奖励5000仍不足以抵消服务收入的吸引力
-        # 解决：提升到15000，配合允许充电车辆服务，消除机会成本
-        # 即时充电奖励：每辆充电车辆+15000（从5000提升到15000）
-        charging_bonus = 15000 * charging_count
+        # =========2026.2.19修改，修复充电黑客问题==========
+        # 问题：充电奖励15000过高，导致所有车辆持续充电
+        # 解决：降低到1000，避免充电奖励主导策略
+        # 即时充电奖励：每辆充电车辆+1000
+        charging_bonus = 1000 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1571,11 +1668,11 @@ class dclily(gym.Env):
         else:
             soc_maintain_bonus = 0
 
-        # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
-        # 目的：额外奖励充电行为，确保充电策略的稳定性
-        # 充电维护奖励：每辆充电车辆额外+3000
-        # 与充电奖励(15000)叠加，总计18000/车
-        charging_maintenance_bonus = 3000 * charging_count
+        # =========2026.2.19修改，移除充电维护奖励==========
+        # 原因：充电维护奖励3000导致总充电奖励过高（1000+3000=4000）
+        # 解决：移除此项，仅保留基础充电奖励1000
+        charging_maintenance_bonus = 0  # 从3000改为0
+        # ======修改结束
         # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
@@ -1591,11 +1688,12 @@ class dclily(gym.Env):
         # =========2026.2.13修改，添加SOC维持奖励==========
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
         # =========2026.2.14修改，添加服务率惩罚==========
-        # 新奖励函数：充电奖励单独计算，不除以10
-        # 添加SOC维持奖励，鼓励保持高SOC
-        # 添加充电维护奖励，进一步强化充电激励
-        # 添加服务率惩罚，鼓励服务更多订单
-        reward_value = (service_revenue - soc_penalty) / 10 + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty - service_rate_penalty
+        # =========2026.2.19修改，修复奖励函数尺度==========
+        # 修改1：服务收入从/10改为×5，增强服务激励
+        # 修改2：充电奖励降低到1000，充电维护奖励改为0
+        # 新奖励函数：平衡服务和充电
+        reward_value = service_revenue * 5 - soc_penalty + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty - service_rate_penalty
+        # ======修改结束
         # ======修改结束
 
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
@@ -1620,8 +1718,8 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            # =========2026.2.12修改，方案F4：终止步奖励与中间步完全一致==========
-            charging_bonus = 3000 * charging_count
+            # =========2026.2.19修改，终止步充电奖励与中间步一致==========
+            charging_bonus = 1000 * charging_count  # 从3000改为1000
             # ======修改结束
 
             # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
@@ -1671,9 +1769,9 @@ class dclily(gym.Env):
                 service_rate_penalty = (0.5 - service_rate) * 8000
             # ======修改结束
 
-            # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
-            fixed_penalty = 0  # 原500改为0
-            final_reward = (service_revenue - soc_penalty) / 10 + charging_bonus - fixed_penalty - service_rate_penalty
+            # =========2026.2.19修改，终止步奖励函数与中间步一致==========
+            fixed_penalty = 0
+            final_reward = service_revenue * 5 - soc_penalty + charging_bonus - fixed_penalty - service_rate_penalty
             # ======修改结束
             # ======修改结束
             return self.state, final_reward, self.terminal, info

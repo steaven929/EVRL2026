@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=100,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--train_eps',default=10,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
@@ -39,6 +39,11 @@ def get_args():
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
+    # =========2026.2.19修改，MARL Phase-1：添加多智能体参数==========
+    parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 单智能体/多智能体模式
+    parser.add_argument('--n_agents',default=50,type=int,help="number of agents (zones)")  # 智能体数量（区域数）
+    parser.add_argument('--share_policy',default=True,type=bool,help="whether to share policy across agents")  # 是否参数共享
+    # ======修改结束
     # =========2026.2.13修改，修复命令行参数解析==========
     # 原代码：args = parser.parse_args([])  # 传入空列表会忽略命令行参数！
     # 修复：不传参数，让argparse自动读取sys.argv

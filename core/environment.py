@@ -15,6 +15,9 @@ import gym
 from specific.model import Actor, Critic
 from core.algorithm import DDPG, SAC
 from core.buffer import ReplayBuffer
+# =========2026.2.19修改，MARL Phase-1：导入MARL组件==========
+from core.marl_agent import IPPOAgent
+# ======修改结束
 
 
 class NormalizedActions(gym.ActionWrapper):
@@ -56,7 +59,31 @@ def env_agent_config(cfg):
     n_actions = env.action_space.shape[0]
     cfg.update({"n_states":n_states,"n_actions":n_actions}) # 更新n_states和n_actions到cfg参数中
 
-    # 根据算法名称选择不同的agent
+    # =========2026.2.19修改，MARL Phase-1：支持multi模式==========
+    marl_mode = cfg.get('marl_mode', 'single')  # 默认single模式
+
+    if marl_mode == 'multi':
+        # 多智能体模式：IPPO with Parameter Sharing
+        agent = IPPOAgent(
+            obs_dim=6,  # 局部观测维度（不含agent_id）
+            n_agents=cfg.get('n_agents', 50),  # 智能体数量（区域数）
+            action_dim=3,  # 每个智能体的动作维度
+            global_state_dim=n_states,  # 全局状态维度
+            agent_embed_dim=16,  # agent_id embedding维度
+            actor_hidden_dim=cfg.get('actor_hidden_dim', 128),
+            critic_hidden_dim=cfg.get('critic_hidden_dim', 256),
+            actor_lr=cfg['actor_lr'],
+            critic_lr=cfg['critic_lr'],
+            gamma=cfg['gamma'],
+            tau=cfg['tau'],
+            batch_size=cfg['batch_size'],
+            memory_capacity=cfg['memory_capacity'],
+            device=cfg['device']
+        )
+        return env, agent
+    # ======修改结束
+
+    # 根据算法名称选择不同的agent（单智能体模式）
     if cfg['algo_name'] == 'SAC':
         memory = ReplayBuffer(cfg['memory_capacity'])
         # =========2026.2.19修改，增加vocab_size以支持SIP数据集==========
