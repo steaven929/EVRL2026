@@ -10,7 +10,9 @@
       "Bash(ls:*)",
       "Bash(dir:*)",
       "Bash(findstr:*)",
-      "Bash(iconv:*)"
+      "Bash(iconv:*)",
+      "Bash(timeout:*)",
+      "Bash(find:*)"
     ]
   },
   "enabledPlugins": {

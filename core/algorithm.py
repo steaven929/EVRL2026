@@ -341,10 +341,17 @@ class SACDualHeadActorNetwork(nn.Module):
     def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, vocab_size=10):
         super(SACDualHeadActorNetwork, self).__init__()
 
-        # 动作维度分解：前8维调度，后4维充电
-        self.dispatch_dims = 8
-        self.charging_dims = 4
-        assert n_actions == self.dispatch_dims + self.charging_dims, "n_actions must be 12"
+        # =========2026.2.19修改，规模自适应：动态计算动作维度==========
+        # 动作维度分解：前2/3调度（发车+目的地），后1/3充电
+        # Toy network (4区域): 8调度 + 4充电 = 12
+        # SIP dataset (50区域): 100调度 + 50充电 = 150
+        assert n_actions % 3 == 0, f"n_actions must be divisible by 3, got {n_actions}"
+        zone_num = n_actions // 3
+        self.dispatch_dims = zone_num * 2  # 发车倾向 + 目的地倾向
+        self.charging_dims = zone_num      # 充电倾向
+        assert n_actions == self.dispatch_dims + self.charging_dims, \
+            f"n_actions ({n_actions}) must equal dispatch_dims ({self.dispatch_dims}) + charging_dims ({self.charging_dims})"
+        # ======修改结束
 
         # 共享层
         self.embedding = nn.Embedding(vocab_size, embedding_dims)

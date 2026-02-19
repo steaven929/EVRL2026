@@ -48,19 +48,41 @@ TIME_LENGTH = config['TIME_LENGTH']
 TIME_SLICE = config['TIME_SLICE']
 OD_MAX = config['OD_MAX']
 DIST_MAX = config['DIST_MAX']
+
+# =========2026.2.19修改，切换到SIP大规模数据集==========
+# 强制覆盖配置参数以使用SIP数据集（50区域，200车辆）
+ZONE_NUM = 50
+CAR_NUM = 200
+TIME_NUM = 26
+TIME_LENGTH = 30
+TIME_SLICE = 1
+OD_MAX = 13
+DIST_MAX = 200
+# ======修改结束
+
 car_speed_min = config['car_speed_min']
 manzu_min = config['manzu_min']
 diaodu_min = config['diaodu_min']
 elec_min = config['elec_min']
 BATTERY_CAPACITY = config['BATTERY_CAPACITY']
-path = config['path']
-training_set_number = config['training_set_number']
+
+# =========2026.2.19修改，切换到SIP数据集路径==========
+path = './data/SIP/'
+training_set_number = 30
+BATTERY_CAPACITY = 3000  # SIP数据集使用3000容量
+# ======修改结束
 CHARGER_STATES = config['CHARGER_STATES']  # 充电区域
 #NUM_CHARGERS = config['NUM_CHARGERS']  # 充电桩数量，弃用
 #NO_CHARGER_ZONES = config['NO_CHARGER_ZONES']
-CHARGER_ZONES = config['CHARGER_ZONES']  #弃置，原来按区域分的有充电桩区和无充电桩区
-#CHARGER_PER_ZONE = config.get('CHARGER_PER_ZONE', [0]*ZONE_NUM)
-ZONES = config['ZONES']
+
+# =========2026.2.19修改，加载SIP数据集的ZONES配置==========
+import json as json_module
+sip_config_path = os.path.join(current_dir, '..', 'data', 'SIP', 'config_sip.json')
+with open(sip_config_path, 'r', encoding='utf-8') as f:
+    sip_config = json_module.load(f)
+ZONES = sip_config['ZONES']
+CHARGER_ZONES = sip_config['CHARGER_ZONES']
+# ======修改结束
 
 
 # Convert CHARGER_ZONES to list if it's not already
@@ -68,11 +90,13 @@ if isinstance(CHARGER_ZONES, int):
     CHARGER_ZONES = [CHARGER_ZONES]
 
 #251007加入
-if "ZONES" in config:
-    NUM_CHARGERS = sum(len(zone.get("charging_slots", [])) for zone in config["ZONES"])   # 充电桩数量
-    CHARGER_PER_ZONE = [zone.get("charging_slots", []) for zone in config["ZONES"]]  #充电桩二维列表
-    CHARGER_ZONES = [zone["zone_id"] for zone in config["ZONES"] if zone.get("charging_slots")]   #弃置，原来定义的充电区域与非充电区域
-    #NO_CHARGER_ZONES = [zone["zone_id"] for zone in config["ZONES"] if not zone.get("charging_slots")] #弃置，无用变量
+# =========2026.2.19修改，使用SIP配置生成CHARGER_PER_ZONE==========
+if "ZONES" in sip_config:
+    NUM_CHARGERS = sum(len(zone.get("charging_slots", [])) for zone in sip_config["ZONES"])   # 充电桩数量
+    CHARGER_PER_ZONE = [zone.get("charging_slots", []) for zone in sip_config["ZONES"]]  #充电桩二维列表
+    # CHARGER_ZONES已经从sip_config加载，不需要重复
+    #NO_CHARGER_ZONES = [zone["zone_id"] for zone in sip_config["ZONES"] if not zone.get("charging_slots")] #弃置，无用变量
+# ======修改结束
 else:
     # 向后兼容旧配置
     NUM_CHARGERS = config.get('NUM_CHARGERS', 0)
@@ -88,16 +112,20 @@ ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
 
 # 当前动作为：发车倾向、目的地倾向、充电倾向
 
-# =========2026.2.6修改，状态空间增强：添加区域平均SOC==========
-# =========2026.2.13修改，状态空间增强：添加时间步信息==========
-# =========2026.2.15修改，状态空间优化：移除冗余特征（38→33维）==========
-# 移除：1) remaining_timesteps（与current_timestep线性相关）
-#       2) num_chargers的TIME_SLICE重复（静态配置无需重复）
+# =========2026.2.19修改，SIP数据集：更新状态空间定义（v5，251维）==========
+# 状态空间 v5 (251 dimensions for SIP dataset):
+#   - OD需求(In): TIME_SLICE * ZONE_NUM 维 (50)
+#   - OD需求(Out): TIME_SLICE * ZONE_NUM 维 (50)
+#   - 充电桩状态: TIME_SLICE * ZONE_NUM 维 (50)
+#   - 区域平均SOC: ZONE_NUM 维 (50)
+#   - 区域车辆数量: ZONE_NUM 维 (50)
+#   - 当前时间步: 1 维
+# 总计：50 + 50 + 50 + 50 + 50 + 1 = 251维
 OBS_SPACE = spaces.MultiDiscrete(
     (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES] +  # OD需求 + 充电桩状态
-    ZONE_NUM * [NUM_CHARGERS] +  # 充电桩数量（移除TIME_SLICE重复）
-    ZONE_NUM * [10] +  # 4个区域的SOC (0-9)
-    [TIME_NUM]  # 当前时间步(0-11)，移除remaining_timesteps
+    ZONE_NUM * [10] +  # 区域平均SOC (0-9)
+    ZONE_NUM * [20] +  # 区域车辆数量 (0-19)
+    [TIME_NUM]  # 当前时间步
 )
 # ======修改结束
 
@@ -421,8 +449,12 @@ class dclily(gym.Env):
     
     def get_micro_state(self):
         # 1) OD in/out，裁到 0..OD_MAX-1，并转 int
-        od_in2 = np.array(self.od_in[:, self.episode_timestep:self.episode_timestep + TIME_SLICE]).T
-        od_out2 = np.array(self.od_out[:, self.episode_timestep:self.episode_timestep + TIME_SLICE]).T
+        # 修复：确保episode_timestep不超出od_in/od_out的范围
+        timestep = min(self.episode_timestep, self.od_in.shape[1] - TIME_SLICE)
+        timestep = max(0, timestep)  # 确保不为负数
+
+        od_in2 = np.array(self.od_in[:, timestep:timestep + TIME_SLICE]).T
+        od_out2 = np.array(self.od_out[:, timestep:timestep + TIME_SLICE]).T
         od_part = np.concatenate((od_in2, od_out2), axis=1).ravel()
         od_part = np.clip(od_part, 0, OD_MAX - 1).astype(np.int64)
         
@@ -472,6 +504,24 @@ class dclily(gym.Env):
         avg_soc_per_zone = np.array(avg_soc_per_zone, dtype=np.int64)
         # ======修改结束
 
+        # =========2026.2.17修改，Quick Improvement 3：添加车辆分布到状态空间==========
+        # 4) 每个区域的车辆数量（新增）
+        # 统计每个区域中可用车辆数量（不在服务中、不在充电中）
+        vehicle_counts_per_zone = []
+        for zone in range(ZONE_NUM):
+            count = sum(1 for i in range(len(self.car))
+                       if self.car[i][0] == zone and self.car[i][2] <= 0 and self.car[i][3] == -1)
+            # 离散化为 20 档 [0-19]
+            # 0-9: 直接映射
+            # 10+: 每5辆车一档 (10-14→10, 15-19→11, ..., 190+→19)
+            if count <= 9:
+                count_discrete = count
+            else:
+                count_discrete = min(19, 9 + (count - 9) // 5)
+            vehicle_counts_per_zone.append(count_discrete)
+        vehicle_counts_per_zone = np.array(vehicle_counts_per_zone, dtype=np.int64)
+        # ======修改结束
+
         # =========2026.2.13修改，状态空间增强：添加时间步信息==========
         # =========2026.2.15修改，状态空间优化：移除remaining_timesteps==========
         # 5) 时间步特征（新增）
@@ -480,10 +530,12 @@ class dclily(gym.Env):
         current_timestep = np.array([min(self.episode_timestep, TIME_NUM - 1)], dtype=np.int64)  # 当前时间步 (0-11)
         # ======修改结束
 
-        # =========2026.2.15修改，状态空间优化：更新状态拼接和维度断言==========
-        # 6) 拼接成 [OD, OD, CHARGER_STATES, NUM_CHARGERS, AVG_SOC, TIMESTEP]
-        # 维度：(TIME_SLICE*ZONE_NUM)*3 + ZONE_NUM + ZONE_NUM + 1 = 24 + 4 + 4 + 1 = 33
-        state = np.concatenate([od_part, charger_states, num_chargers_feat, avg_soc_per_zone, current_timestep])
+        # =========2026.2.19修改，SIP数据集：更新状态拼接（v5，251维）==========
+        # 6) 拼接成 [OD, OD, CHARGER_STATES, AVG_SOC, VEHICLE_COUNTS, TIMESTEP]
+        # 维度：3*TIME_SLICE*ZONE_NUM + ZONE_NUM + ZONE_NUM + 1
+        #     = 3*1*50 + 50 + 50 + 1 = 251
+        charger_states_array = np.array(charger_states, dtype=np.int64)
+        state = np.concatenate([od_part, charger_states_array, avg_soc_per_zone, vehicle_counts_per_zone, current_timestep])
         # 保险断言：长度必须满足 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
         expected_dim = 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
         assert state.shape[0] == expected_dim, \
