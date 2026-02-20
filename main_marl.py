@@ -44,7 +44,9 @@ def main():
     print("="*80)
     print(f"模式: {cfg['marl_mode']}")
     print(f"智能体数量: {cfg['n_agents']}")
-    print(f"参数共享: {cfg['share_policy']}")
+    print(f"参数共享: {cfg.get('share_policy', True)}")
+    print(f"实验分支: {cfg.get('exp_variant', 'a1')}")
+    print(f"奖励模式: {cfg.get('reward_mode', 'base')}")
     print(f"训练轮数: {cfg['train_eps']}")
     print(f"测试轮数: {cfg['test_eps']}")
     print("="*80 + "\n")
@@ -67,6 +69,8 @@ def main():
     np.save(path + 'critic_losses.npy', res_dic['critic_losses'])
     np.save(path + 'actor_losses.npy', res_dic['actor_losses'])
     np.save(path + 'rewards.npy', res_dic['rewards'])
+    if 'raw_rewards' in res_dic:
+        np.save(path + 'raw_rewards.npy', res_dic['raw_rewards'])
     np.save(path + 'ma_rewards.npy', res_dic['ma_rewards'])
     if 'rld_history' in res_dic:
         np.save(path + 'rld_history.npy', res_dic['rld_history'])
@@ -75,6 +79,7 @@ def main():
     if 'srd_history' in res_dic:
         np.save(path + 'srd_history.npy', res_dic['srd_history'])
     print(f"数据已保存到: {path}")
+    print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
 
     # 保存模型
     agent.save_model(path + 'marl_model_final.pth')

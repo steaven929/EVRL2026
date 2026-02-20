@@ -71,12 +71,15 @@ if res_dic.get('q_values'):  # 修改
 if res_dic.get('target_q_values'):  # 修改
     np.save('target_q_values.npy', res_dic['target_q_values'])  # 修改
 np.save('rewards.npy', res_dic['rewards'])  # 修改：保存 episode rewards
+if res_dic.get('raw_rewards'):
+    np.save('raw_rewards.npy', res_dic['raw_rewards'])
 np.save('eval_rewards.npy', res_dic.get('eval_rewards', []))
 np.save('eval_episodes.npy', res_dic.get('eval_episodes', []))
 np.save('rld_history.npy', res_dic['rld_history'])  # 修改
 np.save('svc_history.npy', res_dic['svc_history'])  # 修改
 np.save('srd_history.npy', res_dic['srd_history'])  # 修改
 print(f"Loss数据和指标已保存")  # 修改
+print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
 
 # =========2026.1.31修改，保存训练好的模型==========
 agent.save_model('trained_model.pth')

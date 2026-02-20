@@ -9,16 +9,28 @@ import numpy as np
 import random
 
 
+def _charge_slice_from_action(action):
+    action_dim = int(np.asarray(action).shape[0])
+    if action_dim % 3 != 0:
+        raise ValueError(f"action dim {action_dim} is not divisible by 3")
+    zone_num = action_dim // 3
+    return slice(2 * zone_num, 3 * zone_num)
+
+
 def _evaluate_policy(cfg, env, agent, num_episodes):
     rewards = []
+    reward_scale = float(cfg.get('reward_scale', 1.0))
+    if reward_scale <= 0:
+        reward_scale = 1.0
     for _ in range(num_episodes):
         env.set_training_mode(0)
-        state = env.reset()
+        reset_ret = env.reset()
+        state = reset_ret[0] if isinstance(reset_ret, tuple) else reset_ret
         ep_reward = 0.0
         for _ in range(cfg['max_steps']):
             action = agent.predict_action(state)
             next_state, reward, done, _ = env.step(action)
-            ep_reward += reward
+            ep_reward += reward / reward_scale
             state = next_state
             if done:
                 break
@@ -77,11 +89,11 @@ def encode_custom_action(zone_to_counts, zone_from_counts=None, charge_pref=None
 def train(cfg, env, agent):
     print("开始训练！")
     is_sac = str(cfg.get('algo_name', '')).upper() == 'SAC'
-    # =========2026.2.14修改，实验顺序执行==========
-    # 按用户要求固定跑第一个实验（A1），不走命令行配置
-    exp_variant = 'a1'
+    exp_variant = str(cfg.get('exp_variant', 'a1')).lower()
     if hasattr(env, 'set_experiment_variant'):
         env.set_experiment_variant(exp_variant)
+    if hasattr(env, 'set_reward_mode'):
+        env.set_reward_mode(cfg.get('reward_mode', 'base'))
     ou_noise = None if is_sac else OUNoise(env.action_space)  # SAC不叠加OU噪声
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
@@ -93,6 +105,9 @@ def train(cfg, env, agent):
     q_values, target_q_values = [], []  # 修改：记录Q值和目标Q值用于诊断
     rld_history, svc_history, srd_history = [], [], []  # 修改
     eval_rewards, eval_episodes = [], []
+    raw_rewards = []
+
+    info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
 
     battery_log = []  # 修改：在所有episode之前初始化，用于存储所有episode的电池数据  # 修改
 
@@ -110,19 +125,16 @@ def train(cfg, env, agent):
             env.set_training_mode(2)  # 设置为探索期记录模式
             exploration_actions_saved = True
         # ======修改结束
-        state = env.reset()
+        reset_ret = env.reset()
+        state = reset_ret[0] if isinstance(reset_ret, tuple) else reset_ret
         if ou_noise is not None:
             ou_noise.reset()
-        ep_reward = 0
+        ep_reward = 0.0
+        ep_reward_raw = 0.0
         current_ep_battery_log = []  # 修改：每个episode初始化当前episode的电池日志  # 修改
 
         for i_step in range(cfg['max_steps']):
             action = agent.sample_action(state)
-            # print("无噪声动作")
-            # print(action)
-            zone_to_counts = [5, 5, 4, 4]  # zone 0 ~ 3
-            # 出发区域可以不指定，默认为均匀
-            #action = encode_custom_action(zone_to_counts)  #0723修改，用来自定义action 来测试
             if ou_noise is not None:
                 action = ou_noise.get_action(action, i_step+1)
 
@@ -139,28 +151,37 @@ def train(cfg, env, agent):
             # ======修改结束
 
             # =========2026.2.7修改，方案D2：充电维度噪声增强==========
-            # 前20轮训练，对充电维度 [8:12] 添加额外噪声
+            # 前20轮训练，对充电维度添加额外噪声（按动作维度动态切片）
             if (not is_sac) and i_ep < 20:
-                charging_noise = np.random.uniform(-0.3, 0.3, size=4)
-                action[8:12] = np.clip(action[8:12] + charging_noise, 0, 1)
+                charge_slice = _charge_slice_from_action(action)
+                charge_dim = charge_slice.stop - charge_slice.start
+                charging_noise = np.random.uniform(-0.3, 0.3, size=charge_dim)
+                action[charge_slice] = np.clip(action[charge_slice] + charging_noise, 0, 1)
             # ======修改结束
 
             next_state, reward, done, info = env.step(action)  # 修改：移除epoch参数
-            ep_reward += reward
+            ep_reward_raw += reward
+            scaled_reward = reward / reward_scale
+            ep_reward += scaled_reward
 
             # 记录环境指标  # 修改
             if 'rld' in info:  # 修改
                 rld_history.append(info['rld'])  # 修改
+            else:
+                info_missing_counts['rld'] += 1
             if 'svc' in info:  # 修改
                 svc_history.append(info['svc'])  # 修改
+            else:
+                info_missing_counts['svc'] += 1
             if 'srd' in info:  # 修改
                 srd_history.append(info['srd'])  # 修改
+            else:
+                info_missing_counts['srd'] += 1
 
             battery_snapshot = [car[1] for car in env.car]  # 20250726添加，画图1用 # 每步记录所有车辆电量
             current_ep_battery_log.append(battery_snapshot) # 20250726添加，画图1用
 
-            scaled_reward = reward / reward_scale
-            agent.memory.push((state, action, scaled_reward, next_state, done))
+            agent.memory.push((state, action, scaled_reward, next_state, bool(done)))
             #agent.update()  #2026.1.22修改
             loss_info = agent.update()  # 让它返回 dict
             if loss_info is not None:
@@ -174,8 +195,9 @@ def train(cfg, env, agent):
             if done:
                 break
         if 1: #(i_ep+1)%1 == 0:
-            print(f"回合：{i_ep+1}/{cfg['train_eps']}，奖励：{ep_reward:.2f}")
+            print(f"回合：{i_ep+1}/{cfg['train_eps']}，奖励(raw/scaled)：{ep_reward_raw:.2f}/{ep_reward:.2f}")
         rewards.append(ep_reward)
+        raw_rewards.append(ep_reward_raw)
 
         if eval_every > 0 and (i_ep + 1) % eval_every == 0:
             eval_reward = _evaluate_policy(cfg, env, agent, eval_eps)
@@ -183,8 +205,10 @@ def train(cfg, env, agent):
             eval_episodes.append(i_ep + 1)
             print(f"  [Eval] Episode {i_ep+1}: mean reward={eval_reward:.2f} over {eval_eps} eps")
         battery_log.extend(current_ep_battery_log)  # 修改：将当前episode的电池数据追加到总列表  # 修改
+    print(f"[InfoCoverage] missing counts: {info_missing_counts}")
     print("完成训练！")
     return {'rewards': rewards,
+    'raw_rewards': raw_rewards,
     'eval_rewards': eval_rewards,
     'eval_episodes': eval_episodes,
     'battery_log': battery_log,
@@ -195,23 +219,29 @@ def train(cfg, env, agent):
     'target_q_values': target_q_values,  # 修改
     'rld_history': rld_history,  # 修改
     'svc_history': svc_history,  # 修改
-    'srd_history': srd_history}  # 修改
+    'srd_history': srd_history,
+    'info_missing_counts': info_missing_counts}  # 修改
 
 def test(cfg, env, agent):
     print("开始测试！")
-    # =========2026.2.14修改，实验顺序执行==========
-    exp_variant = 'a1'
+    exp_variant = str(cfg.get('exp_variant', 'a1')).lower()
     if hasattr(env, 'set_experiment_variant'):
         env.set_experiment_variant(exp_variant)
+    if hasattr(env, 'set_reward_mode'):
+        env.set_reward_mode(cfg.get('reward_mode', 'base'))
     rewards = [] # 记录所有回合的奖励
+    reward_scale = float(cfg.get('reward_scale', 1.0))
+    if reward_scale <= 0:
+        reward_scale = 1.0
     for i_ep in range(cfg['test_eps']):
         env.set_training_mode(0)
-        state = env.reset() 
+        reset_ret = env.reset()
+        state = reset_ret[0] if isinstance(reset_ret, tuple) else reset_ret
         ep_reward = 0
         for i_step in range(cfg['max_steps']):
             action = agent.predict_action(state)
             next_state, reward, done, _ = env.step(action)
-            ep_reward += reward
+            ep_reward += reward / reward_scale
             state = next_state
             if done:
                 break

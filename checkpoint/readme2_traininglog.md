@@ -103,3 +103,22 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 **目标**:
 * 降低后期“有需求但无动作”的结构性概率。
 * 避免充电侧对调度预算的重复侵蚀。
+
+### 2.5 [2026-02-20] MARL链路打通与口径统一（SIP 50区）
+**问题现象**: 新增 `main_marl.py` 后，`test_marl.py` 报错 `env.n_agents`/`get_agent_obs` 缺失；MARL 训练奖励口径与单智能体链路不一致。
+
+**代码修复点**:
+* `core/environment.py`
+  1. 新增 `MARLAdapter`，将单智能体环境包装为 MARL 接口：`n_agents`、`get_agent_obs(agent_id)`、联合动作 `(n_agents,3)` 到扁平动作的映射。
+  2. 多智能体模式下 `n_agents` 由动作维度自动推断并与配置对齐，避免配置/环境不一致。
+* `core/marl_training.py`
+  1. 训练/测试引入 `reward_scale`，统一 `raw/scaled` 奖励口径。
+  2. 增加 `raw_rewards` 与 `info_missing_counts(rld/svc/srd)` 统计。
+  3. 训练与测试前透传 `exp_variant`、`reward_mode` 到环境。
+* `main_marl.py`
+  1. 补充 `exp_variant`/`reward_mode` 打印。
+  2. 新增 `raw_rewards.npy` 落盘与 `info_missing_counts` 输出。
+
+**验证结果**:
+* `python test_marl.py --train_eps 1 --test_eps 1 --max_steps 1` 通过。
+* `python main_marl.py --train_eps 1 --test_eps 1 --max_steps 1 --reward_mode base --exp_variant a1` 可完成训练与测试。

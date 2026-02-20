@@ -36,6 +36,8 @@ def get_args():
     parser.add_argument('--reward_scale',default=1000.0,type=float,help="reward scaling factor for SAC/DDPG updates")
     parser.add_argument('--eval_every',default=20,type=int,help="run deterministic eval every N episodes during training")
     parser.add_argument('--eval_eps',default=3,type=int,help="number of episodes per periodic eval")
+    parser.add_argument('--exp_variant',default='a1',type=str,help="experiment variant key used by env")
+    parser.add_argument('--reward_mode',default='base',type=str,help="reward mode: base or shaping")
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
