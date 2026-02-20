@@ -107,12 +107,11 @@ def marl_train(env, agent, cfg, path=None):
         else:
             ma_rewards.append(ep_reward)
 
-        # 打印进度
-        if (i_ep + 1) % 10 == 0:
-            print(f"回合：{i_ep+1}/{cfg['train_eps']}，"
-                  f"奖励：{ep_reward:.2f}，"
-                  f"移动平均：{ma_rewards[-1]:.2f}，"
-                  f"步数：{ep_step}")
+        # 打印进度 - 每轮都输出
+        print(f"{i_ep+1}/{cfg['train_eps']}, "
+              f"Reward: {ep_reward:.2f}, "
+              f"MA: {ma_rewards[-1]:.2f}, "
+              f"Steps: {ep_step}")
 
         # 定期保存模型
         if (i_ep + 1) % 100 == 0 and path is not None:

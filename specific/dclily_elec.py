@@ -1539,11 +1539,12 @@ class dclily(gym.Env):
         service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
         # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
-        service_rate_penalty = 0
-        if service_rate < 0.5:  # 服务率低于50%时开始惩罚
-            # 惩罚力度：(0.5 - service_rate) * 8000
-            # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
-            service_rate_penalty = (0.5 - service_rate) * 8000
+        # =========2026.2.20修改，移除服务率惩罚（导致agent不提供服务）==========
+        service_rate_penalty = 0  # 完全移除此惩罚
+        # if service_rate < 0.5:  # 服务率低于50%时开始惩罚
+        #     # 惩罚力度：(0.5 - service_rate) * 8000
+        #     # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
+        #     service_rate_penalty = (0.5 - service_rate) * 8000
         # ======修改结束
 
         # ====== Debug log start ======
@@ -1762,11 +1763,12 @@ class dclily(gym.Env):
             service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
             # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
-            service_rate_penalty = 0
-            if service_rate < 0.5:  # 服务率低于50%时开始惩罚
-                # 惩罚力度：(0.5 - service_rate) * 8000
-                # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
-                service_rate_penalty = (0.5 - service_rate) * 8000
+            # =========2026.2.20修改，移除服务率惩罚（导致agent不提供服务）==========
+            service_rate_penalty = 0  # 完全移除此惩罚
+            # if service_rate < 0.5:  # 服务率低于50%时开始惩罚
+            #     # 惩罚力度：(0.5 - service_rate) * 8000
+            #     # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
+            #     service_rate_penalty = (0.5 - service_rate) * 8000
             # ======修改结束
 
             # =========2026.2.19修改，终止步奖励函数与中间步一致==========
