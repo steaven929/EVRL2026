@@ -21,12 +21,12 @@ def get_args():
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
-    parser.add_argument('--critic_lr',default=1e-5,type=float,help="learning rate of critic")  #critic学习率  # 2026.2.20：降低学习率以稳定训练
-    parser.add_argument('--actor_lr',default=5e-6,type=float,help="learning rate of actor")  #actor学习率  # 2026.2.20：降低学习率以稳定训练
+    parser.add_argument('--critic_lr',default=1e-4,type=float,help="learning rate of critic")  #critic学习率  # 2026.2.20：提高学习率加速学习（1e-5->1e-4）
+    parser.add_argument('--actor_lr',default=5e-5,type=float,help="learning rate of actor")  #actor学习率  # 2026.2.20：提高学习率加速学习（5e-6->5e-5）
     parser.add_argument('--memory_capacity',default=64000,type=int,help="memory capacity")  #经验池容量
-    parser.add_argument('--batch_size',default=256,type=int)  #批量学习数  # 2026.2.20：增大batch size以稳定训练
+    parser.add_argument('--batch_size',default=128,type=int)  #批量学习数  # 2026.2.20：减小batch size增加更新频率（256->128）
     parser.add_argument('--target_update',default=2,type=int)  #目标网络更新频率
-    parser.add_argument('--tau',default=1e-4,type=float)  #软更新参数  # 2026.2.20：降低软更新速度
+    parser.add_argument('--tau',default=5e-4,type=float)  #软更新参数  # 2026.2.20：提高软更新速度（1e-4->5e-4）
     parser.add_argument('--critic_hidden_dim',default=256,type=int)  #critic的dense层神经元  # 实验18：恢复256
     parser.add_argument('--actor_hidden_dim',default=256,type=int)   #actor的dense层神经元  # 实验18：恢复256
     parser.add_argument('--critic_embed_dim',default=8,type=int)  #critic的embedding层  # 实验18：恢复8
