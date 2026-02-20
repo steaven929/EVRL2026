@@ -29,15 +29,27 @@ def marl_train(env, agent, cfg, path=None):
     print(f"全局状态维度: {env.observation_space.shape[0]}")
 
     rewards = []
+    raw_rewards = []
     ma_rewards = []  # 移动平均奖励
     critic_losses = []
     actor_losses = []
     rld_history = []
     svc_history = []
     srd_history = []
+    info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
+
+    reward_scale = float(cfg.get('reward_scale', 1.0))
+    if reward_scale <= 0:
+        reward_scale = 1.0
+
+    if hasattr(env, 'set_experiment_variant'):
+        env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
+    if hasattr(env, 'set_reward_mode'):
+        env.set_reward_mode(cfg.get('reward_mode', 'base'))
 
     for i_ep in range(cfg['train_eps']):
-        ep_reward = 0
+        ep_reward = 0.0
+        ep_reward_raw = 0.0
         ep_step = 0
 
         # 重置环境
@@ -60,6 +72,7 @@ def marl_train(env, agent, cfg, path=None):
 
             # 执行动作
             next_global_state, reward, done, info = env.step(actions)
+            scaled_reward = reward / reward_scale
 
             # 获取下一时刻的局部观测
             next_obs_n = []
@@ -73,7 +86,7 @@ def marl_train(env, agent, cfg, path=None):
                 obs_n=obs_n,
                 act_n=actions,
                 global_state=global_state,
-                reward=reward,
+                reward=scaled_reward,
                 next_obs_n=next_obs_n,
                 next_global_state=next_global_state,
                 done=done
@@ -89,19 +102,27 @@ def marl_train(env, agent, cfg, path=None):
             # 更新状态
             obs_n = next_obs_n
             global_state = next_global_state
-            ep_reward += reward
+            ep_reward += scaled_reward
+            ep_reward_raw += reward
             ep_step += 1
 
         # 记录环境指标（从info字典获取）
         if 'rld' in info:
             rld_history.append(info['rld'])
+        else:
+            info_missing_counts['rld'] += 1
         if 'svc' in info:
             svc_history.append(info['svc'])
+        else:
+            info_missing_counts['svc'] += 1
         if 'srd' in info:
             srd_history.append(info['srd'])
+        else:
+            info_missing_counts['srd'] += 1
 
         # 记录奖励
         rewards.append(ep_reward)
+        raw_rewards.append(ep_reward_raw)
         if ma_rewards:
             ma_rewards.append(0.9 * ma_rewards[-1] + 0.1 * ep_reward)
         else:
@@ -109,7 +130,7 @@ def marl_train(env, agent, cfg, path=None):
 
         # 打印进度 - 每轮都输出
         print(f"{i_ep+1}/{cfg['train_eps']}, "
-              f"Reward: {ep_reward:.2f}, "
+              f"Reward(raw/scaled): {ep_reward_raw:.2f}/{ep_reward:.2f}, "
               f"MA: {ma_rewards[-1]:.2f}, "
               f"Steps: {ep_step}")
 
@@ -121,12 +142,14 @@ def marl_train(env, agent, cfg, path=None):
     # 返回结果字典（与main.py格式一致）
     res_dic = {
         'rewards': rewards,
+        'raw_rewards': raw_rewards,
         'ma_rewards': ma_rewards,
         'critic_losses': critic_losses,
         'actor_losses': actor_losses,
         'rld_history': rld_history,
         'svc_history': svc_history,
-        'srd_history': srd_history
+        'srd_history': srd_history,
+        'info_missing_counts': info_missing_counts,
     }
 
     return res_dic
@@ -148,6 +171,14 @@ def marl_test(env, agent, cfg, path=None):
     print("开始MARL测试...")
 
     rewards = []
+    reward_scale = float(cfg.get('reward_scale', 1.0))
+    if reward_scale <= 0:
+        reward_scale = 1.0
+
+    if hasattr(env, 'set_experiment_variant'):
+        env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
+    if hasattr(env, 'set_reward_mode'):
+        env.set_reward_mode(cfg.get('reward_mode', 'base'))
 
     for i_ep in range(cfg['test_eps']):
         ep_reward = 0
@@ -182,7 +213,7 @@ def marl_test(env, agent, cfg, path=None):
             # 更新状态
             obs_n = next_obs_n
             global_state = next_global_state
-            ep_reward += reward
+            ep_reward += reward / reward_scale
             ep_step += 1
 
         # 记录奖励

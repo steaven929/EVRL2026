@@ -109,6 +109,22 @@ else:
 ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
 
 
+# =========2026.2.20修改，统一状态维度契约==========
+def _expected_state_dim():
+    return 3 * TIME_SLICE * ZONE_NUM + 2 * ZONE_NUM + 1
+
+
+def _build_observation_space():
+    nvec = (
+        (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES]
+        + ZONE_NUM * [10]
+        + ZONE_NUM * [20]
+        + [TIME_NUM]
+    )
+    return spaces.MultiDiscrete(nvec)
+# ======修改结束
+
+
 
 # 当前动作为：发车倾向、目的地倾向、充电倾向
 
@@ -121,12 +137,7 @@ ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
 #   - 区域车辆数量: ZONE_NUM 维 (50)
 #   - 当前时间步: 1 维
 # 总计：50 + 50 + 50 + 50 + 50 + 1 = 251维
-OBS_SPACE = spaces.MultiDiscrete(
-    (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES] +  # OD需求 + 充电桩状态
-    ZONE_NUM * [10] +  # 区域平均SOC (0-9)
-    ZONE_NUM * [20] +  # 区域车辆数量 (0-19)
-    [TIME_NUM]  # 当前时间步
-)
+OBS_SPACE = _build_observation_space()
 # ======修改结束
 
 
@@ -147,9 +158,17 @@ class dclily(gym.Env):
         self.current_epoch = 0  # 当前训练轮数（用于探索策略衰减）
         # ======修改结束
 
-        # =========2026.2.14修改，实验方案开关==========
-        # 按用户要求固定为第一个实验（A1），不通过命令行切换
-        self.exp_variant = 'a1'
+        # =========2026.2.20修改，实验与奖励开关可配置==========
+        self.exp_variant = str(self.config.get('exp_variant', 'a1')).lower()
+        self.reward_mode = str(self.config.get('reward_mode', 'base')).lower()
+        if self.reward_mode not in ('base', 'shaping'):
+            self.reward_mode = 'base'
+        self.reward_weights = {
+            'charging_bonus': float(self.config.get('reward_w_charging_bonus', 1.0)),
+            'charging_maintenance': float(self.config.get('reward_w_charging_maintenance', 1.0)),
+            'soc_maintain': float(self.config.get('reward_w_soc_maintain', 1.0)),
+            'service_rate_penalty': float(self.config.get('reward_w_service_rate_penalty', 1.0)),
+        }
         # ======修改结束
 
         # 自行定义
@@ -182,6 +201,7 @@ class dclily(gym.Env):
         self.CAR_NUM = CAR_NUM
         self.TIME_NUM = TIME_NUM
         self.TIME_SLICE = TIME_SLICE
+        self.expected_state_dim = _expected_state_dim()
         
         #self.charging_usage = [0] * ZONE_NUM  #只对各区域使用的充电桩计数
         self.charging_stations = {
@@ -309,7 +329,9 @@ class dclily(gym.Env):
             # available.iloc[0] = 每个区域初始车辆数量
             # available.iloc[1] = 每个区域可用停车位数量（总车位 - 初始车辆）
             for i in range(ZONE_NUM):
-                available.iloc[1][str(i)] -= available.iloc[0][str(i)]
+                # =========2026.2.20修改，修复pandas链式赋值==========
+                available.loc[1, str(i)] = available.loc[1, str(i)] - available.loc[0, str(i)]
+                # ======修改结束
             
             self.available = np.array(available)
             self.mem_available = copy.deepcopy(self.available)
@@ -537,94 +559,13 @@ class dclily(gym.Env):
         charger_states_array = np.array(charger_states, dtype=np.int64)
         state = np.concatenate([od_part, charger_states_array, avg_soc_per_zone, vehicle_counts_per_zone, current_timestep])
         # 保险断言：长度必须满足 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
-        expected_dim = 3 * ZONE_NUM * TIME_SLICE + 2 * ZONE_NUM + 1
+        expected_dim = self.expected_state_dim
         assert state.shape[0] == expected_dim, \
-            f"state dim {state.shape[0]} != 3*ZONE_NUM*TIME_SLICE + 2*ZONE_NUM + 1 (expected {expected_dim})"
+            f"state dim {state.shape[0]} != expected_state_dim ({expected_dim})"
         # ======修改结束
         return state
-
+        
         # return np.concatenate([od_part, np.array(charger_states)])
-
-    # =========2026.2.19修改，MARL Phase-1：添加多智能体视图接口==========
-    def get_agent_obs(self, agent_id):
-        """
-        获取区域级智能体的局部观测（7维）
-
-        Args:
-            agent_id: 区域编号 (0 to ZONE_NUM-1)
-
-        Returns:
-            obs: 7维numpy数组
-                [0] od_in_local: 本区域当前入需求
-                [1] od_out_local: 本区域当前出需求
-                [2] vehicle_count_local: 本区域可用车辆数
-                [3] avg_soc_local: 本区域平均SOC（归一化）
-                [4] charger_occ_local: 本区域充电桩占用率
-                [5] timestep_norm: 当前时间步归一化值
-                [6] agent_id: 区域编号（用于embedding）
-        """
-        # 确保episode_timestep不超出范围
-        timestep = min(self.episode_timestep, self.od_in.shape[1] - 1)
-        timestep = max(0, timestep)
-
-        # 1) 本区域OD需求
-        od_in_local = float(self.od_in[agent_id, timestep])
-        od_out_local = float(self.od_out[agent_id, timestep])
-
-        # 2) 本区域可用车辆数（不在服务中、不在充电中）
-        vehicle_count_local = sum(1 for i in range(len(self.car))
-                                 if self.car[i][0] == agent_id and self.car[i][2] <= 0 and self.car[i][3] == -1)
-
-        # 3) 本区域平均SOC（归一化到0-1）
-        zone_vehicles = [self.car[i][1] for i in range(len(self.car))
-                        if self.car[i][0] == agent_id and self.car[i][2] == 0]
-        if zone_vehicles:
-            avg_soc_local = np.mean(zone_vehicles) / BATTERY_CAPACITY
-        else:
-            avg_soc_local = 0.5  # 默认值
-
-        # 4) 本区域充电桩占用率
-        if agent_id < len(CHARGER_PER_ZONE) and isinstance(CHARGER_PER_ZONE[agent_id], (list, tuple)):
-            total_chargers = len(CHARGER_PER_ZONE[agent_id])
-            if total_chargers > 0:
-                charger_occ_local = self.available[0][agent_id] / (self.mem_available[0][agent_id] + 1e-5)
-            else:
-                charger_occ_local = 0.0
-        else:
-            charger_occ_local = 0.0
-
-        # 5) 当前时间步归一化
-        timestep_norm = float(self.episode_timestep) / (TIME_NUM - 1) if TIME_NUM > 1 else 0.0
-
-        # 6) 区域编号（用于embedding，不归一化）
-        agent_id_val = float(agent_id)
-
-        obs = np.array([
-            od_in_local,
-            od_out_local,
-            vehicle_count_local,
-            avg_soc_local,
-            charger_occ_local,
-            timestep_norm,
-            agent_id_val
-        ], dtype=np.float32)
-
-        return obs
-
-    def get_global_state(self):
-        """
-        获取全局状态（用于centralized critic）
-
-        Returns:
-            global_state: 与get_micro_state()相同的全局状态向量
-        """
-        return self.get_micro_state()
-
-    @property
-    def n_agents(self):
-        """返回智能体数量（区域数）"""
-        return ZONE_NUM
-    # ======修改结束
 
     @property
     def state(self):
@@ -749,7 +690,7 @@ class dclily(gym.Env):
                 
             
             else:
-                nearest_zone, _ = self.find_nearest_available_charger(current_zone)
+                nearest_zone, _ = self.find_nearest_charger(current_zone)
                 return nearest_zone
         
         #2
@@ -807,8 +748,10 @@ class dclily(gym.Env):
     def find_preferred_charger(self, current_zone, charge_pref):
         candidates = []
         for zone in range(ZONE_NUM):
-            if len(CHARGER_PER_ZONE[zone]) == 0:
+            # =========2026.2.20修改，修复CHARGER_PER_ZONE越界==========
+            if zone >= len(CHARGER_PER_ZONE) or len(CHARGER_PER_ZONE[zone]) == 0:
                 continue
+            # ======修改结束
             has_available_slot = any(self.available[1][zone] > slot for slot in CHARGER_PER_ZONE[zone])
             if has_available_slot:
                 dist_score = -self.dist[current_zone][zone]
@@ -1189,21 +1132,6 @@ class dclily(gym.Env):
             return
     
     def step(self, action):
-        # =========2026.2.19修改，MARL Phase-1：支持joint action输入==========
-        # 支持两种输入格式：
-        # 1) 单智能体：action.shape = (3*ZONE_NUM,)
-        # 2) 多智能体：action.shape = (ZONE_NUM, 3) 或 (3*ZONE_NUM,)
-        action = np.array(action)
-        if action.ndim == 2:
-            # 多智能体格式：(n_agents, 3) -> (3*ZONE_NUM,)
-            assert action.shape == (ZONE_NUM, 3), \
-                f"Multi-agent action shape {action.shape} != (ZONE_NUM={ZONE_NUM}, 3)"
-            action = action.reshape(-1)  # 展平为一维
-        else:
-            # 单智能体格式：(3*ZONE_NUM,)
-            assert action.shape[0] == 3 * ZONE_NUM, \
-                f"Single-agent action shape {action.shape} != (3*ZONE_NUM={3*ZONE_NUM},)"
-        # ======修改结束
 
         charge_pref = action[2 * ZONE_NUM: 3 * ZONE_NUM]
         # print(f"\n--- 时间片 {self.episode_timestep} ---")#20251201
@@ -1539,12 +1467,11 @@ class dclily(gym.Env):
         service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
         # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
-        # =========2026.2.20修改，移除服务率惩罚（导致agent不提供服务）==========
-        service_rate_penalty = 0  # 完全移除此惩罚
-        # if service_rate < 0.5:  # 服务率低于50%时开始惩罚
-        #     # 惩罚力度：(0.5 - service_rate) * 8000
-        #     # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
-        #     service_rate_penalty = (0.5 - service_rate) * 8000
+        service_rate_penalty = 0
+        if service_rate < 0.5:  # 服务率低于50%时开始惩罚
+            # 惩罚力度：(0.5 - service_rate) * 8000
+            # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
+            service_rate_penalty = (0.5 - service_rate) * 8000
         # ======修改结束
 
         # ====== Debug log start ======
@@ -1578,7 +1505,7 @@ class dclily(gym.Env):
         self.update_od_left()
 
         self.write_od_now()
-        done = self.terminal##0729 计算trb论文指标加入
+        done = bool(self.terminal)##0729 计算trb论文指标加入
 
         # =========2026.2.5修改，方案1：添加即时充电奖励==========
         # 1. 服务订单收益（已在real_reward中）
@@ -1594,11 +1521,10 @@ class dclily(gym.Env):
         # =========2026.2.12修改，实验19：大幅提升充电奖励==========
         # =========2026.2.13修改，进一步提升充电奖励==========
         # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # =========2026.2.19修改，修复充电黑客问题==========
-        # 问题：充电奖励15000过高，导致所有车辆持续充电
-        # 解决：降低到1000，避免充电奖励主导策略
-        # 即时充电奖励：每辆充电车辆+1000
-        charging_bonus = 1000 * charging_count
+        # 问题：充电奖励5000仍不足以抵消服务收入的吸引力
+        # 解决：提升到15000，配合允许充电车辆服务，消除机会成本
+        # 即时充电奖励：每辆充电车辆+15000（从5000提升到15000）
+        charging_bonus = 15000 * charging_count
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1669,11 +1595,11 @@ class dclily(gym.Env):
         else:
             soc_maintain_bonus = 0
 
-        # =========2026.2.19修改，移除充电维护奖励==========
-        # 原因：充电维护奖励3000导致总充电奖励过高（1000+3000=4000）
-        # 解决：移除此项，仅保留基础充电奖励1000
-        charging_maintenance_bonus = 0  # 从3000改为0
-        # ======修改结束
+        # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
+        # 目的：额外奖励充电行为，确保充电策略的稳定性
+        # 充电维护奖励：每辆充电车辆额外+3000
+        # 与充电奖励(15000)叠加，总计18000/车
+        charging_maintenance_bonus = 3000 * charging_count
         # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
@@ -1689,11 +1615,22 @@ class dclily(gym.Env):
         # =========2026.2.13修改，添加SOC维持奖励==========
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
         # =========2026.2.14修改，添加服务率惩罚==========
-        # =========2026.2.19修改，修复奖励函数尺度==========
-        # 修改1：服务收入从/10改为×5，增强服务激励
-        # 修改2：充电奖励降低到1000，充电维护奖励改为0
-        # 新奖励函数：平衡服务和充电
-        reward_value = service_revenue * 5 - soc_penalty + charging_bonus + charging_maintenance_bonus + soc_maintain_bonus - fixed_penalty - service_rate_penalty
+        # 新奖励函数：充电奖励单独计算，不除以10
+        # 添加SOC维持奖励，鼓励保持高SOC
+        # 添加充电维护奖励，进一步强化充电激励
+        # 添加服务率惩罚，鼓励服务更多订单
+        # =========2026.2.20修改，奖励分层：base与shaping可切换==========
+        weighted_service_rate_penalty = self.reward_weights['service_rate_penalty'] * service_rate_penalty
+        base_reward = (service_revenue - soc_penalty) / 10 - fixed_penalty - weighted_service_rate_penalty
+        if self.reward_mode == 'shaping':
+            reward_value = (
+                base_reward
+                + self.reward_weights['charging_bonus'] * charging_bonus
+                + self.reward_weights['charging_maintenance'] * charging_maintenance_bonus
+                + self.reward_weights['soc_maintain'] * soc_maintain_bonus
+            )
+        else:
+            reward_value = base_reward
         # ======修改结束
         # ======修改结束
 
@@ -1705,7 +1642,9 @@ class dclily(gym.Env):
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
             "demand_orders": rel_demand,  # 需求订单矩阵
             "charging_actions": charging_actions,  # 充电动作记录
-            "action_table_true": action_table_true  # RL调度倾向矩阵
+            "action_table_true": action_table_true,  # RL调度倾向矩阵
+            "service_rate": float(service_rate),
+            "reward_mode": self.reward_mode,
         }           ##0729 计算trb论文指标加入
         # ======修改结束
 
@@ -1719,8 +1658,8 @@ class dclily(gym.Env):
             for i in range(self.CAR_NUM):
                 if self.car[i][3] != -1 and self.car[i][2] == 0:
                     charging_count += 1
-            # =========2026.2.19修改，终止步充电奖励与中间步一致==========
-            charging_bonus = 1000 * charging_count  # 从3000改为1000
+            # =========2026.2.12修改，方案F4：终止步奖励与中间步完全一致==========
+            charging_bonus = 3000 * charging_count
             # ======修改结束
 
             # =========2026.2.11修改，实验12：终止时也使用渐进式惩罚==========
@@ -1763,20 +1702,24 @@ class dclily(gym.Env):
             service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
             # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
-            # =========2026.2.20修改，移除服务率惩罚（导致agent不提供服务）==========
-            service_rate_penalty = 0  # 完全移除此惩罚
-            # if service_rate < 0.5:  # 服务率低于50%时开始惩罚
-            #     # 惩罚力度：(0.5 - service_rate) * 8000
-            #     # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
-            #     service_rate_penalty = (0.5 - service_rate) * 8000
+            service_rate_penalty = 0
+            if service_rate < 0.5:  # 服务率低于50%时开始惩罚
+                # 惩罚力度：(0.5 - service_rate) * 8000
+                # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
+                service_rate_penalty = (0.5 - service_rate) * 8000
             # ======修改结束
 
-            # =========2026.2.19修改，终止步奖励函数与中间步一致==========
-            fixed_penalty = 0
-            final_reward = service_revenue * 5 - soc_penalty + charging_bonus - fixed_penalty - service_rate_penalty
+            # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
+            fixed_penalty = 0  # 原500改为0
+            weighted_service_rate_penalty = self.reward_weights['service_rate_penalty'] * service_rate_penalty
+            base_reward = (service_revenue - soc_penalty) / 10 - fixed_penalty - weighted_service_rate_penalty
+            if self.reward_mode == 'shaping':
+                final_reward = base_reward + self.reward_weights['charging_bonus'] * charging_bonus
+            else:
+                final_reward = base_reward
             # ======修改结束
             # ======修改结束
-            return self.state, final_reward, self.terminal, info
+            return self.state, float(final_reward), bool(self.terminal), info
         else:
             self._last_episode_timestep = self.episode_timestep
             
@@ -1813,7 +1756,7 @@ class dclily(gym.Env):
             # print("================================\n")
 
             # =========2026.2.2修改，使用新奖励函数==========
-            return self.state, reward_value, self.terminal, info
+            return self.state, float(reward_value), bool(self.terminal), info
             # ======修改结束
 
     @property
@@ -1821,10 +1764,7 @@ class dclily(gym.Env):
         return self.is_terminal()
 
     def is_terminal(self):
-        if self.episode_timestep >= TIME_NUM:
-            return 1
-        else:
-            return 0
+        return bool(self.episode_timestep >= TIME_NUM)
 
     def set_training_mode(self, training):
         """
@@ -1847,8 +1787,17 @@ class dclily(gym.Env):
         self.exp_variant = str(variant).lower()
     # ======修改结束
 
-    def reset(self):
+    # =========2026.2.20修改，奖励模式设置接口==========
+    def set_reward_mode(self, reward_mode):
+        mode = str(reward_mode).lower()
+        if mode in ('base', 'shaping'):
+            self.reward_mode = mode
+    # ======修改结束
+
+    def reset(self, *, seed=None, options=None):
         # 重置环境并返回初始状态
+        if seed is not None:
+            self.seed(seed)
         new = self.new
         self.episode_timestep = 0
         self._last_episode_timestep = 0
@@ -1871,7 +1820,7 @@ class dclily(gym.Env):
         self._last_edge = None
         self._last_episode_timestep = self.episode_timestep
 
-        return self.state
+        return self.state, {}
 
     def render(self, mode='human'):
         # 渲染环境的逻辑，一般不涉及，可视化内容

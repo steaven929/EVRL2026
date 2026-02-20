@@ -30,6 +30,65 @@ class NormalizedActions(gym.ActionWrapper):
         # action = np.clip(action, low_bound, upper_bound)
         return action
 
+
+# =========2026.2.20修改，MARL适配器：联合动作与局部观测==========
+class MARLAdapter(gym.Wrapper):
+    """将单智能体环境包装为MARL接口。"""
+
+    def __init__(self, env, n_agents):
+        super().__init__(env)
+        self.n_agents = int(n_agents)
+        self._last_global_state = None
+
+    def reset(self, **kwargs):
+        reset_ret = self.env.reset(**kwargs)
+        global_state = reset_ret[0] if isinstance(reset_ret, tuple) else reset_ret
+        self._last_global_state = np.asarray(global_state)
+        return self._last_global_state
+
+    def step(self, actions):
+        actions = np.asarray(actions, dtype=np.float32)
+        expected_shape = (self.n_agents, 3)
+        if actions.shape != expected_shape:
+            raise ValueError(f"MARL actions shape {actions.shape} != {expected_shape}")
+
+        actions = np.clip(actions, 0.0, 1.0)
+        flat_action = np.concatenate([actions[:, 0], actions[:, 1], actions[:, 2]], axis=0)
+
+        step_ret = self.env.step(flat_action)
+        if len(step_ret) == 5:
+            global_state, reward, terminated, truncated, info = step_ret
+            done = bool(terminated or truncated)
+        else:
+            global_state, reward, done, info = step_ret
+
+        self._last_global_state = np.asarray(global_state)
+        return self._last_global_state, float(reward), bool(done), info
+
+    def get_agent_obs(self, agent_id):
+        if self._last_global_state is None:
+            raise RuntimeError("Call reset() before get_agent_obs().")
+
+        if agent_id < 0 or agent_id >= self.n_agents:
+            raise ValueError(f"agent_id {agent_id} out of range [0, {self.n_agents})")
+
+        state = np.asarray(self._last_global_state, dtype=np.float32)
+        z = self.n_agents
+        expected_min_dim = 5 * z + 1
+        if state.shape[0] < expected_min_dim:
+            raise ValueError(f"global_state dim {state.shape[0]} < required {expected_min_dim}")
+
+        local_obs = np.array([
+            state[agent_id],
+            state[z + agent_id],
+            state[2 * z + agent_id],
+            state[3 * z + agent_id],
+            state[4 * z + agent_id],
+            state[-1],
+        ], dtype=np.float32)
+        return np.concatenate([local_obs, np.array([float(agent_id)], dtype=np.float32)], axis=0)
+# ======修改结束
+
     # def reverse_action(self, action):
     #     low_bound   = self.action_space.low
     #     upper_bound = self.action_space.high
@@ -63,6 +122,16 @@ def env_agent_config(cfg):
     marl_mode = cfg.get('marl_mode', 'single')  # 默认single模式
 
     if marl_mode == 'multi':
+        inferred_agents = n_actions // 3
+        if inferred_agents <= 0:
+            raise ValueError(f"Invalid action dim for MARL: {n_actions}")
+        cfg['n_agents'] = int(cfg.get('n_agents', inferred_agents))
+        if cfg['n_agents'] != inferred_agents:
+            print(f"[MARL] n_agents from cfg ({cfg['n_agents']}) != inferred ({inferred_agents}), use inferred.")
+            cfg['n_agents'] = inferred_agents
+
+        env = MARLAdapter(env, n_agents=cfg['n_agents'])
+
         # 多智能体模式：IPPO with Parameter Sharing
         agent = IPPOAgent(
             obs_dim=6,  # 局部观测维度（不含agent_id）
