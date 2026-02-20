@@ -20,8 +20,7 @@ def marl_train(env, agent, cfg, path=None):
         path: 模型保存路径
 
     Returns:
-        rewards: 训练奖励列表
-        ma_rewards: 移动平均奖励列表
+        res_dic: 包含所有训练数据的字典
     """
     print("开始MARL训练...")
     print(f"智能体数量: {env.n_agents}")
@@ -33,6 +32,9 @@ def marl_train(env, agent, cfg, path=None):
     ma_rewards = []  # 移动平均奖励
     critic_losses = []
     actor_losses = []
+    rld_history = []
+    svc_history = []
+    srd_history = []
 
     for i_ep in range(cfg['train_eps']):
         ep_reward = 0
@@ -90,6 +92,14 @@ def marl_train(env, agent, cfg, path=None):
             ep_reward += reward
             ep_step += 1
 
+        # 记录环境指标（从info字典获取）
+        if 'rld' in info:
+            rld_history.append(info['rld'])
+        if 'svc' in info:
+            svc_history.append(info['svc'])
+        if 'srd' in info:
+            srd_history.append(info['srd'])
+
         # 记录奖励
         rewards.append(ep_reward)
         if ma_rewards:
@@ -109,19 +119,18 @@ def marl_train(env, agent, cfg, path=None):
             agent.save_model(path + f'marl_model_ep{i_ep+1}.pth')
             print(f"模型已保存: {path}marl_model_ep{i_ep+1}.pth")
 
-    # 保存最终模型
-    if path is not None:
-        agent.save_model(path + 'marl_model_final.pth')
-        print(f"最终模型已保存: {path}marl_model_final.pth")
+    # 返回结果字典（与main.py格式一致）
+    res_dic = {
+        'rewards': rewards,
+        'ma_rewards': ma_rewards,
+        'critic_losses': critic_losses,
+        'actor_losses': actor_losses,
+        'rld_history': rld_history,
+        'svc_history': svc_history,
+        'srd_history': srd_history
+    }
 
-    # 保存训练数据
-    if path is not None:
-        np.save(path + 'marl_rewards.npy', rewards)
-        np.save(path + 'marl_ma_rewards.npy', ma_rewards)
-        np.save(path + 'marl_critic_losses.npy', critic_losses)
-        np.save(path + 'marl_actor_losses.npy', actor_losses)
-
-    return rewards, ma_rewards
+    return res_dic
 
 
 def marl_test(env, agent, cfg, path=None):
