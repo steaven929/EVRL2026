@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=800,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--train_eps',default=100,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
@@ -33,11 +33,11 @@ def get_args():
     parser.add_argument('--actor_embed_dim',default=8,type=int)  #actor层的embedding层  # 实验18：恢复8
     parser.add_argument('--sac_alpha',default=0.2,type=float,help="SAC initial temperature")  #SAC温度参数
     parser.add_argument('--sac_alpha_lr',default=1e-4,type=float,help="SAC alpha learning rate")  #SAC alpha学习率
-    parser.add_argument('--reward_scale',default=1000.0,type=float,help="reward scaling factor for SAC/DDPG updates")
+    parser.add_argument('--reward_scale',default=10000.0,type=float,help="reward scaling factor for SAC/DDPG updates")  # 2026.2.20：提高到10000以稳定Q值
     parser.add_argument('--eval_every',default=20,type=int,help="run deterministic eval every N episodes during training")
     parser.add_argument('--eval_eps',default=3,type=int,help="number of episodes per periodic eval")
     parser.add_argument('--exp_variant',default='a1',type=str,help="experiment variant key used by env")
-    parser.add_argument('--reward_mode',default='base',type=str,help="reward mode: base or shaping")
+    parser.add_argument('--reward_mode',default='shaping',type=str,help="reward mode: base or shaping")  # 2026.2.21: 启用shaping模式以包含充电奖励
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子

@@ -97,8 +97,8 @@ class IPPOAgent:
         # 经验池
         self.memory = MARLReplayBuffer(memory_capacity)
 
-        # 损失函数
-        self.critic_criterion = nn.MSELoss()
+        # 损失函数 - 使用Huber Loss对大误差不敏感（P0修复）
+        self.critic_criterion = nn.SmoothL1Loss()  # Huber Loss
 
     def sample_action(self, obs_n, add_noise=False, noise_scale=0.1):
         """
@@ -185,6 +185,8 @@ class IPPOAgent:
         # 更新Critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        # P0修复：梯度裁剪，防止梯度爆炸
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
         # ===== 更新Actor =====
@@ -206,6 +208,8 @@ class IPPOAgent:
         # 更新Actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+        # P0修复：梯度裁剪，防止梯度爆炸
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
         self.actor_optimizer.step()
 
         # ===== 软更新target网络 =====
