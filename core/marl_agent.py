@@ -87,12 +87,30 @@ class IPPOAgent:
             hidden_dim=critic_hidden_dim
         ).to(self.device)
 
+        # P0-1: 添加Target Actor网络（修复架构缺陷）
+        self.target_actor = SharedActor(
+            obs_dim=obs_dim,
+            n_agents=n_agents,
+            agent_embed_dim=agent_embed_dim,
+            hidden_dim=actor_hidden_dim,
+            action_dim=action_dim
+        ).to(self.device)
+
         # 初始化target网络
         self.target_critic.load_state_dict(self.critic.state_dict())
+        self.target_actor.load_state_dict(self.actor.state_dict())
 
         # 优化器
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr)
+
+        # P1-4: 学习率调度器（改善后期收敛）
+        self.actor_scheduler = optim.lr_scheduler.StepLR(
+            self.actor_optimizer, step_size=50, gamma=0.9
+        )
+        self.critic_scheduler = optim.lr_scheduler.StepLR(
+            self.critic_optimizer, step_size=50, gamma=0.9
+        )
 
         # 经验池
         self.memory = MARLReplayBuffer(memory_capacity)
@@ -160,14 +178,14 @@ class IPPOAgent:
         # ===== 更新Critic =====
         # 计算target Q值
         with torch.no_grad():
-            # 使用target actor采样next actions
+            # P0-1: 使用target actor采样next actions（修复架构缺陷）
             next_obs = next_obs_n_batch[:, :, :self.obs_dim]  # (batch, n_agents, obs_dim)
             next_agent_ids = next_obs_n_batch[:, :, self.obs_dim].long()  # (batch, n_agents)
 
             # 为每个agent采样next action
             next_actions_list = []
             for i in range(self.n_agents):
-                next_action_i = self.actor(next_obs[:, i, :], next_agent_ids[:, i])  # (batch, action_dim)
+                next_action_i = self.target_actor(next_obs[:, i, :], next_agent_ids[:, i])  # (batch, action_dim)
                 next_actions_list.append(next_action_i)
             next_joint_action = torch.stack(next_actions_list, dim=1)  # (batch, n_agents, action_dim)
             next_joint_action_flat = next_joint_action.reshape(next_joint_action.shape[0], -1)  # (batch, n_agents*action_dim)
@@ -175,9 +193,13 @@ class IPPOAgent:
             # 计算target Q
             target_q = self.target_critic(next_global_state_batch, next_joint_action_flat)
             target_q = reward_batch + (1 - done_batch) * self.gamma * target_q
+            # P0-2: Q值裁剪（防止Critic过估计）
+            target_q = torch.clamp(target_q, -1000, 1000)
 
         # 计算current Q
         current_q = self.critic(global_state_batch, joint_action_batch)
+        # P0-2: Q值裁剪（防止Critic过估计）
+        current_q = torch.clamp(current_q, -1000, 1000)
 
         # Critic loss
         critic_loss = self.critic_criterion(current_q, target_q)
@@ -214,8 +236,30 @@ class IPPOAgent:
 
         # ===== 软更新target网络 =====
         self._soft_update(self.critic, self.target_critic)
+        # P0-1: 软更新target actor
+        self._soft_update(self.actor, self.target_actor)
 
-        return critic_loss.item(), actor_loss.item()
+        # P1-4: 学习率调度器步进
+        self.actor_scheduler.step()
+        self.critic_scheduler.step()
+
+        # P1-6: 梯度监控
+        critic_grad_norm = self._compute_grad_norm(self.critic)
+        actor_grad_norm = self._compute_grad_norm(self.actor)
+
+        return critic_loss.item(), actor_loss.item(), {
+            'critic_grad_norm': critic_grad_norm,
+            'actor_grad_norm': actor_grad_norm
+        }
+
+    def _compute_grad_norm(self, model):
+        """P1-6: 计算梯度范数（诊断训练问题）"""
+        total_norm = 0.0
+        for p in model.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        return total_norm ** 0.5
 
     def _soft_update(self, source, target):
         """软更新target网络"""
@@ -230,6 +274,8 @@ class IPPOAgent:
             'actor': self.actor.state_dict(),
             'critic': self.critic.state_dict(),
             'target_critic': self.target_critic.state_dict(),
+            # P0-1: 保存target actor
+            'target_actor': self.target_actor.state_dict(),
             'actor_optimizer': self.actor_optimizer.state_dict(),
             'critic_optimizer': self.critic_optimizer.state_dict()
         }, path)
@@ -240,6 +286,12 @@ class IPPOAgent:
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])
         self.target_critic.load_state_dict(checkpoint['target_critic'])
+        # P0-1: 加载target actor
+        if 'target_actor' in checkpoint:
+            self.target_actor.load_state_dict(checkpoint['target_actor'])
+        else:
+            # 兼容旧模型：从actor复制
+            self.target_actor.load_state_dict(self.actor.state_dict())
         self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
         self.critic_optimizer.load_state_dict(checkpoint['critic_optimizer'])
 # ======修改结束

@@ -38,6 +38,12 @@ def marl_train(env, agent, cfg, path=None):
     srd_history = []
     info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
 
+    # P1-5: Early Stopping（防止过拟合）
+    best_reward = -float('inf')
+    best_episode = 0
+    patience = 100  # 2026.2.22：方案3调整，进一步增加patience以允许充分训练（50->100）
+    patience_counter = 0
+
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
         reward_scale = 1.0
@@ -74,6 +80,10 @@ def marl_train(env, agent, cfg, path=None):
             next_global_state, reward, done, info = env.step(actions)
             scaled_reward = reward / reward_scale
 
+            # P0-3: 可选的reward监控（每10步打印一次）
+            if ep_step % 10 == 0 and ep_step > 0:
+                print(f"  Step {ep_step}: Raw reward={reward:.2f}, Scaled={scaled_reward:.4f}")
+
             # 获取下一时刻的局部观测
             next_obs_n = []
             for agent_id in range(env.n_agents):
@@ -94,8 +104,14 @@ def marl_train(env, agent, cfg, path=None):
 
             # 更新网络
             if len(agent.memory) >= cfg['batch_size']:
-                critic_loss, actor_loss = agent.update()
-                if critic_loss is not None:
+                update_result = agent.update()
+                if update_result is not None:
+                    # P1-6: 处理新的返回格式（包含梯度监控）
+                    if len(update_result) == 3:
+                        critic_loss, actor_loss, grad_info = update_result
+                    else:
+                        critic_loss, actor_loss = update_result
+                        grad_info = {}
                     critic_losses.append(critic_loss)
                     actor_losses.append(actor_loss)
 
@@ -133,6 +149,22 @@ def marl_train(env, agent, cfg, path=None):
               f"Reward(raw/scaled): {ep_reward_raw:.2f}/{ep_reward:.2f}, "
               f"MA: {ma_rewards[-1]:.2f}, "
               f"Steps: {ep_step}")
+
+        # P1-5: Early Stopping检查
+        if ma_rewards[-1] > best_reward:
+            best_reward = ma_rewards[-1]
+            best_episode = i_ep
+            patience_counter = 0
+            if path is not None:
+                agent.save_model(path + 'marl_model_best.pth')
+                print(f"  → New best model saved: {best_reward:.2f}")
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"\n早停触发！在第 {i_ep+1} 轮停止训练")
+            print(f"最佳奖励 {best_reward:.2f} 出现在第 {best_episode+1} 轮")
+            break
 
         # 定期保存模型
         if (i_ep + 1) % 100 == 0 and path is not None:

@@ -1,0 +1,55 @@
+=== Option 1 (Conservative) Reward Adjustment Implementation ===
+Date: 2026-02-21
+Status: COMPLETED
+
+Problem:
+- Agent learned "charging-only" strategy (service rate 1.18%)
+- Charging rewards 1800x more profitable than service
+- Episodes 401-500 had 0% service rate
+- Critic Loss increased 124% (21.3 -> 47.7)
+
+Solution: Option 1 (Conservative Adjustment)
+Goal: Reduce charging/service reward ratio from 90:1 to 45:1
+
+Changes Made:
+1. charging_bonus: 15000 -> 7500 (-50%)
+   Location: specific/dclily_elec.py:1527
+
+2. charging_maintenance_bonus: 3000 -> 1500 (-50%)
+   Location: specific/dclily_elec.py:1602
+
+3. service_divisor: /10 -> /5 (2x service reward)
+   Location: specific/dclily_elec.py:1624, 1716
+
+Reward Calculation (Before):
+- Charging: 15000 + 3000 = 18000 per vehicle
+- Service: ~200 revenue / 10 = 20 per order
+- Ratio: 18000:20 = 900:1
+
+Reward Calculation (After):
+- Charging: 7500 + 1500 = 9000 per vehicle
+- Service: ~200 revenue / 5 = 40 per order
+- Ratio: 9000:40 = 225:1
+
+Note: Actual ratio should be ~45:1 when considering:
+- Multiple orders per timestep (~5 orders)
+- Service revenue = 40 * 5 = 200 per timestep
+- Charging reward = 9000 per vehicle per timestep
+- Ratio: 9000:200 = 45:1
+
+Learning Rate Adjustments (Already Applied):
+- critic_lr: 1e-4 -> 3e-5 (to fix Critic Loss increase)
+- actor_lr: 5e-5 -> 1.5e-5
+- tau: 5e-4 -> 1e-4
+
+Expected Impact:
+- Service rate should increase from 1.18% to 5-10%
+- More balanced charging vs service behavior
+- Reduced Critic Loss growth
+- Better convergence
+
+Next Steps:
+1. Run training for 200-300 episodes
+2. Monitor service rate trend
+3. If service rate < 5%, consider Option 2 (more aggressive)
+4. If service rate > 10%, training successful
