@@ -147,7 +147,10 @@ def env_agent_config(cfg):
             tau=cfg['tau'],
             batch_size=cfg['batch_size'],
             memory_capacity=cfg['memory_capacity'],
-            device=cfg['device']
+            device=cfg['device'],
+            policy_delay=cfg.get('policy_delay', 2),
+            target_policy_noise=cfg.get('target_policy_noise', 0.1),
+            target_noise_clip=cfg.get('target_noise_clip', 0.2)
         )
         return env, agent
     # ======修改结束

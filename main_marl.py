@@ -78,6 +78,16 @@ def main():
         np.save(path + 'svc_history.npy', res_dic['svc_history'])
     if 'srd_history' in res_dic:
         np.save(path + 'srd_history.npy', res_dic['srd_history'])
+    if 'service_rate_history' in res_dic:
+        np.save(path + 'service_rate_history.npy', res_dic['service_rate_history'])
+    if 'service_rate_last_history' in res_dic:
+        np.save(path + 'service_rate_last_history.npy', res_dic['service_rate_last_history'])
+    if 'rld_last_history' in res_dic:
+        np.save(path + 'rld_last_history.npy', res_dic['rld_last_history'])
+    if 'svc_last_history' in res_dic:
+        np.save(path + 'svc_last_history.npy', res_dic['svc_last_history'])
+    if 'srd_last_history' in res_dic:
+        np.save(path + 'srd_last_history.npy', res_dic['srd_last_history'])
     print(f"数据已保存到: {path}")
     print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
 
@@ -124,27 +134,29 @@ def main():
     # 子图5: RLD
     if 'rld_history' in res_dic and len(res_dic['rld_history']) > 0:
         axes[4].plot(res_dic['rld_history'], label='RLD', color='green', linewidth=1.5)
-        axes[4].set_xlabel('Step')
+        axes[4].set_xlabel('Episode')
         axes[4].set_ylabel('RLD')
-        axes[4].set_title('Repositioning Loss Distance (RLD)')
+        axes[4].set_title('Repositioning Loss Distance (Episode Aggregated)')
         axes[4].legend()
         axes[4].grid(True, alpha=0.3)
 
     # 子图6: SVC
     if 'svc_history' in res_dic and len(res_dic['svc_history']) > 0:
         axes[5].plot(res_dic['svc_history'], label='SVC', color='purple', linewidth=1.5)
-        axes[5].set_xlabel('Step')
+        if 'service_rate_history' in res_dic and len(res_dic['service_rate_history']) > 0:
+            axes[5].plot(res_dic['service_rate_history'], label='ServiceRate(mean)', color='teal', linewidth=1.2)
+        axes[5].set_xlabel('Episode')
         axes[5].set_ylabel('SVC')
-        axes[5].set_title('Service Rate (SVC)')
+        axes[5].set_title('SVC / ServiceRate (Episode Aggregated)')
         axes[5].legend()
         axes[5].grid(True, alpha=0.3)
 
     # 子图7: SRD
     if 'srd_history' in res_dic and len(res_dic['srd_history']) > 0:
         axes[6].plot(res_dic['srd_history'], label='SRD', color='orange', linewidth=1.5)
-        axes[6].set_xlabel('Step')
+        axes[6].set_xlabel('Episode')
         axes[6].set_ylabel('SRD')
-        axes[6].set_title('Service Reward Ratio (SRD)')
+        axes[6].set_title('Service Reward Ratio (Episode Aggregated)')
         axes[6].legend()
         axes[6].grid(True, alpha=0.3)
 

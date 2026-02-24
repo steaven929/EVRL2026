@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-MARL Phase-1: Multi-Agent RL Agent (IPPO with Parameter Sharing)
+MARL Phase-1: Multi-Agent RL Agent (TD3-style CTDE)
 Created on 2026-02-19
 
-实现IPPO（Independent PPO）+ Centralized Critic
+实现参数共享Actor + 双Centralized Critic（TD3稳定化）
 """
 import torch
 import torch.nn as nn
@@ -15,11 +15,11 @@ from core.buffer import MARLReplayBuffer
 # =========2026.2.19修改，MARL Phase-1：IPPO Agent==========
 class IPPOAgent:
     """
-    IPPO Agent with Parameter Sharing and Centralized Critic
+    Parameter-sharing actor with centralized critics (TD3-style CTDE)
 
     特点：
     - 参数共享的Actor（所有区域共享同一个网络）
-    - 集中式Critic（使用全局状态）
+    - 双集中式Critic（Clipped Double-Q）
     - 全局奖励共享（Phase-1不做credit assignment）
     """
     def __init__(self,
@@ -36,7 +36,10 @@ class IPPOAgent:
                  tau=0.0005,
                  batch_size=128,
                  memory_capacity=64000,
-                 device='cpu'):
+                 device='cpu',
+                 policy_delay=2,
+                 target_policy_noise=0.1,
+                 target_noise_clip=0.2):
         """
         Args:
             obs_dim: 局部观测维度（不含agent_id），默认6
@@ -62,6 +65,10 @@ class IPPOAgent:
         self.tau = tau
         self.batch_size = batch_size
         self.device = torch.device(device)
+        self.policy_delay = int(max(1, policy_delay))
+        self.target_policy_noise = float(max(0.0, target_policy_noise))
+        self.target_noise_clip = float(max(0.0, target_noise_clip))
+        self.update_step = 0
 
         # 创建网络
         self.actor = SharedActor(
@@ -72,15 +79,37 @@ class IPPOAgent:
             action_dim=action_dim
         ).to(self.device)
 
-        self.critic = CentralizedCritic(
+        self.critic1 = CentralizedCritic(
             global_state_dim=global_state_dim,
             n_agents=n_agents,
             action_dim=action_dim,
             hidden_dim=critic_hidden_dim
         ).to(self.device)
 
+        self.critic2 = CentralizedCritic(
+            global_state_dim=global_state_dim,
+            n_agents=n_agents,
+            action_dim=action_dim,
+            hidden_dim=critic_hidden_dim
+        ).to(self.device)
+
+        self.target_actor = SharedActor(
+            obs_dim=obs_dim,
+            n_agents=n_agents,
+            agent_embed_dim=agent_embed_dim,
+            hidden_dim=actor_hidden_dim,
+            action_dim=action_dim
+        ).to(self.device)
+
         # Target networks
-        self.target_critic = CentralizedCritic(
+        self.target_critic1 = CentralizedCritic(
+            global_state_dim=global_state_dim,
+            n_agents=n_agents,
+            action_dim=action_dim,
+            hidden_dim=critic_hidden_dim
+        ).to(self.device)
+
+        self.target_critic2 = CentralizedCritic(
             global_state_dim=global_state_dim,
             n_agents=n_agents,
             action_dim=action_dim,
@@ -88,11 +117,14 @@ class IPPOAgent:
         ).to(self.device)
 
         # 初始化target网络
-        self.target_critic.load_state_dict(self.critic.state_dict())
+        self.target_actor.load_state_dict(self.actor.state_dict())
+        self.target_critic1.load_state_dict(self.critic1.state_dict())
+        self.target_critic2.load_state_dict(self.critic2.state_dict())
 
         # 优化器
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr)
+        self.critic1_optimizer = optim.Adam(self.critic1.parameters(), lr=critic_lr)
+        self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=critic_lr)
 
         # 经验池
         self.memory = MARLReplayBuffer(memory_capacity)
@@ -160,62 +192,88 @@ class IPPOAgent:
         # ===== 更新Critic =====
         # 计算target Q值
         with torch.no_grad():
-            # 使用target actor采样next actions
+            # 使用target actor采样next actions（TD3）
             next_obs = next_obs_n_batch[:, :, :self.obs_dim]  # (batch, n_agents, obs_dim)
             next_agent_ids = next_obs_n_batch[:, :, self.obs_dim].long()  # (batch, n_agents)
 
             # 为每个agent采样next action
             next_actions_list = []
             for i in range(self.n_agents):
-                next_action_i = self.actor(next_obs[:, i, :], next_agent_ids[:, i])  # (batch, action_dim)
+                next_action_i = self.target_actor(next_obs[:, i, :], next_agent_ids[:, i])  # (batch, action_dim)
                 next_actions_list.append(next_action_i)
             next_joint_action = torch.stack(next_actions_list, dim=1)  # (batch, n_agents, action_dim)
+
+            # TD3 target policy smoothing
+            if self.target_policy_noise > 0.0:
+                noise = torch.randn_like(next_joint_action) * self.target_policy_noise
+                noise = torch.clamp(noise, -self.target_noise_clip, self.target_noise_clip)
+                next_joint_action = torch.clamp(next_joint_action + noise, 0.0, 1.0)
+
             next_joint_action_flat = next_joint_action.reshape(next_joint_action.shape[0], -1)  # (batch, n_agents*action_dim)
 
-            # 计算target Q
-            target_q = self.target_critic(next_global_state_batch, next_joint_action_flat)
-            target_q = reward_batch + (1 - done_batch) * self.gamma * target_q
+            # 计算target Q（Clipped Double-Q）
+            target_q1 = self.target_critic1(next_global_state_batch, next_joint_action_flat)
+            target_q2 = self.target_critic2(next_global_state_batch, next_joint_action_flat)
+            target_q = reward_batch + (1 - done_batch) * self.gamma * torch.min(target_q1, target_q2)
 
         # 计算current Q
-        current_q = self.critic(global_state_batch, joint_action_batch)
+        current_q1 = self.critic1(global_state_batch, joint_action_batch)
+        current_q2 = self.critic2(global_state_batch, joint_action_batch)
 
-        # Critic loss
-        critic_loss = self.critic_criterion(current_q, target_q)
+        # Critic losses
+        critic1_loss = self.critic_criterion(current_q1, target_q)
+        critic2_loss = self.critic_criterion(current_q2, target_q)
+        critic_loss = 0.5 * (critic1_loss + critic2_loss)
 
-        # 更新Critic
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        # P0修复：梯度裁剪，防止梯度爆炸
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
-        self.critic_optimizer.step()
+        # 更新Critic1
+        self.critic1_optimizer.zero_grad()
+        critic1_loss.backward()
+        for p in self.critic1.parameters():
+            if p.grad is not None:
+                p.grad.data.clamp_(-1.0, 1.0)
+        self.critic1_optimizer.step()
 
-        # ===== 更新Actor =====
-        # 分离观测和agent_id
-        obs = obs_n_batch[:, :, :self.obs_dim]  # (batch, n_agents, obs_dim)
-        agent_ids = obs_n_batch[:, :, self.obs_dim].long()  # (batch, n_agents)
+        # 更新Critic2
+        self.critic2_optimizer.zero_grad()
+        critic2_loss.backward()
+        for p in self.critic2.parameters():
+            if p.grad is not None:
+                p.grad.data.clamp_(-1.0, 1.0)
+        self.critic2_optimizer.step()
 
-        # 为每个agent采样action
-        actions_list = []
-        for i in range(self.n_agents):
-            action_i = self.actor(obs[:, i, :], agent_ids[:, i])  # (batch, action_dim)
-            actions_list.append(action_i)
-        joint_action = torch.stack(actions_list, dim=1)  # (batch, n_agents, action_dim)
-        joint_action_flat = joint_action.reshape(joint_action.shape[0], -1)  # (batch, n_agents*action_dim)
+        # 延迟策略更新（TD3）
+        self.update_step += 1
+        actor_loss_value = float('nan')
 
-        # Actor loss: -Q(s, a)
-        actor_loss = -self.critic(global_state_batch, joint_action_flat).mean()
+        if self.update_step % self.policy_delay == 0:
+            # ===== 更新Actor =====
+            obs = obs_n_batch[:, :, :self.obs_dim]  # (batch, n_agents, obs_dim)
+            agent_ids = obs_n_batch[:, :, self.obs_dim].long()  # (batch, n_agents)
 
-        # 更新Actor
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        # P0修复：梯度裁剪，防止梯度爆炸
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
-        self.actor_optimizer.step()
+            actions_list = []
+            for i in range(self.n_agents):
+                action_i = self.actor(obs[:, i, :], agent_ids[:, i])  # (batch, action_dim)
+                actions_list.append(action_i)
+            joint_action = torch.stack(actions_list, dim=1)  # (batch, n_agents, action_dim)
+            joint_action_flat = joint_action.reshape(joint_action.shape[0], -1)  # (batch, n_agents*action_dim)
 
-        # ===== 软更新target网络 =====
-        self._soft_update(self.critic, self.target_critic)
+            # Actor loss: maximize Q1(s, a)
+            actor_loss = -self.critic1(global_state_batch, joint_action_flat).mean()
 
-        return critic_loss.item(), actor_loss.item()
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            for p in self.actor.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-1.0, 1.0)
+            self.actor_optimizer.step()
+            actor_loss_value = actor_loss.item()
+
+            # ===== 软更新target网络 =====
+            self._soft_update(self.actor, self.target_actor)
+            self._soft_update(self.critic1, self.target_critic1)
+            self._soft_update(self.critic2, self.target_critic2)
+
+        return critic_loss.item(), actor_loss_value
 
     def _soft_update(self, source, target):
         """软更新target网络"""
@@ -228,18 +286,42 @@ class IPPOAgent:
         """保存模型"""
         torch.save({
             'actor': self.actor.state_dict(),
-            'critic': self.critic.state_dict(),
-            'target_critic': self.target_critic.state_dict(),
+            'target_actor': self.target_actor.state_dict(),
+            'critic1': self.critic1.state_dict(),
+            'critic2': self.critic2.state_dict(),
+            'target_critic1': self.target_critic1.state_dict(),
+            'target_critic2': self.target_critic2.state_dict(),
             'actor_optimizer': self.actor_optimizer.state_dict(),
-            'critic_optimizer': self.critic_optimizer.state_dict()
+            'critic1_optimizer': self.critic1_optimizer.state_dict(),
+            'critic2_optimizer': self.critic2_optimizer.state_dict(),
+            'update_step': self.update_step,
         }, path)
 
     def load_model(self, path):
         """加载模型"""
         checkpoint = torch.load(path, map_location=self.device)
         self.actor.load_state_dict(checkpoint['actor'])
-        self.critic.load_state_dict(checkpoint['critic'])
-        self.target_critic.load_state_dict(checkpoint['target_critic'])
+        self.target_actor.load_state_dict(checkpoint.get('target_actor', checkpoint['actor']))
+
+        if 'critic1' in checkpoint and 'critic2' in checkpoint:
+            self.critic1.load_state_dict(checkpoint['critic1'])
+            self.critic2.load_state_dict(checkpoint['critic2'])
+            self.target_critic1.load_state_dict(checkpoint.get('target_critic1', checkpoint['critic1']))
+            self.target_critic2.load_state_dict(checkpoint.get('target_critic2', checkpoint['critic2']))
+        else:
+            # backward compatibility: single-critic checkpoints
+            self.critic1.load_state_dict(checkpoint['critic'])
+            self.critic2.load_state_dict(checkpoint['critic'])
+            self.target_critic1.load_state_dict(checkpoint.get('target_critic', checkpoint['critic']))
+            self.target_critic2.load_state_dict(checkpoint.get('target_critic', checkpoint['critic']))
+
         self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
-        self.critic_optimizer.load_state_dict(checkpoint['critic_optimizer'])
+        if 'critic1_optimizer' in checkpoint and 'critic2_optimizer' in checkpoint:
+            self.critic1_optimizer.load_state_dict(checkpoint['critic1_optimizer'])
+            self.critic2_optimizer.load_state_dict(checkpoint['critic2_optimizer'])
+        else:
+            self.critic1_optimizer.load_state_dict(checkpoint['critic_optimizer'])
+            self.critic2_optimizer.load_state_dict(checkpoint['critic_optimizer'])
+
+        self.update_step = int(checkpoint.get('update_step', 0))
 # ======修改结束

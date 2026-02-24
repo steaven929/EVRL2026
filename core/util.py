@@ -45,6 +45,9 @@ def get_args():
     parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 单智能体/多智能体模式
     parser.add_argument('--n_agents',default=50,type=int,help="number of agents (zones)")  # 智能体数量（区域数）
     parser.add_argument('--share_policy',default=True,type=bool,help="whether to share policy across agents")  # 是否参数共享
+    parser.add_argument('--policy_delay',default=2,type=int,help="TD3 delayed policy update frequency")
+    parser.add_argument('--target_policy_noise',default=0.1,type=float,help="TD3 target policy smoothing noise std")
+    parser.add_argument('--target_noise_clip',default=0.2,type=float,help="TD3 target policy noise clip")
     # ======修改结束
     # =========2026.2.13修改，修复命令行参数解析==========
     # 原代码：args = parser.parse_args([])  # 传入空列表会忽略命令行参数！

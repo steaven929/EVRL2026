@@ -8,6 +8,13 @@ Created on 2026-02-19
 import numpy as np
 import torch
 
+
+def _aggregate_episode_metric(values):
+    if len(values) == 0:
+        return 0.0, 0.0
+    arr = np.asarray(values, dtype=float)
+    return float(np.mean(arr)), float(arr[-1])
+
 # =========2026.2.19修改，MARL Phase-1：多智能体训练循环==========
 def marl_train(env, agent, cfg, path=None):
     """
@@ -36,7 +43,12 @@ def marl_train(env, agent, cfg, path=None):
     rld_history = []
     svc_history = []
     srd_history = []
-    info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
+    rld_last_history = []
+    svc_last_history = []
+    srd_last_history = []
+    service_rate_history = []
+    service_rate_last_history = []
+    info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0, 'service_rate': 0}
 
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
@@ -63,6 +75,13 @@ def marl_train(env, agent, cfg, path=None):
         obs_n = np.array(obs_n)  # (n_agents, 7)
 
         done = False
+        info = {}
+        ep_metric_steps = {
+            'rld': [],
+            'svc': [],
+            'srd': [],
+            'service_rate': [],
+        }
 
         while not done:
             # 采样联合动作
@@ -73,6 +92,12 @@ def marl_train(env, agent, cfg, path=None):
             # 执行动作
             next_global_state, reward, done, info = env.step(actions)
             scaled_reward = reward / reward_scale
+
+            for metric_key in ep_metric_steps.keys():
+                if metric_key in info:
+                    ep_metric_steps[metric_key].append(info[metric_key])
+                else:
+                    info_missing_counts[metric_key] += 1
 
             # 获取下一时刻的局部观测
             next_obs_n = []
@@ -97,7 +122,8 @@ def marl_train(env, agent, cfg, path=None):
                 critic_loss, actor_loss = agent.update()
                 if critic_loss is not None:
                     critic_losses.append(critic_loss)
-                    actor_losses.append(actor_loss)
+                    if actor_loss is not None and np.isfinite(actor_loss):
+                        actor_losses.append(actor_loss)
 
             # 更新状态
             obs_n = next_obs_n
@@ -106,19 +132,20 @@ def marl_train(env, agent, cfg, path=None):
             ep_reward_raw += reward
             ep_step += 1
 
-        # 记录环境指标（从info字典获取）
-        if 'rld' in info:
-            rld_history.append(info['rld'])
-        else:
-            info_missing_counts['rld'] += 1
-        if 'svc' in info:
-            svc_history.append(info['svc'])
-        else:
-            info_missing_counts['svc'] += 1
-        if 'srd' in info:
-            srd_history.append(info['srd'])
-        else:
-            info_missing_counts['srd'] += 1
+        # 记录环境指标（按每回合聚合统计）
+        rld_mean, rld_last = _aggregate_episode_metric(ep_metric_steps['rld'])
+        svc_mean, svc_last = _aggregate_episode_metric(ep_metric_steps['svc'])
+        srd_mean, srd_last = _aggregate_episode_metric(ep_metric_steps['srd'])
+        service_rate_mean, service_rate_last = _aggregate_episode_metric(ep_metric_steps['service_rate'])
+
+        rld_history.append(rld_mean)
+        svc_history.append(svc_mean)
+        srd_history.append(srd_mean)
+        rld_last_history.append(rld_last)
+        svc_last_history.append(svc_last)
+        srd_last_history.append(srd_last)
+        service_rate_history.append(service_rate_mean)
+        service_rate_last_history.append(service_rate_last)
 
         # 记录奖励
         rewards.append(ep_reward)
@@ -132,6 +159,7 @@ def marl_train(env, agent, cfg, path=None):
         print(f"{i_ep+1}/{cfg['train_eps']}, "
               f"Reward(raw/scaled): {ep_reward_raw:.2f}/{ep_reward:.2f}, "
               f"MA: {ma_rewards[-1]:.2f}, "
+              f"ServiceRate(mean/last): {service_rate_mean:.4f}/{service_rate_last:.4f}, "
               f"Steps: {ep_step}")
 
         # 定期保存模型
@@ -149,6 +177,11 @@ def marl_train(env, agent, cfg, path=None):
         'rld_history': rld_history,
         'svc_history': svc_history,
         'srd_history': srd_history,
+        'rld_last_history': rld_last_history,
+        'svc_last_history': svc_last_history,
+        'srd_last_history': srd_last_history,
+        'service_rate_history': service_rate_history,
+        'service_rate_last_history': service_rate_last_history,
         'info_missing_counts': info_missing_counts,
     }
 

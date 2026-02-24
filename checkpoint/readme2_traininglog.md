@@ -122,3 +122,45 @@ $$Reward = \frac{(\sum \text{Service} + \text{Charge} - \sum \text{SOC\_Penalty}
 **验证结果**:
 * `python test_marl.py --train_eps 1 --test_eps 1 --max_steps 1` 通过。
 * `python main_marl.py --train_eps 1 --test_eps 1 --max_steps 1 --reward_mode base --exp_variant a1` 可完成训练与测试。
+
+### 2.6 [2026-02-24] MARL训练器TD3稳定化改造
+**背景**: 300轮结果出现“reward先升后漂移、critic后段回升、svc偏低”。
+
+**代码修复点**:
+* `core/marl_agent.py`
+  1. 从单critic改为双critic（`critic1/critic2` + `target_critic1/target_critic2`）。
+  2. 新增 `target_actor`，target Q 改为 `min(Q1,Q2)`（Clipped Double-Q）。
+  3. 新增 TD3 目标动作平滑（`target_policy_noise` + `target_noise_clip`）。
+  4. 新增延迟策略更新（`policy_delay`）；非actor更新步 `actor_loss` 可能为 `nan`，属预期。
+  5. 模型保存/加载兼容旧单critic checkpoint。
+* `core/environment.py`
+  1. `env_agent_config` 在 MARL 模式下透传 `policy_delay`、`target_policy_noise`、`target_noise_clip`。
+* `core/util.py`
+  1. 新增命令行参数：`--policy_delay`、`--target_policy_noise`、`--target_noise_clip`。
+* `core/marl_training.py`
+  1. 仅在 `actor_loss` 为有效数值时记录，避免延迟更新步污染曲线。
+
+**验证结果**:
+* `python -m py_compile core/marl_agent.py core/marl_training.py core/environment.py core/util.py main_marl.py` 通过。
+* `python test_marl.py --train_eps 1 --test_eps 1 --max_steps 1` 通过。
+* `python main_marl.py --train_eps 1 --test_eps 1 --max_steps 1 --reward_mode base --exp_variant a1` 可完成训练与测试。
+
+### 2.7 [2026-02-24] MARL指标聚合统计补全（Episode级）
+**背景**: 之前 `svc/rld/srd` 仅取每回合最后一步 `info`，对训练趋势判断噪声较大。
+
+**代码修复点**:
+* `core/marl_training.py`
+  1. 新增 `_aggregate_episode_metric()`，按每回合聚合均值与末值。
+  2. 训练循环中按步收集 `rld/svc/srd/service_rate`，回合结束写入：
+     - 均值：`rld_history/svc_history/srd_history/service_rate_history`
+     - 末值：`rld_last_history/svc_last_history/srd_last_history/service_rate_last_history`
+  3. `info_missing_counts` 扩展加入 `service_rate`。
+  4. 训练日志新增 `ServiceRate(mean/last)` 输出。
+* `main_marl.py`
+  1. 新增上述聚合数组落盘。
+  2. 综合图中 SVC 子图叠加 `service_rate_history`，并将 RLD/SVC/SRD 横轴统一为 Episode。
+
+**验证结果**:
+* `python -m py_compile core/marl_training.py main_marl.py` 通过。
+* `python main_marl.py --train_eps 1 --test_eps 1 --max_steps 1 --reward_mode base --exp_variant a1` 可完成训练与测试。
+* 最新输出目录中已生成：`service_rate_history.npy`、`service_rate_last_history.npy`、`rld_last_history.npy`、`svc_last_history.npy`、`srd_last_history.npy`。
