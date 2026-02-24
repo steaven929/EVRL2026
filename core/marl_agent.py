@@ -87,8 +87,18 @@ class IPPOAgent:
             hidden_dim=critic_hidden_dim
         ).to(self.device)
 
+        # STEP 3: 添加Target Actor网络（修复Actor Loss爆炸）
+        self.target_actor = SharedActor(
+            obs_dim=obs_dim,
+            n_agents=n_agents,
+            agent_embed_dim=agent_embed_dim,
+            hidden_dim=actor_hidden_dim,
+            action_dim=action_dim
+        ).to(self.device)
+
         # 初始化target网络
         self.target_critic.load_state_dict(self.critic.state_dict())
+        self.target_actor.load_state_dict(self.actor.state_dict())
 
         # 优化器
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
@@ -167,7 +177,8 @@ class IPPOAgent:
             # 为每个agent采样next action
             next_actions_list = []
             for i in range(self.n_agents):
-                next_action_i = self.actor(next_obs[:, i, :], next_agent_ids[:, i])  # (batch, action_dim)
+                # STEP 3: 使用Target Actor而不是current actor（修复Actor Loss爆炸）
+                next_action_i = self.target_actor(next_obs[:, i, :], next_agent_ids[:, i])  # (batch, action_dim)
                 next_actions_list.append(next_action_i)
             next_joint_action = torch.stack(next_actions_list, dim=1)  # (batch, n_agents, action_dim)
             next_joint_action_flat = next_joint_action.reshape(next_joint_action.shape[0], -1)  # (batch, n_agents*action_dim)
@@ -214,6 +225,8 @@ class IPPOAgent:
 
         # ===== 软更新target网络 =====
         self._soft_update(self.critic, self.target_critic)
+        # STEP 3: 软更新Target Actor（修复Actor Loss爆炸）
+        self._soft_update(self.actor, self.target_actor)
 
         return critic_loss.item(), actor_loss.item()
 
@@ -230,6 +243,8 @@ class IPPOAgent:
             'actor': self.actor.state_dict(),
             'critic': self.critic.state_dict(),
             'target_critic': self.target_critic.state_dict(),
+            # STEP 3: 保存Target Actor（修复Actor Loss爆炸）
+            'target_actor': self.target_actor.state_dict(),
             'actor_optimizer': self.actor_optimizer.state_dict(),
             'critic_optimizer': self.critic_optimizer.state_dict()
         }, path)
@@ -240,6 +255,12 @@ class IPPOAgent:
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])
         self.target_critic.load_state_dict(checkpoint['target_critic'])
+        # STEP 3: 加载Target Actor（修复Actor Loss爆炸）
+        if 'target_actor' in checkpoint:
+            self.target_actor.load_state_dict(checkpoint['target_actor'])
+        else:
+            # 向后兼容：如果旧模型没有target_actor，从actor复制
+            self.target_actor.load_state_dict(self.actor.state_dict())
         self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
         self.critic_optimizer.load_state_dict(checkpoint['critic_optimizer'])
 # ======修改结束
