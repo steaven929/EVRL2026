@@ -1,0 +1,82 @@
+================================================================================
+COMPREHENSIVE MARL DEBUGGING ANALYSIS
+================================================================================
+
+1. SERVICE RATE COLLAPSE
+--------------------------------------------------------------------------------
+Zero SVC episodes: 489/500 (97.8%)
+Non-zero SVC episodes: 11/500 (2.2%)
+Non-zero SVC values: [0.58163265 0.62644898 0.65157551 0.52274286 0.63699592 0.58429388
+ 0.59100408 0.61740408 0.6132898  0.58066939 0.57933061]
+Mean SVC (all): 0.0132
+Mean SVC (non-zero only): 0.5987
+
+2. ACTOR LOSS EXPLOSION
+--------------------------------------------------------------------------------
+Initial actor loss (ep 1-10): -0.0824
+Final actor loss (ep 490-500): -299.6017
+Explosion factor: 3635.6x
+Min: -375.56, Max: -0.01
+First 10: [-0.01087903 -0.02580471 -0.04078746 -0.05600645 -0.07187242 -0.08853434
+ -0.10545158 -0.12308917 -0.14202459 -0.15963778]
+Last 10: [-324.78216553 -294.85327148 -294.54449463 -287.80249023 -322.73376465
+ -276.39248657 -312.85317993 -301.74606323 -303.63534546 -276.67349243]
+
+3. CRITIC LOSS BEHAVIOR
+--------------------------------------------------------------------------------
+Initial critic loss (ep 1-10): 53.9381
+Final critic loss (ep 490-500): 24.7362
+Min: 7.57, Max: 57.19
+Trend: Decreasing
+
+4. REWARD STRUCTURE ANALYSIS
+--------------------------------------------------------------------------------
+Mean reward: 1616.41
+Std reward: 367.79
+Range: [604.40, 2927.65]
+
+Reward Component Estimates (per timestep):
+  Service revenue: ~0 (SVC=0)
+  Charging bonus (200 vehicles * 15000): 3,000,000
+  SOC maintain (avg): ~3,600
+  Charging maintenance (200 * 3000): 600,000
+  Total charging rewards: ~3,603,600
+  Actual reward: ~1616
+  Scaling factor: 0.000449
+
+5. ROOT CAUSE HIERARCHY
+================================================================================
+
+PRIMARY ROOT CAUSE: Reward Function Imbalance
+--------------------------------------------------------------------------------
+EVIDENCE:
+  1. Charging rewards dominate: 3,603,600 vs service revenue ~0
+  2. Reward ratio: Charging/Service = Infinity (service = 0)
+  3. Policy converges to 'always charge' strategy
+  4. 97.8% episodes have ZERO service
+
+MECHANISM:
+  - Charging bonus: 15,000 per vehicle
+  - Charging maintenance: 3,000 per vehicle
+  - SOC maintain: 2.0 per SOC point above 1200
+  - Total per vehicle: 18,000 + SOC bonus
+  - 200 vehicles x 18,000 = 3,600,000 per timestep
+  - Service revenue: ~10,000-50,000 per order (divided by 10)
+  - Even 100 orders = 100,000 << 3,600,000
+
+NUMERICAL IMBALANCE:
+  Charging reward: 3,603,600
+  Service reward (10 orders): 30,000
+  Ratio: 120.1:1
+  Conclusion: Charging is 120x more rewarding
+
+
+SECONDARY ROOT CAUSE: Q-Value Explosion from Reward Magnitude
+--------------------------------------------------------------------------------
+EVIDENCE:
+Traceback (most recent call last):
+  File "C:\Users\cheng\PycharmProjects\EVRL2026\debug_marl_collapse.py", line 95, in <module>
+    print(f"  1. Actor loss: -0.27 \u2192 -306.94 (+115,000%)")
+  File "C:\Users\cheng\AppData\Local\Programs\Python\Python310\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 23: character maps to <undefined>
