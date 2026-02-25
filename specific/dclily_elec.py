@@ -918,6 +918,12 @@ class dclily(gym.Env):
                 if charged_count >= charge_budget:
                     break
 
+                # =========2026.2.24修改，修复奖励失衡：只在SOC < 80%时充电==========
+                # 避免满电车辆占用充电桩，提高充电效率
+                if _soc >= BATTERY_CAPACITY * 0.8:  # 3000 * 0.8 = 2400
+                    continue  # 跳过高SOC车辆
+                # ======修改结束
+
                 target_charger = self.find_preferred_charger(current_zone, pref_arr)
                 if target_charger == -1:
                     # 回填策略：首选最近可用充电桩，避免偏好区无车/无桩时直接归零
@@ -1466,12 +1472,19 @@ class dclily(gym.Env):
         served_orders = np.sum(rel_demand)  # 实际服务的订单数
         service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
-        # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
+        # 服务率奖励：鼓励提高服务率（正向激励）
+        # =========2026.2.24修改，修复奖励失衡：用正向奖励替代惩罚==========
+        service_rate_bonus = 0
+        if service_rate > 0.3:  # 服务率超过30%时开始奖励
+            service_rate_bonus = service_rate * 10000  # 基础奖励
+        if service_rate > 0.5:  # 服务率超过50%时额外奖励
+            service_rate_bonus = service_rate * 20000  # 更高奖励
+        # 保留小惩罚以避免完全不服务
         service_rate_penalty = 0
-        if service_rate < 0.5:  # 服务率低于50%时开始惩罚
-            # 惩罚力度：(0.5 - service_rate) * 8000
-            # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
-            service_rate_penalty = (0.5 - service_rate) * 8000
+        if service_rate < 0.05:  # 只在极低服务率时惩罚
+            service_rate_penalty = 5000
+        # ======修改结束
+        # ======修改结束
         # ======修改结束
 
         # ====== Debug log start ======
@@ -1524,7 +1537,9 @@ class dclily(gym.Env):
         # 问题：充电奖励5000仍不足以抵消服务收入的吸引力
         # 解决：提升到15000，配合允许充电车辆服务，消除机会成本
         # 即时充电奖励：每辆充电车辆+15000（从5000提升到15000）
-        charging_bonus = 15000 * charging_count
+        # =========2026.2.24修改，修复奖励失衡：适度降低充电奖励==========
+        charging_bonus = 300 * charging_count  # 从15000降低到300（50x，保持适度奖励）
+        # ======修改结束
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1590,8 +1605,10 @@ class dclily(gym.Env):
         # SOC维持奖励：平均SOC越高，奖励越大
         # 目标：鼓励保持SOC在1200以上（60%）
         # 从0.5提升到2.0，增强高SOC维持的激励
+        # =========2026.2.24修改，修复奖励失衡：适度降低SOC维持奖励==========
         if avg_soc >= 1200:
-            soc_maintain_bonus = (avg_soc - 1200) * 2.0  # 超过1200的部分，每点2.0奖励（从0.5提升）
+            soc_maintain_bonus = (avg_soc - 1200) * 0.04  # 从2.0降低到0.04（50x）
+            # ======修改结束
         else:
             soc_maintain_bonus = 0
 
@@ -1599,7 +1616,9 @@ class dclily(gym.Env):
         # 目的：额外奖励充电行为，确保充电策略的稳定性
         # 充电维护奖励：每辆充电车辆额外+3000
         # 与充电奖励(15000)叠加，总计18000/车
-        charging_maintenance_bonus = 3000 * charging_count
+        # =========2026.2.24修改，修复奖励失衡：适度降低充电维护奖励==========
+        charging_maintenance_bonus = 60 * charging_count  # 从3000降低到60（50x）
+        # ======修改结束
         # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
@@ -1620,8 +1639,10 @@ class dclily(gym.Env):
         # 添加充电维护奖励，进一步强化充电激励
         # 添加服务率惩罚，鼓励服务更多订单
         # =========2026.2.20修改，奖励分层：base与shaping可切换==========
+        # =========2026.2.24修改，修复奖励失衡：移除服务收入的除以10，添加服务率奖励==========
         weighted_service_rate_penalty = self.reward_weights['service_rate_penalty'] * service_rate_penalty
-        base_reward = (service_revenue - soc_penalty) / 10 - fixed_penalty - weighted_service_rate_penalty
+        base_reward = (service_revenue - soc_penalty) - fixed_penalty - weighted_service_rate_penalty + service_rate_bonus  # 移除了 "/ 10"，添加正向奖励
+        # ======修改结束
         if self.reward_mode == 'shaping':
             reward_value = (
                 base_reward
@@ -1701,18 +1722,26 @@ class dclily(gym.Env):
             served_orders = np.sum(rel_demand)  # 实际服务的订单数
             service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
-            # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
+            # 服务率奖励：鼓励提高服务率（正向激励）
+            # =========2026.2.24修改，修复奖励失衡：用正向奖励替代惩罚（与中间步一致）==========
+            service_rate_bonus = 0
+            if service_rate > 0.3:
+                service_rate_bonus = service_rate * 10000
+            if service_rate > 0.5:
+                service_rate_bonus = service_rate * 20000
             service_rate_penalty = 0
-            if service_rate < 0.5:  # 服务率低于50%时开始惩罚
-                # 惩罚力度：(0.5 - service_rate) * 8000
-                # 例如：service_rate=0时，惩罚=4000；service_rate=0.3时，惩罚=1600
-                service_rate_penalty = (0.5 - service_rate) * 8000
+            if service_rate < 0.05:
+                service_rate_penalty = 5000
+            # ======修改结束
+            # ======修改结束
             # ======修改结束
 
             # =========2026.2.5修改，实验2：终止时也移除固定惩罚==========
             fixed_penalty = 0  # 原500改为0
+            # =========2026.2.24修改，修复奖励失衡：移除服务收入的除以10，添加服务率奖励（与中间步一致）==========
             weighted_service_rate_penalty = self.reward_weights['service_rate_penalty'] * service_rate_penalty
-            base_reward = (service_revenue - soc_penalty) / 10 - fixed_penalty - weighted_service_rate_penalty
+            base_reward = (service_revenue - soc_penalty) - fixed_penalty - weighted_service_rate_penalty + service_rate_bonus  # 移除了 "/ 10"，添加正向奖励
+            # ======修改结束
             if self.reward_mode == 'shaping':
                 final_reward = base_reward + self.reward_weights['charging_bonus'] * charging_bonus
             else:
