@@ -328,7 +328,7 @@ def main():
 
         # 计算统计信息（使用训练后期数据）
         rl_results = {
-            'policy_name': 'RL-DDPG',
+            'policy_name': 'RL-SAC',
             'reward_mean': np.mean(last_rewards),
             'reward_std': np.std(last_rewards),
             'svc_mean': np.mean(last_svc),

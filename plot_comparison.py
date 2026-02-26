@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 """
 简化版算法对比可视化 - 分别生成图表避免内存问题
 """
@@ -13,7 +19,7 @@ from gym.envs.registration import register  # 修改
 
 # =========2026.2.3修改，改为3种算法对比（移除Global-Optimal）==========
 # 基于之前分析的数据（默认值，会被实际数据覆盖）
-algorithms = ['Random', 'Greedy', 'RL-DDPG']
+algorithms = ['Random', 'Greedy', 'RL-SAC']
 rewards = [-3363.75, -4290.00, -4140.00]
 svc_values = [0.60, 0.70, 0.75]
 rld_values = [1.63, 0.83, 0.00]
@@ -106,26 +112,26 @@ if os.path.exists(optimal_path):  # 修改
 # =========2026.1.31修改，从baseline_comparison.json读取数据==========
 # =========2026.2.3修改，从新的JSON结构读取数据==========
 if baseline_map:  # 修改
-    algorithms = ['Random', 'Greedy', 'RL-DDPG']  # 修改
+    algorithms = ['Random', 'Greedy', 'RL-SAC']  # 修改
     rewards = [  # 修改
         baseline_map.get('Random', {}).get('reward_mean', rewards[0]),  # 修改
         baseline_map.get('Greedy', {}).get('reward_mean', rewards[1]),  # 修改
-        baseline_map.get('RL-DDPG', {}).get('reward_mean', rewards[2]),  # 修改
+        baseline_map.get('RL-SAC', {}).get('reward_mean', rewards[2]),  # 修改
     ]  # 修改
     svc_values = [  # 修改
         baseline_map.get('Random', {}).get('svc_mean', svc_values[0]),  # 修改
         baseline_map.get('Greedy', {}).get('svc_mean', svc_values[1]),  # 修改
-        baseline_map.get('RL-DDPG', {}).get('svc_mean', svc_values[2]),  # 修改
+        baseline_map.get('RL-SAC', {}).get('svc_mean', svc_values[2]),  # 修改
     ]  # 修改
     rld_values = [  # 修改
         baseline_map.get('Random', {}).get('rld_mean', rld_values[0]),  # 修改
         baseline_map.get('Greedy', {}).get('rld_mean', rld_values[1]),  # 修改
-        baseline_map.get('RL-DDPG', {}).get('rld_mean', rld_values[2]),  # 修改
+        baseline_map.get('RL-SAC', {}).get('rld_mean', rld_values[2]),  # 修改
     ]  # 修改
     avg_soc = [  # 修改
         baseline_map.get('Random', {}).get('avg_soc_mean', avg_soc[0]),  # 修改
         baseline_map.get('Greedy', {}).get('avg_soc_mean', avg_soc[1]),  # 修改
-        baseline_map.get('RL-DDPG', {}).get('avg_soc_mean', avg_soc[2]),  # 修改
+        baseline_map.get('RL-SAC', {}).get('avg_soc_mean', avg_soc[2]),  # 修改
     ]  # 修改
 # ======修改结束
 
@@ -215,7 +221,7 @@ relative_performance = [(r / rl_reward - 1) * 100 for r in rewards]
 
 bars = plt.barh(algorithms, relative_performance, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
 plt.xlabel('Relative Performance vs RL (%)', fontsize=12)
-plt.title('Performance Gap Analysis (RL-DDPG as Baseline)', fontsize=14, fontweight='bold')
+plt.title('Performance Gap Analysis (RL-SAC as Baseline)', fontsize=14, fontweight='bold')
 plt.axvline(x=0, color='black', linestyle='-', linewidth=2)
 plt.grid(axis='x', alpha=0.3)
 
@@ -240,13 +246,26 @@ fig, ax = plt.subplots(figsize=(10, 5))
 ax.axis('tight')
 ax.axis('off')
 
-table_data = [
-    ['Algorithm', 'Reward', 'SVC', 'RLD', 'Avg SOC'],  # 修改
-    [algorithms[0], f'{rewards[0]:.0f}', f'{svc_values[0]:.2f}', f'{rld_values[0]:.1f}', f'{avg_soc[0]:.0f}'],  # 修改
-    [algorithms[1], f'{rewards[1]:.0f}', f'{svc_values[1]:.2f}', f'{rld_values[1]:.1f}', f'{avg_soc[1]:.0f}'],  # 修改
-    [algorithms[2], f'{rewards[2]:.0f}', f'{svc_values[2]:.2f}', f'{rld_values[2]:.1f}', f'{avg_soc[2]:.0f}'],  # 修改
-    [algorithms[3], f'{rewards[3]:.0f}', f'{svc_values[3]:.2f}', f'{rld_values[3]:.1f}', f'{avg_soc[3]:.0f}'],  # 修改
-]
+# =========2026.2.26修改，动态生成表格数据==========
+table_data = [['Algorithm', 'Reward', 'SVC', 'RLD', 'Avg SOC']]
+for i in range(len(algorithms)):
+    table_data.append([
+        algorithms[i],
+        f'{rewards[i]:.0f}',
+        f'{svc_values[i]:.2f}',
+        f'{rld_values[i]:.1f}',
+        f'{avg_soc[i]:.0f}'
+    ])
+# 如果有全局最优解，添加到表格
+if global_optimal_reward is not None:
+    table_data.append([
+        'Global-Optimal',
+        f'{global_optimal_reward:.0f}',
+        'N/A',
+        'N/A',
+        'N/A'
+    ])
+# ======修改结束
 
 table = ax.table(cellText=table_data, cellLoc='center', loc='center',
                 colWidths=[0.2, 0.2, 0.2, 0.2, 0.2])
@@ -260,14 +279,17 @@ for i in range(5):
     table[(0, i)].set_facecolor('#4CAF50')
     table[(0, i)].set_text_props(weight='bold', color='white')
 
-# =========2026.1.31修改，高亮RL和Global Optimal行==========
-# 高亮 RL-DDPG 行
-for i in range(5):
-    table[(3, i)].set_facecolor('#E3F2FD')
-
-# 高亮 Global-Optimal 行（金色）
-for i in range(5):
-    table[(4, i)].set_facecolor('#FFF9C4')
+# =========2026.2.26修改，动态高亮行==========
+# 找到RL-SAC行并高亮
+for row_idx, row_data in enumerate(table_data):
+    if row_idx == 0:  # 跳过表头
+        continue
+    if 'RL-SAC' in row_data[0]:
+        for col_idx in range(5):
+            table[(row_idx, col_idx)].set_facecolor('#E3F2FD')
+    elif 'Global-Optimal' in row_data[0]:
+        for col_idx in range(5):
+            table[(row_idx, col_idx)].set_facecolor('#FFF9C4')
 # ======修改结束
 
 plt.title('Algorithm Performance Comparison Table', fontsize=14, fontweight='bold', pad=20)
@@ -287,7 +309,7 @@ print("  5. comparison_table.png - 综合对比表格")
 print("\n" + "="*60)
 print("关键结论:")
 print("="*60)
-print(f"  RL-DDPG 性能: {rewards[2]:.0f}")
+print(f"  RL-SAC 性能: {rewards[2]:.0f}")
 # =========2026.1.31修改，更新结论输出==========
 print(f"  超过 Random: {abs(rewards[0] - rewards[2]):.0f} ({abs((rewards[0]/rewards[2]-1)*100):.1f}%)")
 print(f"  超过 Greedy: {abs(rewards[1] - rewards[2]):.0f} ({abs((rewards[1]/rewards[2]-1)*100):.1f}%)")
