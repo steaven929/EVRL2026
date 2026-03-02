@@ -163,6 +163,300 @@ def main():
     plt.close()
     print(f"综合指标图已保存: {path}final_metrics.png")
 
+    # =========2026.3.2修改，添加MARL专用指标图和对比图==========
+    # 保存MARL专用指标数据
+    if 'charging_efficiency_history' in res_dic:
+        np.save(path + 'charging_efficiency_history.npy', res_dic['charging_efficiency_history'])
+    if 'vehicle_utilization_history' in res_dic:
+        np.save(path + 'vehicle_utilization_history.npy', res_dic['vehicle_utilization_history'])
+    if 'fleet_health_history' in res_dic:
+        np.save(path + 'fleet_health_history.npy', res_dic['fleet_health_history'])
+    if 'zone_coordination_history' in res_dic:
+        np.save(path + 'zone_coordination_history.npy', res_dic['zone_coordination_history'])
+    if 'response_readiness_history' in res_dic:
+        np.save(path + 'response_readiness_history.npy', res_dic['response_readiness_history'])
+
+    # 保存改进指标数据
+    if 'weighted_service_rate_history' in res_dic:
+        np.save(path + 'weighted_service_rate_history.npy', res_dic['weighted_service_rate_history'])
+    if 'effective_service_rate_history' in res_dic:
+        np.save(path + 'effective_service_rate_history.npy', res_dic['effective_service_rate_history'])
+    if 'service_quality_index_history' in res_dic:
+        np.save(path + 'service_quality_index_history.npy', res_dic['service_quality_index_history'])
+    if 'dispatch_efficiency_history' in res_dic:
+        np.save(path + 'dispatch_efficiency_history.npy', res_dic['dispatch_efficiency_history'])
+    if 'effective_dispatch_rate_history' in res_dic:
+        np.save(path + 'effective_dispatch_rate_history.npy', res_dic['effective_dispatch_rate_history'])
+    if 'dispatch_roi_history' in res_dic:
+        np.save(path + 'dispatch_roi_history.npy', res_dic['dispatch_roi_history'])
+
+    # 生成MARL专用综合指标图（12个子图）
+    print("生成MARL综合指标图...")
+    fig, axes = plt.subplots(6, 2, figsize=(16, 24))
+    axes = axes.flatten()
+
+    # 子图1: Critic Loss
+    axes[0].plot(res_dic['critic_losses'], label='Critic Loss', color='blue', linewidth=1.5)
+    axes[0].set_xlabel('Update Step')
+    axes[0].set_ylabel('Loss')
+    axes[0].set_title('Critic Loss')
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+
+    # 子图2: Actor Loss
+    axes[1].plot(res_dic['actor_losses'], label='Actor Loss (-Q)', color='red', linewidth=1.5)
+    axes[1].set_xlabel('Update Step')
+    axes[1].set_ylabel('Loss')
+    axes[1].set_title('Actor Loss (-Q Value, should decrease)')
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
+
+    # 子图3: Episode Reward (保持原版，不修改)
+    axes[2].plot(res_dic['rewards'], label='Episode Reward', color='green', linewidth=1.5, alpha=0.5)
+    axes[2].plot(res_dic['ma_rewards'], label='MA Reward', color='darkgreen', linewidth=2.0)
+    axes[2].set_xlabel('Episode')
+    axes[2].set_ylabel('Reward')
+    axes[2].set_title('Episode Reward (Scaled)')
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.3)
+
+    # 子图4: Service Rate (SVC)
+    axes[3].plot(res_dic['svc_history'], label='SVC (Mean)', color='purple', linewidth=1.5)
+    axes[3].set_xlabel('Episode')
+    axes[3].set_ylabel('Service Rate (%)')
+    axes[3].set_title('Service Rate (SVC) - Traditional Metric')
+    axes[3].legend()
+    axes[3].grid(True, alpha=0.3)
+
+    # ===== 新增MARL专用指标 =====
+
+    # 子图5: Charging Efficiency
+    if 'charging_efficiency_history' in res_dic:
+        axes[4].plot(res_dic['charging_efficiency_history'], label='Charging Efficiency',
+                    color='#FF6B6B', linewidth=2.0)
+        axes[4].set_xlabel('Episode')
+        axes[4].set_ylabel('Efficiency (0-1)')
+        axes[4].set_title('Charging Efficiency (Effective/Total) - Higher is Better')
+        axes[4].axhline(y=0.9, color='green', linestyle='--', alpha=0.5, label='Target: 0.9')
+        axes[4].legend()
+        axes[4].grid(True, alpha=0.3)
+        axes[4].set_ylim([0, 1.05])
+
+    # 子图6: Vehicle Utilization
+    if 'vehicle_utilization_history' in res_dic:
+        axes[5].plot(res_dic['vehicle_utilization_history'], label='Vehicle Utilization',
+                    color='#4ECDC4', linewidth=2.0)
+        axes[5].set_xlabel('Episode')
+        axes[5].set_ylabel('Utilization (0-1)')
+        axes[5].set_title('Vehicle Utilization (Active/Total) - Higher is Better')
+        axes[5].axhline(y=0.5, color='green', linestyle='--', alpha=0.5, label='Target: 0.5')
+        axes[5].legend()
+        axes[5].grid(True, alpha=0.3)
+        axes[5].set_ylim([0, 1.05])
+
+    # 子图7: Fleet Health
+    if 'fleet_health_history' in res_dic:
+        axes[6].plot(res_dic['fleet_health_history'], label='Fleet Health',
+                    color='#95E1D3', linewidth=2.0)
+        axes[6].set_xlabel('Episode')
+        axes[6].set_ylabel('Health (0-1)')
+        axes[6].set_title('Fleet Health (Avg SOC/Capacity) - Higher is Better')
+        axes[6].axhline(y=0.6, color='green', linestyle='--', alpha=0.5, label='Target: 0.6')
+        axes[6].legend()
+        axes[6].grid(True, alpha=0.3)
+        axes[6].set_ylim([0, 1.05])
+
+    # 子图8: Zone Coordination
+    if 'zone_coordination_history' in res_dic:
+        axes[7].plot(res_dic['zone_coordination_history'], label='Zone Coordination',
+                    color='#F38181', linewidth=2.0)
+        axes[7].set_xlabel('Episode')
+        axes[7].set_ylabel('Coordination (0-1)')
+        axes[7].set_title('Zone Coordination (Vehicle Distribution Balance) - Higher is Better')
+        axes[7].axhline(y=0.7, color='green', linestyle='--', alpha=0.5, label='Target: 0.7')
+        axes[7].legend()
+        axes[7].grid(True, alpha=0.3)
+        axes[7].set_ylim([0, 1.05])
+
+    # 子图9: Response Readiness
+    if 'response_readiness_history' in res_dic:
+        axes[8].plot(res_dic['response_readiness_history'], label='Response Readiness',
+                    color='#AA96DA', linewidth=2.0)
+        axes[8].set_xlabel('Episode')
+        axes[8].set_ylabel('Readiness (0-1)')
+        axes[8].set_title('Response Readiness (High-SOC Idle Vehicles) - Higher is Better')
+        axes[8].axhline(y=0.4, color='green', linestyle='--', alpha=0.5, label='Target: 0.4')
+        axes[8].legend()
+        axes[8].grid(True, alpha=0.3)
+        axes[8].set_ylim([0, 1.05])
+
+    # 子图10: RLD (Relocation Distance)
+    axes[9].plot(res_dic['rld_history'], label='RLD', color='orange', linewidth=1.5)
+    axes[9].set_xlabel('Episode')
+    axes[9].set_ylabel('Distance')
+    axes[9].set_title('Relocation Distance (RLD)')
+    axes[9].legend()
+    axes[9].grid(True, alpha=0.3)
+
+    # 子图11: MARL Overall Performance
+    if all(k in res_dic for k in ['charging_efficiency_history', 'vehicle_utilization_history',
+                                    'fleet_health_history', 'zone_coordination_history',
+                                    'response_readiness_history']):
+        last_n = 10
+        metrics_avg = {
+            'Charging\\nEfficiency': np.mean(res_dic['charging_efficiency_history'][-last_n:]),
+            'Vehicle\\nUtilization': np.mean(res_dic['vehicle_utilization_history'][-last_n:]),
+            'Fleet\\nHealth': np.mean(res_dic['fleet_health_history'][-last_n:]),
+            'Zone\\nCoordination': np.mean(res_dic['zone_coordination_history'][-last_n:]),
+            'Response\\nReadiness': np.mean(res_dic['response_readiness_history'][-last_n:]),
+        }
+
+        axes[10].bar(range(len(metrics_avg)), list(metrics_avg.values()),
+                    color=['#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181', '#AA96DA'])
+        axes[10].set_xticks(range(len(metrics_avg)))
+        axes[10].set_xticklabels(list(metrics_avg.keys()), rotation=15, ha='right')
+        axes[10].set_ylabel('Score (0-1)')
+        axes[10].set_title(f'MARL Overall Performance (Last {last_n} Episodes Avg)')
+        axes[10].axhline(y=0.5, color='red', linestyle='--', alpha=0.5, label='Baseline: 0.5')
+        axes[10].legend()
+        axes[10].grid(True, alpha=0.3, axis='y')
+        axes[10].set_ylim([0, 1.05])
+
+        for i, (k, v) in enumerate(metrics_avg.items()):
+            axes[10].text(i, v + 0.02, f'{v:.3f}', ha='center', va='bottom', fontsize=9)
+
+    # 子图12: Training Summary
+    axes[11].axis('off')
+    summary_text = f"""
+    MARL Training Summary
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Episodes: {len(res_dic['rewards'])}
+    Final Reward: {res_dic['rewards'][-1]:.2f}
+    Best Reward: {max(res_dic['rewards']):.2f}
+
+    Traditional Metrics (Last 10 Eps Avg):
+    • Service Rate: {np.mean(res_dic['svc_history'][-10:]):.2f}%
+    • RLD: {np.mean(res_dic['rld_history'][-10:]):.2f}
+
+    MARL-Specific Metrics (Last 10 Eps Avg):
+    • Charging Efficiency: {np.mean(res_dic['charging_efficiency_history'][-10:]):.3f}
+    • Vehicle Utilization: {np.mean(res_dic['vehicle_utilization_history'][-10:]):.3f}
+    • Fleet Health: {np.mean(res_dic['fleet_health_history'][-10:]):.3f}
+    • Zone Coordination: {np.mean(res_dic['zone_coordination_history'][-10:]):.3f}
+    • Response Readiness: {np.mean(res_dic['response_readiness_history'][-10:]):.3f}
+
+    ✅ MARL Advantage: Multi-dimensional System Evaluation
+    """
+    axes[11].text(0.1, 0.5, summary_text, fontsize=10, family='monospace',
+                 verticalalignment='center')
+
+    plt.tight_layout()
+    plt.savefig(path + 'marl_comprehensive_metrics.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"MARL综合指标图已保存: {path}marl_comprehensive_metrics.png")
+
+    # 生成旧版vs新版指标对比图
+    print("生成旧版vs新版指标对比图...")
+    fig, axes = plt.subplots(3, 2, figsize=(16, 18))
+    axes = axes.flatten()
+
+    # 子图1: SVC Comparison
+    axes[0].plot(res_dic['svc_history'], label='SVC (Old)', color='gray', linewidth=2.0, alpha=0.6)
+    if 'weighted_service_rate_history' in res_dic:
+        axes[0].plot(res_dic['weighted_service_rate_history'], label='Weighted Service Rate (New)',
+                    color='#FF6B6B', linewidth=2.0)
+    if 'effective_service_rate_history' in res_dic:
+        axes[0].plot(res_dic['effective_service_rate_history'], label='Effective Service Rate (New)',
+                    color='#4ECDC4', linewidth=2.0)
+    if 'service_quality_index_history' in res_dic:
+        axes[0].plot(res_dic['service_quality_index_history'], label='Service Quality Index (New)',
+                    color='#95E1D3', linewidth=2.0)
+    axes[0].set_xlabel('Episode')
+    axes[0].set_ylabel('Rate (0-1)')
+    axes[0].set_title('SVC Metrics Comparison: Old vs New')
+    axes[0].legend(loc='best')
+    axes[0].grid(True, alpha=0.3)
+
+    # 子图2: RLD Comparison
+    axes[1].plot(res_dic['rld_history'], label='RLD (Old)', color='gray', linewidth=2.0, alpha=0.6)
+    ax1_twin = axes[1].twinx()
+    if 'dispatch_efficiency_history' in res_dic:
+        ax1_twin.plot(res_dic['dispatch_efficiency_history'], label='Dispatch Efficiency (New)',
+                     color='#F38181', linewidth=2.0)
+    if 'effective_dispatch_rate_history' in res_dic:
+        ax1_twin.plot(res_dic['effective_dispatch_rate_history'], label='Effective Dispatch Rate (New)',
+                     color='#AA96DA', linewidth=2.0)
+    axes[1].set_xlabel('Episode')
+    axes[1].set_ylabel('RLD Distance (Old)', color='gray')
+    ax1_twin.set_ylabel('Efficiency/Rate (New)', color='#F38181')
+    axes[1].set_title('RLD Metrics Comparison: Old vs New')
+    axes[1].legend(loc='upper left')
+    ax1_twin.legend(loc='upper right')
+    axes[1].grid(True, alpha=0.3)
+
+    # 子图3: Weighted Service Rate
+    if 'weighted_service_rate_history' in res_dic:
+        axes[2].plot(res_dic['weighted_service_rate_history'], label='Weighted Service Rate',
+                    color='#FF6B6B', linewidth=2.0)
+        axes[2].fill_between(range(len(res_dic['weighted_service_rate_history'])),
+                            res_dic['weighted_service_rate_history'],
+                            alpha=0.3, color='#FF6B6B')
+        axes[2].set_xlabel('Episode')
+        axes[2].set_ylabel('Weighted Service Rate')
+        axes[2].set_title('Weighted Service Rate (Distance/Value Weighted)')
+        axes[2].axhline(y=0.5, color='green', linestyle='--', alpha=0.5, label='Target: 0.5')
+        axes[2].legend()
+        axes[2].grid(True, alpha=0.3)
+        axes[2].set_ylim([0, 1.05])
+
+    # 子图4: Service Quality Index
+    if 'service_quality_index_history' in res_dic:
+        axes[3].plot(res_dic['service_quality_index_history'], label='Service Quality Index',
+                    color='#95E1D3', linewidth=2.0)
+        axes[3].fill_between(range(len(res_dic['service_quality_index_history'])),
+                            res_dic['service_quality_index_history'],
+                            alpha=0.3, color='#95E1D3')
+        axes[3].set_xlabel('Episode')
+        axes[3].set_ylabel('Service Quality Index')
+        axes[3].set_title('Service Quality Index (Rate+SOC+Readiness)')
+        axes[3].axhline(y=0.6, color='green', linestyle='--', alpha=0.5, label='Target: 0.6')
+        axes[3].legend()
+        axes[3].grid(True, alpha=0.3)
+        axes[3].set_ylim([0, 1.05])
+
+    # 子图5: Dispatch Efficiency
+    if 'dispatch_efficiency_history' in res_dic:
+        axes[4].plot(res_dic['dispatch_efficiency_history'], label='Dispatch Efficiency',
+                    color='#F38181', linewidth=2.0)
+        axes[4].fill_between(range(len(res_dic['dispatch_efficiency_history'])),
+                            res_dic['dispatch_efficiency_history'],
+                            alpha=0.3, color='#F38181')
+        axes[4].set_xlabel('Episode')
+        axes[4].set_ylabel('Dispatch Efficiency (orders/distance)')
+        axes[4].set_title('Dispatch Efficiency (Orders/Distance)')
+        axes[4].legend()
+        axes[4].grid(True, alpha=0.3)
+
+    # 子图6: Dispatch ROI
+    if 'dispatch_roi_history' in res_dic:
+        axes[5].plot(res_dic['dispatch_roi_history'], label='Dispatch ROI',
+                    color='#AA96DA', linewidth=2.0)
+        axes[5].fill_between(range(len(res_dic['dispatch_roi_history'])),
+                            res_dic['dispatch_roi_history'],
+                            alpha=0.3, color='#AA96DA')
+        axes[5].axhline(y=0, color='red', linestyle='-', alpha=0.5, label='Break-even')
+        axes[5].set_xlabel('Episode')
+        axes[5].set_ylabel('Dispatch ROI')
+        axes[5].set_title('Dispatch ROI (Return on Investment)')
+        axes[5].legend()
+        axes[5].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(path + 'metrics_comparison_old_vs_new.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"旧版vs新版指标对比图已保存: {path}metrics_comparison_old_vs_new.png")
+    # ======修改结束
+
     # 测试
     print("\n" + "="*80)
     print("开始测试")
