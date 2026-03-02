@@ -7,6 +7,8 @@ Created on 2026-02-19
 """
 import numpy as np
 import torch
+from core.marl_metrics import compute_all_metrics  # 2026.3.1：导入新指标
+from core.improved_metrics import compute_all_improved_metrics  # 2026.3.1：导入改进版指标
 
 
 def _aggregate_episode_metric(values):
@@ -49,6 +51,23 @@ def marl_train(env, agent, cfg, path=None):
     service_rate_history = []
     service_rate_last_history = []
     info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0, 'service_rate': 0}
+
+    # =========2026.3.1修改，添加MARL专用指标==========
+    charging_efficiency_history = []
+    vehicle_utilization_history = []
+    fleet_health_history = []
+    zone_coordination_history = []
+    response_readiness_history = []
+    # ======修改结束
+
+    # =========2026.3.1修改，添加改进版传统指标==========
+    weighted_service_rate_history = []
+    effective_service_rate_history = []
+    service_quality_index_history = []
+    dispatch_efficiency_history = []
+    effective_dispatch_rate_history = []
+    dispatch_roi_history = []
+    # ======修改结束
 
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
@@ -99,6 +118,11 @@ def marl_train(env, agent, cfg, path=None):
                 else:
                     info_missing_counts[metric_key] += 1
 
+            # =========2026.3.1修改，计算MARL专用指标==========
+            marl_metrics = compute_all_metrics(env, info)
+            improved_metrics = compute_all_improved_metrics(env, info)
+            # ======修改结束
+
             # 获取下一时刻的局部观测
             next_obs_n = []
             for agent_id in range(env.n_agents):
@@ -147,6 +171,23 @@ def marl_train(env, agent, cfg, path=None):
         service_rate_history.append(service_rate_mean)
         service_rate_last_history.append(service_rate_last)
 
+        # =========2026.3.1修改，记录MARL专用指标（episode平均）==========
+        charging_efficiency_history.append(marl_metrics.get('charging_efficiency', 0.0))
+        vehicle_utilization_history.append(marl_metrics.get('vehicle_utilization', 0.0))
+        fleet_health_history.append(marl_metrics.get('fleet_health', 0.0))
+        zone_coordination_history.append(marl_metrics.get('zone_coordination', 0.0))
+        response_readiness_history.append(marl_metrics.get('response_readiness', 0.0))
+        # ======修改结束
+
+        # =========2026.3.1修改，记录改进版传统指标==========
+        weighted_service_rate_history.append(improved_metrics.get('weighted_service_rate', 0.0))
+        effective_service_rate_history.append(improved_metrics.get('effective_service_rate', 0.0))
+        service_quality_index_history.append(improved_metrics.get('service_quality_index', 0.0))
+        dispatch_efficiency_history.append(improved_metrics.get('dispatch_efficiency', 0.0))
+        effective_dispatch_rate_history.append(improved_metrics.get('effective_dispatch_rate', 0.0))
+        dispatch_roi_history.append(improved_metrics.get('dispatch_roi', 0.0))
+        # ======修改结束
+
         # 记录奖励
         rewards.append(ep_reward)
         raw_rewards.append(ep_reward_raw)
@@ -183,6 +224,21 @@ def marl_train(env, agent, cfg, path=None):
         'service_rate_history': service_rate_history,
         'service_rate_last_history': service_rate_last_history,
         'info_missing_counts': info_missing_counts,
+        # =========2026.3.1修改，添加MARL专用指标==========
+        'charging_efficiency_history': charging_efficiency_history,
+        'vehicle_utilization_history': vehicle_utilization_history,
+        'fleet_health_history': fleet_health_history,
+        'zone_coordination_history': zone_coordination_history,
+        'response_readiness_history': response_readiness_history,
+        # ======修改结束
+        # =========2026.3.1修改，添加改进版传统指标==========
+        'weighted_service_rate_history': weighted_service_rate_history,
+        'effective_service_rate_history': effective_service_rate_history,
+        'service_quality_index_history': service_quality_index_history,
+        'dispatch_efficiency_history': dispatch_efficiency_history,
+        'effective_dispatch_rate_history': effective_dispatch_rate_history,
+        'dispatch_roi_history': dispatch_roi_history,
+        # ======修改结束
     }
 
     return res_dic

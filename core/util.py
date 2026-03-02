@@ -5,6 +5,16 @@ Created on Tue Sep  3 19:29:03 2024
 @author: TLab
 """
 
+
+# =========2026.3.1修改，Professor修复：添加UTF-8输出支持==========
+import sys
+import io
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+# ======修改结束
+
+
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np

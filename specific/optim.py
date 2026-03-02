@@ -37,7 +37,7 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     # ================= 修改开始2026.1.10 =================
     # 定义惩罚阈值和力度
     SOC_THRESHOLD = 600.0  # 阈值：电量低于600开始惩罚
-    PENALTY_FACTOR = 50.0  # 力度：每缺1点电量，惩罚100分（保证惩罚远大于跑单奖励）
+    PENALTY_FACTOR = 0.0  # Professor 2026.3.1: 暂时禁用SOC惩罚，让车辆能够接单
     
     # 目标函数修改：在原有收益 car_mem[i][2] 的基础上，减去 SOC 惩罚项
     # 逻辑：如果 SOC < 600，系数变为 (原有价值 - 巨大的惩罚)，优化器为了求最大值，就会自动把该车辆的 assignment 置为 0

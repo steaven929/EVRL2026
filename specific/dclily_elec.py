@@ -1525,21 +1525,20 @@ class dclily(gym.Env):
         service_revenue = sum(real_reward)
 
         # 2. 充电加分：统计正在充电的车辆数
+        # =========2026.3.1修改，MARL修复：智能充电奖励（区分需要充电和满电充电）==========
         charging_bonus = 0
         charging_count = 0
+        full_battery_penalty = 0
         for i in range(self.CAR_NUM):
             # 判断车辆是否在充电：charger_id != -1 且不在移动中
             if self.car[i][3] != -1 and self.car[i][2] == 0:
-                charging_count += 1
-        # =========2026.2.12修改，实验19：大幅提升充电奖励==========
-        # =========2026.2.13修改，进一步提升充电奖励==========
-        # =========2026.2.13修改，完整组合方案：大幅提升充电奖励==========
-        # 问题：充电奖励5000仍不足以抵消服务收入的吸引力
-        # 解决：提升到15000，配合允许充电车辆服务，消除机会成本
-        # 即时充电奖励：每辆充电车辆+15000（从5000提升到15000）
-        # =========2026.2.24修改，修复奖励失衡：适度降低充电奖励==========
-        charging_bonus = 300 * charging_count  # 从15000降低到300（50x，保持适度奖励）
-        # ======修改结束
+                soc = self.car[i][1]
+                # 区分需要充电和满电充电
+                if soc >= BATTERY_CAPACITY * 0.95:  # 电量>95%，满电充电
+                    full_battery_penalty -= 500  # 惩罚满电充电（防止充电黑客）
+                else:  # 需要充电
+                    charging_count += 1
+                    charging_bonus += 1500  # 奖励需要充电（从300提升到1500）
         # ======修改结束
 
         # 3. 低电量惩罚：分段惩罚
@@ -1614,11 +1613,8 @@ class dclily(gym.Env):
 
         # =========2026.2.13修改，完整组合方案：添加充电维护奖励==========
         # 目的：额外奖励充电行为，确保充电策略的稳定性
-        # 充电维护奖励：每辆充电车辆额外+3000
-        # 与充电奖励(15000)叠加，总计18000/车
-        # =========2026.2.24修改，修复奖励失衡：适度降低充电维护奖励==========
-        charging_maintenance_bonus = 60 * charging_count  # 从3000降低到60（50x）
-        # ======修改结束
+        # =========2026.3.1修改，MARL修复：提升充电维护奖励==========
+        charging_maintenance_bonus = 300 * charging_count  # 从60提升到300
         # ======修改结束
 
         # 4. 调度成本（已在real_reward中，但需要单独计算）
@@ -1640,9 +1636,28 @@ class dclily(gym.Env):
         # 添加服务率惩罚，鼓励服务更多订单
         # =========2026.2.20修改，奖励分层：base与shaping可切换==========
         # =========2026.2.24修改，修复奖励失衡：移除服务收入的除以10，添加服务率奖励==========
-        weighted_service_rate_penalty = self.reward_weights['service_rate_penalty'] * service_rate_penalty
-        base_reward = (service_revenue - soc_penalty) - fixed_penalty - weighted_service_rate_penalty + service_rate_bonus  # 移除了 "/ 10"，添加正向奖励
+        # =========2026.3.1修改，Professor紧急修复：激进奖励重塑==========
+        # 问题：Agent学会了"躺平"（SVC=1.85%），拒绝接单
+        # 解决：服务收益放大10倍，惩罚前500轮归零
+        amplified_service_revenue = service_revenue * 10.0
+        epoch = self.current_epoch if hasattr(self, 'current_epoch') else 0
+        
+        # 前500轮：完全禁用惩罚，诱导Agent动起来
+        if epoch < 500:
+            effective_soc_penalty = 0
+            effective_service_rate_penalty = 0
+        else:
+            # 500轮后：逐步恢复惩罚（但仍然很轻）
+            effective_soc_penalty = soc_penalty * 0.1
+            effective_service_rate_penalty = service_rate_penalty * 0.1
+        
+        base_reward = amplified_service_revenue - effective_soc_penalty - effective_service_rate_penalty + service_rate_bonus
+        
+        # Debug输出：每5步打印一次奖励分解
+        if self.episode_timestep % 5 == 0:
+            print(f"[Reward Debug t={self.episode_timestep}] Revenue={service_revenue:.0f}→{amplified_service_revenue:.0f}, SOC_Penalty={effective_soc_penalty:.0f}, Final={base_reward:.0f}")
         # ======修改结束
+
         if self.reward_mode == 'shaping':
             reward_value = (
                 base_reward
