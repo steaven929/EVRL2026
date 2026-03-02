@@ -89,12 +89,13 @@ def encode_custom_action(zone_to_counts, zone_from_counts=None, charge_pref=None
 def train(cfg, env, agent):
     print("开始训练！")
     is_sac = str(cfg.get('algo_name', '')).upper() == 'SAC'
+    is_td3 = str(cfg.get('algo_name', '')).upper() == 'TD3'
     exp_variant = str(cfg.get('exp_variant', 'a1')).lower()
     if hasattr(env, 'set_experiment_variant'):
         env.set_experiment_variant(exp_variant)
     if hasattr(env, 'set_reward_mode'):
         env.set_reward_mode(cfg.get('reward_mode', 'base'))
-    ou_noise = None if is_sac else OUNoise(env.action_space)  # SAC不叠加OU噪声
+    ou_noise = None if (is_sac or is_td3) else OUNoise(env.action_space)  # SAC/TD3不叠加OU噪声
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
         reward_scale = 1.0
@@ -152,7 +153,7 @@ def train(cfg, env, agent):
 
             # =========2026.2.7修改，方案D2：充电维度噪声增强==========
             # 前20轮训练，对充电维度添加额外噪声（按动作维度动态切片）
-            if (not is_sac) and i_ep < 20:
+            if (not is_sac) and (not is_td3) and i_ep < 20:
                 charge_slice = _charge_slice_from_action(action)
                 charge_dim = charge_slice.stop - charge_slice.start
                 charging_noise = np.random.uniform(-0.3, 0.3, size=charge_dim)
@@ -187,7 +188,8 @@ def train(cfg, env, agent):
             if loss_info is not None:
                 if 'critic1_loss' in loss_info: critic1_losses.append(loss_info['critic1_loss'])
                 if 'critic2_loss' in loss_info: critic2_losses.append(loss_info['critic2_loss'])
-                if 'actor_loss' in loss_info:   actor_losses.append(loss_info['actor_loss'])
+                if 'actor_loss' in loss_info and loss_info['actor_loss'] is not None:
+                    actor_losses.append(loss_info['actor_loss'])
                 if 'q_value' in loss_info:      q_values.append(loss_info['q_value'])  # 修改
                 if 'target_q' in loss_info:     target_q_values.append(loss_info['target_q'])  # 修改
             state = next_state

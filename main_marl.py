@@ -175,6 +175,16 @@ def main():
         np.save(path + 'zone_coordination_history.npy', res_dic['zone_coordination_history'])
     if 'response_readiness_history' in res_dic:
         np.save(path + 'response_readiness_history.npy', res_dic['response_readiness_history'])
+    if 'charger_occupancy_rate_history' in res_dic:
+        np.save(path + 'charger_occupancy_rate_history.npy', res_dic['charger_occupancy_rate_history'])
+    if 'charger_queue_delay_history' in res_dic:
+        np.save(path + 'charger_queue_delay_history.npy', res_dic['charger_queue_delay_history'])
+    if 'energy_not_served_history' in res_dic:
+        np.save(path + 'energy_not_served_history.npy', res_dic['energy_not_served_history'])
+    if 'safety_soc_violation_count_history' in res_dic:
+        np.save(path + 'safety_soc_violation_count_history.npy', res_dic['safety_soc_violation_count_history'])
+    if 'charge_shift_success_rate_history' in res_dic:
+        np.save(path + 'charge_shift_success_rate_history.npy', res_dic['charge_shift_success_rate_history'])
 
     # 保存改进指标数据
     if 'weighted_service_rate_history' in res_dic:
@@ -455,6 +465,72 @@ def main():
     plt.savefig(path + 'metrics_comparison_old_vs_new.png', dpi=150, bbox_inches='tight')
     plt.close()
     print(f"旧版vs新版指标对比图已保存: {path}metrics_comparison_old_vs_new.png")
+
+    # 充电调度关键指标图（论文指标）
+    print("生成充电调度关键指标图...")
+    fig, axes = plt.subplots(3, 2, figsize=(16, 16))
+    axes = axes.flatten()
+
+    if 'charger_occupancy_rate_history' in res_dic:
+        axes[0].plot(res_dic['charger_occupancy_rate_history'], color='#1f77b4', linewidth=2.0, label='Charger Occupancy Rate')
+        axes[0].set_title('Charger Occupancy Rate')
+        axes[0].set_xlabel('Episode')
+        axes[0].set_ylabel('Rate (0-1)')
+        axes[0].set_ylim([0, 1.05])
+        axes[0].grid(True, alpha=0.3)
+        axes[0].legend()
+
+    if 'charger_queue_delay_history' in res_dic:
+        axes[1].plot(res_dic['charger_queue_delay_history'], color='#ff7f0e', linewidth=2.0, label='Charger Queue Delay')
+        axes[1].set_title('Charger Queue Delay (minutes, proxy)')
+        axes[1].set_xlabel('Episode')
+        axes[1].set_ylabel('Minutes')
+        axes[1].grid(True, alpha=0.3)
+        axes[1].legend()
+
+    if 'energy_not_served_history' in res_dic:
+        axes[2].plot(res_dic['energy_not_served_history'], color='#d62728', linewidth=2.0, label='Energy Not Served')
+        axes[2].set_title('Energy Not Served (orders, proxy)')
+        axes[2].set_xlabel('Episode')
+        axes[2].set_ylabel('Orders')
+        axes[2].grid(True, alpha=0.3)
+        axes[2].legend()
+
+    if 'safety_soc_violation_count_history' in res_dic:
+        axes[3].plot(res_dic['safety_soc_violation_count_history'], color='#9467bd', linewidth=2.0,
+                     label='Safety SOC Violation Count')
+        axes[3].set_title('Safety SOC Violation Count (SOC < 20%)')
+        axes[3].set_xlabel('Episode')
+        axes[3].set_ylabel('Vehicle Count')
+        axes[3].grid(True, alpha=0.3)
+        axes[3].legend()
+
+    if 'charge_shift_success_rate_history' in res_dic:
+        axes[4].plot(res_dic['charge_shift_success_rate_history'], color='#2ca02c', linewidth=2.0,
+                     label='Charge Shift Success Rate')
+        axes[4].set_title('Charge Shift Success Rate')
+        axes[4].set_xlabel('Episode')
+        axes[4].set_ylabel('Rate (0-1)')
+        axes[4].set_ylim([0, 1.05])
+        axes[4].grid(True, alpha=0.3)
+        axes[4].legend()
+
+    axes[5].axis('off')
+    summary = f"""
+    Charging Scheduling Metrics Summary (Last 10 Eps Avg)
+    -----------------------------------------------------
+    Charger Occupancy Rate: {np.nanmean(res_dic.get('charger_occupancy_rate_history', [np.nan])[-10:]):.3f}
+    Charger Queue Delay: {np.nanmean(res_dic.get('charger_queue_delay_history', [np.nan])[-10:]):.3f}
+    Energy Not Served: {np.nanmean(res_dic.get('energy_not_served_history', [np.nan])[-10:]):.3f}
+    Safety SOC Violations: {np.nanmean(res_dic.get('safety_soc_violation_count_history', [np.nan])[-10:]):.3f}
+    Charge Shift Success Rate: {np.nanmean(res_dic.get('charge_shift_success_rate_history', [np.nan])[-10:]):.3f}
+    """
+    axes[5].text(0.05, 0.5, summary, fontsize=10, family='monospace', va='center')
+
+    plt.tight_layout()
+    plt.savefig(path + 'charging_scheduling_metrics.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"充电调度关键指标图已保存: {path}charging_scheduling_metrics.png")
     # ======修改结束
 
     # 测试

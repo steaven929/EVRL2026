@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import math
+import copy
 
 class DDPG:
     def __init__(self, models, memories, cfg):
@@ -195,143 +196,130 @@ class DQN:
         return {"dqn_loss": float(loss.item())}
 
 
-class TD3(object):
-    def __init__(self,cfg):
-        self.gamma = cfg.gamma # 奖励的折扣因子
-        self.actor_lr = cfg.actor_lr # actor学习率
-        self.critic_lr = cfg.critic_lr # critic学习率
-        self.policy_noise = cfg.policy_noise
-        self.noise_clip = cfg.noise_clip
-        self.expl_noise = cfg.expl_noise
-        self.policy_freq = cfg.policy_freq
-        self.batch_size =  cfg.batch_size 
-        self.tau = cfg.tau
-        self.sample_count = 0
-        self.policy_freq = cfg.policy_freq
-        self.explore_steps = cfg.explore_steps
-        self.device = torch.device(cfg.device)
-        self.n_actions = cfg.n_actions
-        self.action_space = cfg.action_space
-        self.action_scale = torch.tensor((self.action_space.high - self.action_space.low)/2, device=self.device, dtype=torch.float32).unsqueeze(dim=0)
-        self.action_bias = torch.tensor((self.action_space.high + self.action_space.low)/2, device=self.device, dtype=torch.float32).unsqueeze(dim=0)
-        self.actor = Actor(cfg.n_states, cfg.n_actions, hidden_dim = cfg.actor_hidden_dim).to(self.device)
-        self.actor_target = Actor(cfg.n_states, cfg.n_actions, hidden_dim = cfg.actor_hidden_dim).to(self.device)
-        self.actor_target.load_state_dict(self.actor.state_dict()) # 复制参数到目标网络
+class TD3:
+    """Twin Delayed DDPG compatible with current train loop."""
 
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr = self.actor_lr)
+    def __init__(self, models, memories, cfg):
+        self.device = torch.device(cfg['device'])
 
-        self.critic_1 = Critic(cfg.n_states, cfg.n_actions, hidden_dim = cfg.critic_hidden_dim).to(self.device)
-        self.critic_2 = Critic(cfg.n_states, cfg.n_actions, hidden_dim = cfg.critic_hidden_dim).to(self.device)
-        self.critic_1_target = Critic(cfg.n_states, cfg.n_actions, hidden_dim = cfg.critic_hidden_dim).to(self.device)
-        self.critic_2_target = Critic(cfg.n_states, cfg.n_actions, hidden_dim = cfg.critic_hidden_dim).to(self.device)
-        self.critic_1_target.load_state_dict(self.critic_1.state_dict()) # 复制参数到目标网络
-        self.critic_2_target.load_state_dict(self.critic_2.state_dict()) # 复制参数到目标网络
-        
-        self.critic_1_optimizer = torch.optim.Adam(self.critic_1.parameters(), lr = self.critic_lr)
-        self.critic_2_optimizer = torch.optim.Adam(self.critic_2.parameters(), lr = self.critic_lr)
-        self.memory = ReplayBufferQue(cfg.buffer_size)
-        # self.memory = ReplayBuffer(n_states, n_actions)
+        self.actor = models['actor'].to(self.device)
+        self.target_actor = copy.deepcopy(self.actor).to(self.device)
+
+        self.critic_1 = models['critic'].to(self.device)
+        critic2_model = models.get('critic2', copy.deepcopy(models['critic']))
+        self.critic_2 = critic2_model.to(self.device)
+        self.target_critic_1 = copy.deepcopy(self.critic_1).to(self.device)
+        self.target_critic_2 = copy.deepcopy(self.critic_2).to(self.device)
+
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=cfg['actor_lr'])
+        self.critic_1_optimizer = optim.Adam(self.critic_1.parameters(), lr=cfg['critic_lr'])
+        self.critic_2_optimizer = optim.Adam(self.critic_2.parameters(), lr=cfg['critic_lr'])
+
+        self.memory = memories['memory']
+        self.batch_size = int(cfg['batch_size'])
+        self.gamma = float(cfg['gamma'])
+        self.tau = float(cfg['tau'])
+        self.policy_delay = int(cfg.get('policy_delay', 2))
+        self.target_policy_noise = float(cfg.get('target_policy_noise', 0.1))
+        self.target_noise_clip = float(cfg.get('target_noise_clip', 0.2))
+        self.expl_noise = float(cfg.get('expl_noise', 0.1))
+        self.update_step = 0
 
     def sample_action(self, state):
-        ''' 采样动作
-        '''
-        self.sample_count += 1
-        if self.sample_count < self.explore_steps:
-            return self.action_space.sample()
-        else:
-            state = torch.tensor(state, device=self.device, dtype=torch.float32).unsqueeze(dim=0)
-            action = self.actor(state)
-            action = self.action_scale * action + self.action_bias
-            action = action.detach().cpu().numpy()[0]
-            action_noise = np.random.normal(0, self.action_scale.cpu().numpy()[0] * self.expl_noise, size=self.n_actions)
-            action = (action + action_noise).clip(self.action_space.low, self.action_space.high)
-            return action
+        state = torch.LongTensor(state).unsqueeze(0).to(self.device)
+        action = self.actor(state).detach().cpu().numpy()[0]
+        noise = np.random.normal(0.0, self.expl_noise, size=action.shape[0])
+        return np.clip(action + noise, 0.0, 1.0)
 
     @torch.no_grad()
     def predict_action(self, state):
-        ''' 预测动作
-        '''
-        state = torch.tensor(state, device=self.device, dtype=torch.float32).unsqueeze(dim=0)
-        action = self.actor(state)
-        action = self.action_scale * action + self.action_bias # 对actor计算的动作分布放缩
-        return action.detach().cpu().numpy()[0]
+        state = torch.LongTensor(state).unsqueeze(0).to(self.device)
+        return self.actor(state).cpu().numpy()[0]
+
+    def _soft_update(self, src, dst):
+        for dst_param, src_param in zip(dst.parameters(), src.parameters()):
+            dst_param.data.copy_(dst_param.data * (1.0 - self.tau) + src_param.data * self.tau)
 
     def update(self):
-        # if len(self.memory) < self.batch_size:
-        #     return
-        if len(self.memory) < self.explore_steps: # 当经验回放中不满足一个批量时，不更新策略
-            return
-        state, action, reward, next_state, done = self.memory.sample(self.batch_size) # 从经验回放中随机采样一个批量的转移(transition)
-         # 将数据转换为tensor
-        state = torch.tensor(np.array(state), device=self.device, dtype=torch.float32)
-        action = torch.tensor(np.array(action), device=self.device, dtype=torch.float32)
-        next_state = torch.tensor(np.array(next_state), device=self.device, dtype=torch.float32)
-        reward = torch.tensor(reward, device=self.device, dtype=torch.float32).unsqueeze(1)
-        done = torch.tensor(done, device=self.device, dtype=torch.float32).unsqueeze(1)
-        # update critic
-        noise = (torch.randn_like(action) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip) # 构造加入目标动作的噪声
-        # 计算加入了噪声的目标动作
-        next_action = (self.actor_target(next_state) + noise).clamp(-self.action_scale+self.action_bias, self.action_scale+self.action_bias)
-        # 计算两个critic网络对t+1时刻的状态动作对的评分，并选取更小值来计算目标q值
-        target_q1, target_q2 = self.critic_1_target(next_state, next_action).detach(), self.critic_2_target(next_state, next_action).detach()
-        target_q = torch.min(target_q1, target_q2)
-        target_q = reward + self.gamma * target_q * (1 - done)
-        # 计算两个critic网络对t时刻的状态动作对的评分
-        current_q1, current_q2 = self.critic_1(state, action), self.critic_2(state, action)
-        # 计算均方根损失
+        if len(self.memory) < self.batch_size:
+            return None
+
+        state, action, reward, next_state, done = self.memory.sample(self.batch_size)
+        state = torch.LongTensor(np.array(state)).to(self.device)
+        next_state = torch.LongTensor(np.array(next_state)).to(self.device)
+        action = torch.FloatTensor(np.array(action)).to(self.device)
+        reward = torch.FloatTensor(reward).unsqueeze(1).to(self.device)
+        done = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(self.device)
+
+        with torch.no_grad():
+            noise = torch.randn_like(action) * self.target_policy_noise
+            noise = noise.clamp(-self.target_noise_clip, self.target_noise_clip)
+            next_action = (self.target_actor(next_state) + noise).clamp(0.0, 1.0)
+
+            target_q1 = self.target_critic_1(next_state, next_action)
+            target_q2 = self.target_critic_2(next_state, next_action)
+            target_q = torch.min(target_q1, target_q2)
+            target_q = reward + (1.0 - done) * self.gamma * target_q
+            target_q = torch.clamp(target_q, -1000, 1000)
+
+        current_q1 = self.critic_1(state, action)
+        current_q2 = self.critic_2(state, action)
         critic_1_loss = F.mse_loss(current_q1, target_q)
         critic_2_loss = F.mse_loss(current_q2, target_q)
+
         self.critic_1_optimizer.zero_grad()
         critic_1_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic_1.parameters(), max_norm=1.0)
         self.critic_1_optimizer.step()
+
         self.critic_2_optimizer.zero_grad()
         critic_2_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), max_norm=1.0)
         self.critic_2_optimizer.step()
+
+        self.update_step += 1
         actor_loss_value = None
-        if self.sample_count % self.policy_freq == 0:
-            # 延迟策略更新，actor的更新频率低于critic
-            actor_loss = -self.critic_1(state, self.actor(state)).mean()
+        if self.update_step % self.policy_delay == 0:
+            policy_q = self.critic_1(state, self.actor(state))
+            actor_loss = -policy_q.mean()
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
             self.actor_optimizer.step()
             actor_loss_value = float(actor_loss.item())
-            #目标网络软更新
-            for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-            for param, target_param in zip(self.critic_1.parameters(), self.critic_1_target.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-            for param, target_param in zip(self.critic_2.parameters(), self.critic_2_target.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+
+            self._soft_update(self.actor, self.target_actor)
+            self._soft_update(self.critic_1, self.target_critic_1)
+            self._soft_update(self.critic_2, self.target_critic_2)
+
         return {
             "critic1_loss": float(critic_1_loss.item()),
             "critic2_loss": float(critic_2_loss.item()),
-            "actor_loss": actor_loss_value,  # 可能为 None
+            "actor_loss": actor_loss_value,
+            "q_value": float(current_q1.mean().item()),
+            "target_q": float(target_q.mean().item()),
         }
 
-    # =========2026.1.31修改，添加模型保存和加载功能==========
     def save_model(self, path):
-        """保存模型权重"""
         torch.save({
             'actor': self.actor.state_dict(),
             'critic_1': self.critic_1.state_dict(),
             'critic_2': self.critic_2.state_dict(),
-            'actor_target': self.actor_target.state_dict(),
-            'critic_1_target': self.critic_1_target.state_dict(),
-            'critic_2_target': self.critic_2_target.state_dict(),
+            'target_actor': self.target_actor.state_dict(),
+            'target_critic_1': self.target_critic_1.state_dict(),
+            'target_critic_2': self.target_critic_2.state_dict(),
         }, path)
         print(f"模型已保存到: {path}")
 
     def load_model(self, path):
-        """加载模型权重"""
         checkpoint = torch.load(path, map_location=self.device)
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic_1.load_state_dict(checkpoint['critic_1'])
         self.critic_2.load_state_dict(checkpoint['critic_2'])
-        self.actor_target.load_state_dict(checkpoint['actor_target'])
-        self.critic_1_target.load_state_dict(checkpoint['critic_1_target'])
-        self.critic_2_target.load_state_dict(checkpoint['critic_2_target'])
+        self.target_actor.load_state_dict(checkpoint['target_actor'])
+        self.target_critic_1.load_state_dict(checkpoint['target_critic_1'])
+        self.target_critic_2.load_state_dict(checkpoint['target_critic_2'])
         print(f"模型已从 {path} 加载")
-    # ======修改结束
 
 
 # =========2026.2.11，实验13：SAC算法实现==========

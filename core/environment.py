@@ -13,7 +13,7 @@ import random
 import gym
 
 from specific.model import Actor, Critic
-from core.algorithm import DDPG, SAC
+from core.algorithm import DDPG, SAC, TD3
 from core.buffer import ReplayBuffer
 # =========2026.2.19修改，MARL Phase-1：导入MARL组件==========
 from core.marl_agent import IPPOAgent
@@ -176,6 +176,14 @@ def env_agent_config(cfg):
             batch_size=cfg['batch_size'],
             device=cfg['device']
         )
+    elif cfg['algo_name'] == 'TD3':
+        models = {
+            "actor": Actor(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['actor_hidden_dim']),
+            "critic": Critic(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['critic_hidden_dim']),
+            "critic2": Critic(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['critic_hidden_dim']),
+        }
+        memories = {"memory": ReplayBuffer(cfg['memory_capacity'])}
+        agent = TD3(models, memories, cfg)
     else:  # DDPG
         models = {"actor":Actor(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['actor_hidden_dim']),"critic":Critic(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['critic_hidden_dim'])}
         memories = {"memory":ReplayBuffer(cfg['memory_capacity'])}

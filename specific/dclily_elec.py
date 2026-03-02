@@ -961,10 +961,13 @@ class dclily(gym.Env):
                     self.available[0][current_zone] -= 1
 
                 # 记录已执行充电决策
-                self.current_step_logs[vehicle_id].update({
+                self.current_step_logs.setdefault(vehicle_id, {}).update({
                     "decision_charge": True,
                     "prob": global_ratio,
-                    "score": float(charge_budget)
+                    "score": float(charge_budget),
+                    "from_zone": int(current_zone),
+                    "to_zone": int(target_charger),
+                    "shifted": bool(target_charger != current_zone),
                 })
                 charged_count += 1
         # ======修改结束
@@ -1458,13 +1461,13 @@ class dclily(gym.Env):
                 # ======修改结束
         
         total_demand = np.sum(demand)##0729 计算trb论文指标加入
-        self._last_svc = np.sum(real_reward) / total_demand if total_demand > 0 else 0#0729 计算trb论文指标加入
-        self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0  # 修改
+        served_orders = np.sum(rel_demand)  # 实际服务的订单数
+        service_rate = served_orders / total_demand if total_demand > 0 else 1.0
+        self._last_svc = service_rate
+        self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0
 
         # =========2026.2.14修改，添加服务率惩罚==========
         # 计算服务率：实际服务的订单数 / 总需求数
-        served_orders = np.sum(rel_demand)  # 实际服务的订单数
-        service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
         # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
         service_rate_penalty = 0
@@ -1641,6 +1644,9 @@ class dclily(gym.Env):
             "srd": self._last_srd,  # 修改
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
             "demand_orders": rel_demand,  # 需求订单矩阵
+            "demand_matrix": demand,  # 原始需求矩阵
+            "served_orders": float(served_orders),
+            "total_demand": float(total_demand),
             "charging_actions": charging_actions,  # 充电动作记录
             "action_table_true": action_table_true,  # RL调度倾向矩阵
             "service_rate": float(service_rate),
