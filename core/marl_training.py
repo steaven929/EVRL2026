@@ -61,6 +61,11 @@ def marl_train(env, agent, cfg, path=None):
     fleet_health_history = []
     zone_coordination_history = []
     response_readiness_history = []
+    charger_occupancy_rate_history = []
+    charger_queue_delay_history = []
+    energy_not_served_history = []
+    safety_soc_violation_count_history = []
+    charge_shift_success_rate_history = []
     # ======修改结束
 
     # =========2026.3.1修改，添加改进版传统指标==========
@@ -113,6 +118,11 @@ def marl_train(env, agent, cfg, path=None):
             'fleet_health': [],
             'zone_coordination': [],
             'response_readiness': [],
+            'charger_occupancy_rate': [],
+            'charger_queue_delay': [],
+            'energy_not_served': [],
+            'safety_soc_violation_count': [],
+            'charge_shift_success_rate': [],
         }
         ep_improved_metric_steps = {
             'weighted_service_rate': [],
@@ -202,11 +212,21 @@ def marl_train(env, agent, cfg, path=None):
         fleet_health_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['fleet_health'])
         zone_coordination_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['zone_coordination'])
         response_readiness_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['response_readiness'])
+        charger_occupancy_rate_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['charger_occupancy_rate'])
+        charger_queue_delay_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['charger_queue_delay'])
+        energy_not_served_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['energy_not_served'])
+        safety_soc_violation_count_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['safety_soc_violation_count'])
+        charge_shift_success_rate_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['charge_shift_success_rate'])
         charging_efficiency_history.append(charging_efficiency_mean)
         vehicle_utilization_history.append(vehicle_utilization_mean)
         fleet_health_history.append(fleet_health_mean)
         zone_coordination_history.append(zone_coordination_mean)
         response_readiness_history.append(response_readiness_mean)
+        charger_occupancy_rate_history.append(charger_occupancy_rate_mean)
+        charger_queue_delay_history.append(charger_queue_delay_mean)
+        energy_not_served_history.append(energy_not_served_mean)
+        safety_soc_violation_count_history.append(safety_soc_violation_count_mean)
+        charge_shift_success_rate_history.append(charge_shift_success_rate_mean)
         # ======修改结束
 
         # =========2026.3.1修改，记录改进版传统指标==========
@@ -266,6 +286,11 @@ def marl_train(env, agent, cfg, path=None):
         'fleet_health_history': fleet_health_history,
         'zone_coordination_history': zone_coordination_history,
         'response_readiness_history': response_readiness_history,
+        'charger_occupancy_rate_history': charger_occupancy_rate_history,
+        'charger_queue_delay_history': charger_queue_delay_history,
+        'energy_not_served_history': energy_not_served_history,
+        'safety_soc_violation_count_history': safety_soc_violation_count_history,
+        'charge_shift_success_rate_history': charge_shift_success_rate_history,
         # ======修改结束
         # =========2026.3.1修改，添加改进版传统指标==========
         'weighted_service_rate_history': weighted_service_rate_history,

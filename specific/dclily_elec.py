@@ -967,10 +967,13 @@ class dclily(gym.Env):
                     self.available[0][current_zone] -= 1
 
                 # 记录已执行充电决策
-                self.current_step_logs[vehicle_id].update({
+                self.current_step_logs.setdefault(vehicle_id, {}).update({
                     "decision_charge": True,
                     "prob": global_ratio,
-                    "score": float(charge_budget)
+                    "score": float(charge_budget),
+                    "from_zone": int(current_zone),
+                    "to_zone": int(target_charger),
+                    "shifted": bool(target_charger != current_zone),
                 })
                 charged_count += 1
         # ======修改结束

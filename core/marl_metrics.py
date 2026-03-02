@@ -8,6 +8,14 @@ Created on 2026-03-01
 import numpy as np
 
 
+def _battery_capacity(env):
+    return getattr(env, 'BATTERY_CAPACITY', None) or getattr(env.unwrapped, 'BATTERY_CAPACITY', 3000)
+
+
+def _time_length(env):
+    return float(getattr(env, 'TIME_LENGTH', None) or getattr(env.unwrapped, 'TIME_LENGTH', 10))
+
+
 def compute_charging_efficiency(env):
     """
     充电效率指标：有效充电次数 / 总充电次数
@@ -20,7 +28,7 @@ def compute_charging_efficiency(env):
     """
     effective_charging = 0
     total_charging = 0
-    battery_capacity = getattr(env, 'BATTERY_CAPACITY', None) or getattr(env.unwrapped, 'BATTERY_CAPACITY', 3000)
+    battery_capacity = _battery_capacity(env)
 
     for i in range(env.CAR_NUM):
         if env.car[i][3] != -1 and env.car[i][2] == 0:  # 正在充电
@@ -110,7 +118,7 @@ def compute_response_readiness(env):
         float: 响应就绪度 (0-1)，越高越好
     """
     ready_vehicles = 0
-    battery_capacity = getattr(env, 'BATTERY_CAPACITY', None) or getattr(env.unwrapped, 'BATTERY_CAPACITY', 3000)
+    battery_capacity = _battery_capacity(env)
 
     for i in range(env.CAR_NUM):
         # 空闲且高电量
@@ -140,6 +148,100 @@ def compute_energy_efficiency(env, service_count, charging_count):
     return service_count / charging_count
 
 
+def compute_charger_occupancy_rate(env):
+    """
+    充电桩占用率：被占用充电桩 / 总充电桩
+    """
+    stations = getattr(env, 'charging_stations', None)
+    if stations is None and hasattr(env, 'unwrapped'):
+        stations = getattr(env.unwrapped, 'charging_stations', None)
+    if not stations:
+        return np.nan
+
+    total = 0
+    occupied = 0
+    for chargers in stations.values():
+        total += len(chargers)
+        occupied += sum(1 for ch in chargers if ch.get('occupied_by') is not None)
+
+    if total <= 0:
+        return np.nan
+    return occupied / total
+
+
+def compute_charger_queue_delay(env):
+    """
+    充电排队延迟（分钟，代理量）：
+    低SOC且空闲但未占桩车辆数 / 当前充电车辆数 * 时间步长
+    """
+    battery_capacity = _battery_capacity(env)
+    time_len = _time_length(env)
+
+    low_soc_waiting = 0
+    charging_now = 0
+    for i in range(env.CAR_NUM):
+        remain = env.car[i][2]
+        charger_id = env.car[i][3]
+        soc = env.car[i][1]
+        if remain == 0 and charger_id != -1:
+            charging_now += 1
+        if remain == 0 and charger_id == -1 and soc < battery_capacity * 0.3:
+            low_soc_waiting += 1
+
+    if low_soc_waiting == 0:
+        return 0.0
+    return (low_soc_waiting / max(charging_now, 1)) * time_len
+
+
+def compute_energy_not_served(info):
+    """
+    因能量/供给不足未满足需求量（订单数代理）：total_demand - served_orders
+    """
+    total_demand = float(info.get('total_demand', np.nan))
+    served_orders = float(info.get('served_orders', np.nan))
+    if not np.isfinite(total_demand) or not np.isfinite(served_orders):
+        return np.nan
+    return max(0.0, total_demand - served_orders)
+
+
+def compute_safety_soc_violation_count(env):
+    """
+    安全SOC违规次数（每步）：SOC < 20%容量 的车辆数
+    """
+    battery_capacity = _battery_capacity(env)
+    threshold = battery_capacity * 0.2
+    violations = 0
+    for i in range(env.CAR_NUM):
+        if env.car[i][1] < threshold:
+            violations += 1
+    return float(violations)
+
+
+def compute_charge_shift_success_rate(env):
+    """
+    充电跨区转移成功率：本步充电决策中 shifted=True 的占比
+    """
+    logs = getattr(env, 'current_step_logs', None)
+    if logs is None and hasattr(env, 'unwrapped'):
+        logs = getattr(env.unwrapped, 'current_step_logs', None)
+    if not isinstance(logs, dict) or len(logs) == 0:
+        return np.nan
+
+    decisions = 0
+    shifted = 0
+    for entry in logs.values():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('decision_charge', False):
+            decisions += 1
+            if bool(entry.get('shifted', False)):
+                shifted += 1
+
+    if decisions == 0:
+        return np.nan
+    return shifted / decisions
+
+
 def compute_all_metrics(env, info):
     """
     计算所有MARL专用指标
@@ -157,6 +259,11 @@ def compute_all_metrics(env, info):
         'fleet_health': compute_fleet_health(env),
         'zone_coordination': compute_zone_coordination(env),
         'response_readiness': compute_response_readiness(env),
+        'charger_occupancy_rate': compute_charger_occupancy_rate(env),
+        'charger_queue_delay': compute_charger_queue_delay(env),
+        'energy_not_served': compute_energy_not_served(info),
+        'safety_soc_violation_count': compute_safety_soc_violation_count(env),
+        'charge_shift_success_rate': compute_charge_shift_success_rate(env),
     }
 
     # 如果info中有服务和充电信息，计算能量效率
