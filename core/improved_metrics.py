@@ -9,6 +9,20 @@ Created on 2026-03-01
 import numpy as np
 
 
+def _get_distance_matrix(env):
+    if hasattr(env, 'dist'):
+        return np.asarray(env.dist, dtype=float)
+    if hasattr(env, 'distance'):
+        return np.asarray(env.distance, dtype=float)
+    inner = getattr(env, 'unwrapped', None)
+    if inner is not None:
+        if hasattr(inner, 'dist'):
+            return np.asarray(inner.dist, dtype=float)
+        if hasattr(inner, 'distance'):
+            return np.asarray(inner.distance, dtype=float)
+    return None
+
+
 # ==================== SVC改进版 ====================
 
 def compute_weighted_service_rate(env, info):
@@ -32,33 +46,41 @@ def compute_weighted_service_rate(env, info):
     Returns:
         float: 加权服务率 (0-1)，越高越好
     """
-    if 'demand_orders' not in info or info['demand_orders'] is None:
-        return 0.0
+    demand_matrix = info.get('demand_matrix')
+    served_matrix = info.get('demand_orders')
+    if demand_matrix is None or served_matrix is None:
+        return np.nan
 
-    demand_orders = info['demand_orders']
-    total_demand = info.get('total_demand', 0)
+    demand_matrix = np.asarray(demand_matrix, dtype=float)
+    served_matrix = np.asarray(served_matrix, dtype=float)
+    if demand_matrix.shape != served_matrix.shape:
+        return np.nan
 
-    if total_demand == 0:
-        return 0.0
+    total_demand = float(np.sum(demand_matrix))
+    if total_demand <= 0:
+        return np.nan
 
-    # 计算加权服务订单数
+    dist_matrix = _get_distance_matrix(env)
+
+    # 计算加权需求和加权服务订单数
     weighted_served = 0.0
     weighted_total = 0.0
 
-    for i in range(len(demand_orders)):
-        for j in range(len(demand_orders[i])):
+    for i in range(demand_matrix.shape[0]):
+        for j in range(demand_matrix.shape[1]):
             if i != j:  # 排除自环
-                # 距离作为权重（可以从env的distance matrix获取）
-                distance = env.distance[i][j] if hasattr(env, 'distance') else 1.0
+                distance = 1.0
+                if dist_matrix is not None and i < dist_matrix.shape[0] and j < dist_matrix.shape[1]:
+                    distance = float(dist_matrix[i][j])
                 weight = max(1.0, distance)  # 至少权重为1
 
-                served_count = demand_orders[i][j]
-                # 假设总需求也按距离加权
+                served_count = float(served_matrix[i][j])
+                demand_count = float(demand_matrix[i][j])
                 weighted_served += served_count * weight
-                weighted_total += weight  # 简化：假设每个OD对都有潜在需求
+                weighted_total += demand_count * weight
 
     if weighted_total == 0:
-        return 0.0
+        return np.nan
 
     return weighted_served / weighted_total
 
@@ -85,7 +107,7 @@ def compute_effective_service_rate(env, info):
         float: 有效服务率 (0-1)，越高越好
     """
     if 'demand_orders' not in info:
-        return 0.0
+        return np.nan
 
     # 统计有足够电量的车辆数
     available_vehicles = 0
@@ -101,15 +123,14 @@ def compute_effective_service_rate(env, info):
     if available_vehicles == 0:
         return 0.0
 
-    served_orders = sum(sum(row) for row in info['demand_orders']) if info['demand_orders'] is not None else 0
-    total_demand = info.get('total_demand', 0)
+    served_orders = float(info.get('served_orders', 0.0))
+    total_demand = float(info.get('total_demand', 0.0))
 
-    if total_demand == 0:
-        return 0.0
+    if total_demand <= 0:
+        return np.nan
 
-    # 有效服务率 = 实际服务 / 总需求
-    # 但如果车辆不足，则按比例调整期望
-    expected_capacity = min(available_vehicles, total_demand)
+    # 有效服务率 = 实际服务 / 可有效承载需求
+    expected_capacity = min(float(available_vehicles), total_demand)
     if expected_capacity == 0:
         return 0.0
 
@@ -138,8 +159,10 @@ def compute_service_quality_index(env, info):
         float: 服务质量指数 (0-1)，越高越好
     """
     # 基础服务率
-    served_orders = sum(sum(row) for row in info['demand_orders']) if 'demand_orders' in info and info['demand_orders'] is not None else 0
-    total_demand = info.get('total_demand', 1)
+    served_orders = float(info.get('served_orders', 0.0))
+    total_demand = float(info.get('total_demand', 0.0))
+    if total_demand <= 0:
+        return np.nan
     base_service_rate = served_orders / max(total_demand, 1)
 
     # 车队健康度（平均电量）
@@ -187,8 +210,8 @@ def compute_dispatch_efficiency(env, info):
     Returns:
         float: 调度效率（订单数/距离），越高越好
     """
-    rld = info.get('rld', 0.0)
-    served_orders = sum(sum(row) for row in info['demand_orders']) if 'demand_orders' in info and info['demand_orders'] is not None else 0
+    rld = float(info.get('rld', 0.0))
+    served_orders = float(info.get('served_orders', 0.0))
 
     if rld == 0:
         # 没有调度但有服务，效率最高
@@ -222,7 +245,7 @@ def compute_effective_dispatch_rate(env, info):
         float: 有效调度率 (0-1)，越高越好
     """
     if 'dispatch_orders' not in info or info['dispatch_orders'] is None:
-        return 0.0
+        return np.nan
 
     dispatch_orders = info['dispatch_orders']
 
@@ -230,10 +253,10 @@ def compute_effective_dispatch_rate(env, info):
     total_dispatches = sum(sum(row) for row in dispatch_orders)
 
     if total_dispatches == 0:
-        return 0.0
+        return np.nan
 
     # 统计服务订单数（假设调度后的服务是有效的）
-    served_orders = sum(sum(row) for row in info['demand_orders']) if 'demand_orders' in info and info['demand_orders'] is not None else 0
+    served_orders = float(info.get('served_orders', 0.0))
 
     # 有效调度率 = 服务订单数 / 总调度次数
     # 注意：这是简化版，理想情况下应该追踪每次调度是否带来服务
@@ -263,13 +286,13 @@ def compute_dispatch_roi(env, info):
     Returns:
         float: 调度ROI，越高越好
     """
-    rld = info.get('rld', 0.0)
+    rld = float(info.get('rld', 0.0))
 
     if rld == 0:
-        return 0.0
+        return np.nan
 
     # 服务收益（简化：假设每个订单收益相同）
-    served_orders = sum(sum(row) for row in info['demand_orders']) if 'demand_orders' in info and info['demand_orders'] is not None else 0
+    served_orders = float(info.get('served_orders', 0.0))
     service_revenue = served_orders * 100  # 假设每单100收益
 
     # 调度成本（简化：距离 × 单位成本）

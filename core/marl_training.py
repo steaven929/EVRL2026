@@ -15,7 +15,10 @@ def _aggregate_episode_metric(values):
     if len(values) == 0:
         return 0.0, 0.0
     arr = np.asarray(values, dtype=float)
-    return float(np.mean(arr)), float(arr[-1])
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return 0.0, 0.0
+    return float(np.mean(finite)), float(finite[-1])
 
 # =========2026.2.19修改，MARL Phase-1：多智能体训练循环==========
 def marl_train(env, agent, cfg, path=None):
@@ -83,6 +86,9 @@ def marl_train(env, agent, cfg, path=None):
         ep_reward_raw = 0.0
         ep_step = 0
 
+        if hasattr(env, 'set_epoch'):
+            env.set_epoch(i_ep)
+
         # 重置环境
         global_state = env.reset()
 
@@ -100,6 +106,21 @@ def marl_train(env, agent, cfg, path=None):
             'svc': [],
             'srd': [],
             'service_rate': [],
+        }
+        ep_marl_metric_steps = {
+            'charging_efficiency': [],
+            'vehicle_utilization': [],
+            'fleet_health': [],
+            'zone_coordination': [],
+            'response_readiness': [],
+        }
+        ep_improved_metric_steps = {
+            'weighted_service_rate': [],
+            'effective_service_rate': [],
+            'service_quality_index': [],
+            'dispatch_efficiency': [],
+            'effective_dispatch_rate': [],
+            'dispatch_roi': [],
         }
 
         while not done:
@@ -121,6 +142,10 @@ def marl_train(env, agent, cfg, path=None):
             # =========2026.3.1修改，计算MARL专用指标==========
             marl_metrics = compute_all_metrics(env, info)
             improved_metrics = compute_all_improved_metrics(env, info)
+            for metric_key in ep_marl_metric_steps:
+                ep_marl_metric_steps[metric_key].append(marl_metrics.get(metric_key, np.nan))
+            for metric_key in ep_improved_metric_steps:
+                ep_improved_metric_steps[metric_key].append(improved_metrics.get(metric_key, np.nan))
             # ======修改结束
 
             # 获取下一时刻的局部观测
@@ -172,20 +197,31 @@ def marl_train(env, agent, cfg, path=None):
         service_rate_last_history.append(service_rate_last)
 
         # =========2026.3.1修改，记录MARL专用指标（episode平均）==========
-        charging_efficiency_history.append(marl_metrics.get('charging_efficiency', 0.0))
-        vehicle_utilization_history.append(marl_metrics.get('vehicle_utilization', 0.0))
-        fleet_health_history.append(marl_metrics.get('fleet_health', 0.0))
-        zone_coordination_history.append(marl_metrics.get('zone_coordination', 0.0))
-        response_readiness_history.append(marl_metrics.get('response_readiness', 0.0))
+        charging_efficiency_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['charging_efficiency'])
+        vehicle_utilization_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['vehicle_utilization'])
+        fleet_health_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['fleet_health'])
+        zone_coordination_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['zone_coordination'])
+        response_readiness_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['response_readiness'])
+        charging_efficiency_history.append(charging_efficiency_mean)
+        vehicle_utilization_history.append(vehicle_utilization_mean)
+        fleet_health_history.append(fleet_health_mean)
+        zone_coordination_history.append(zone_coordination_mean)
+        response_readiness_history.append(response_readiness_mean)
         # ======修改结束
 
         # =========2026.3.1修改，记录改进版传统指标==========
-        weighted_service_rate_history.append(improved_metrics.get('weighted_service_rate', 0.0))
-        effective_service_rate_history.append(improved_metrics.get('effective_service_rate', 0.0))
-        service_quality_index_history.append(improved_metrics.get('service_quality_index', 0.0))
-        dispatch_efficiency_history.append(improved_metrics.get('dispatch_efficiency', 0.0))
-        effective_dispatch_rate_history.append(improved_metrics.get('effective_dispatch_rate', 0.0))
-        dispatch_roi_history.append(improved_metrics.get('dispatch_roi', 0.0))
+        weighted_service_rate_mean, _ = _aggregate_episode_metric(ep_improved_metric_steps['weighted_service_rate'])
+        effective_service_rate_mean, _ = _aggregate_episode_metric(ep_improved_metric_steps['effective_service_rate'])
+        service_quality_index_mean, _ = _aggregate_episode_metric(ep_improved_metric_steps['service_quality_index'])
+        dispatch_efficiency_mean, _ = _aggregate_episode_metric(ep_improved_metric_steps['dispatch_efficiency'])
+        effective_dispatch_rate_mean, _ = _aggregate_episode_metric(ep_improved_metric_steps['effective_dispatch_rate'])
+        dispatch_roi_mean, _ = _aggregate_episode_metric(ep_improved_metric_steps['dispatch_roi'])
+        weighted_service_rate_history.append(weighted_service_rate_mean)
+        effective_service_rate_history.append(effective_service_rate_mean)
+        service_quality_index_history.append(service_quality_index_mean)
+        dispatch_efficiency_history.append(dispatch_efficiency_mean)
+        effective_dispatch_rate_history.append(effective_dispatch_rate_mean)
+        dispatch_roi_history.append(dispatch_roi_mean)
         # ======修改结束
 
         # 记录奖励

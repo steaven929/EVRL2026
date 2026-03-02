@@ -27,16 +27,16 @@ def get_args():
     parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=1000,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--train_eps',default=1200,type=int,help="episodes of training") #训练轮数（稳态优先）
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
-    parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
-    parser.add_argument('--critic_lr',default=1e-4,type=float,help="learning rate of critic")  #critic学习率  # 2026.2.20：提高学习率加速学习（1e-5->1e-4）
-    parser.add_argument('--actor_lr',default=5e-5,type=float,help="learning rate of actor")  #actor学习率  # 2026.2.20：提高学习率加速学习（5e-6->5e-5）
+    parser.add_argument('--gamma',default=0.97,type=float,help="discounted factor")  #折扣因子（更稳的长期回报）
+    parser.add_argument('--critic_lr',default=3e-5,type=float,help="learning rate of critic")  #critic学习率（稳态配置）
+    parser.add_argument('--actor_lr',default=2e-5,type=float,help="learning rate of actor")  #actor学习率（稳态配置）
     parser.add_argument('--memory_capacity',default=64000,type=int,help="memory capacity")  #经验池容量
-    parser.add_argument('--batch_size',default=128,type=int)  #批量学习数  # 2026.2.20：减小batch size增加更新频率（256->128）
+    parser.add_argument('--batch_size',default=256,type=int)  #批量学习数（稳态配置）
     parser.add_argument('--target_update',default=2,type=int)  #目标网络更新频率
-    parser.add_argument('--tau',default=5e-4,type=float)  #软更新参数  # 2026.2.20：提高软更新速度（1e-4->5e-4）
+    parser.add_argument('--tau',default=3e-4,type=float)  #软更新参数（稳态配置）
     parser.add_argument('--critic_hidden_dim',default=256,type=int)  #critic的dense层神经元  # 实验18：恢复256
     parser.add_argument('--actor_hidden_dim',default=256,type=int)   #actor的dense层神经元  # 实验18：恢复256
     parser.add_argument('--critic_embed_dim',default=8,type=int)  #critic的embedding层  # 实验18：恢复8
@@ -55,9 +55,9 @@ def get_args():
     parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 单智能体/多智能体模式
     parser.add_argument('--n_agents',default=50,type=int,help="number of agents (zones)")  # 智能体数量（区域数）
     parser.add_argument('--share_policy',default=True,type=bool,help="whether to share policy across agents")  # 是否参数共享
-    parser.add_argument('--policy_delay',default=2,type=int,help="TD3 delayed policy update frequency")
-    parser.add_argument('--target_policy_noise',default=0.1,type=float,help="TD3 target policy smoothing noise std")
-    parser.add_argument('--target_noise_clip',default=0.2,type=float,help="TD3 target policy noise clip")
+    parser.add_argument('--policy_delay',default=3,type=int,help="TD3 delayed policy update frequency")
+    parser.add_argument('--target_policy_noise',default=0.08,type=float,help="TD3 target policy smoothing noise std")
+    parser.add_argument('--target_noise_clip',default=0.15,type=float,help="TD3 target policy noise clip")
     # ======修改结束
     # =========2026.2.13修改，修复命令行参数解析==========
     # 原代码：args = parser.parse_args([])  # 传入空列表会忽略命令行参数！

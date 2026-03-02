@@ -1464,13 +1464,13 @@ class dclily(gym.Env):
                 # ======修改结束
         
         total_demand = np.sum(demand)##0729 计算trb论文指标加入
-        self._last_svc = np.sum(real_reward) / total_demand if total_demand > 0 else 0#0729 计算trb论文指标加入
-        self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0  # 修改
+        served_orders = np.sum(rel_demand)  # 实际服务的订单数
+        service_rate = served_orders / total_demand if total_demand > 0 else 1.0
+        self._last_svc = service_rate
+        self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0
 
         # =========2026.2.14修改，添加服务率惩罚==========
         # 计算服务率：实际服务的订单数 / 总需求数
-        served_orders = np.sum(rel_demand)  # 实际服务的订单数
-        service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
         # 服务率奖励：鼓励提高服务率（正向激励）
         # =========2026.2.24修改，修复奖励失衡：用正向奖励替代惩罚==========
@@ -1677,6 +1677,9 @@ class dclily(gym.Env):
             "srd": self._last_srd,  # 修改
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
             "demand_orders": rel_demand,  # 需求订单矩阵
+            "demand_matrix": demand,  # 原始需求矩阵
+            "served_orders": float(served_orders),
+            "total_demand": float(total_demand),
             "charging_actions": charging_actions,  # 充电动作记录
             "action_table_true": action_table_true,  # RL调度倾向矩阵
             "service_rate": float(service_rate),
