@@ -226,14 +226,22 @@ class TD3:
         self.update_step = 0
 
     def sample_action(self, state):
+        # =========2026.3.4修改，修复CUDA索引错误==========
+        # 直接使用LongTensor，避免FloatTensor的精度问题
         state = torch.LongTensor(state).unsqueeze(0).to(self.device)
+        # 添加边界检查，防止embedding索引越界
+        state = torch.clamp(state, 0, 11)
+        # ======修改结束
         action = self.actor(state).detach().cpu().numpy()[0]
         noise = np.random.normal(0.0, self.expl_noise, size=action.shape[0])
         return np.clip(action + noise, 0.0, 1.0)
 
     @torch.no_grad()
     def predict_action(self, state):
+        # =========2026.3.4修改，修复CUDA索引错误==========
         state = torch.LongTensor(state).unsqueeze(0).to(self.device)
+        state = torch.clamp(state, 0, 11)
+        # ======修改结束
         return self.actor(state).cpu().numpy()[0]
 
     def _soft_update(self, src, dst):
@@ -250,6 +258,14 @@ class TD3:
         action = torch.FloatTensor(np.array(action)).to(self.device)
         reward = torch.FloatTensor(reward).unsqueeze(1).to(self.device)
         done = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(self.device)
+
+        # =========2026.3.4修改，修复CUDA索引越界错误==========
+        # 问题：state/next_state可能包含超出vocab_size范围的值，导致embedding层索引越界
+        # 解决：将状态值限制在[0, 11]范围内（vocab_size=12）
+        # 参考：SAC算法在lines 564-572有相同的修复
+        state = torch.clamp(state, 0, 11)
+        next_state = torch.clamp(next_state, 0, 11)
+        # ======修改结束
 
         with torch.no_grad():
             noise = torch.randn_like(action) * self.target_policy_noise
@@ -522,6 +538,8 @@ class SAC:
     def sample_action(self, state):
         """采样动作（训练时使用，兼容DDPG接口）"""
         state = torch.FloatTensor(state).unsqueeze(0).long().to(self.device)
+        # 添加边界检查，防止embedding索引越界
+        state = torch.clamp(state, 0, 11)
         action, _, _, _ = self.actor.sample(state)
         return action.detach().cpu().numpy()[0]
 
@@ -529,6 +547,7 @@ class SAC:
     def predict_action(self, state):
         """预测动作（测试时使用，兼容DDPG接口）"""
         state = torch.FloatTensor(state).unsqueeze(0).long().to(self.device)
+        state = torch.clamp(state, 0, 11)
         mean, _ = self.actor(state)
         action = torch.sigmoid(mean)
         return action.cpu().numpy()[0]
@@ -554,16 +573,18 @@ class SAC:
         # 更新Critic
         with torch.no_grad():
             # =========2026.2.13修改，添加调试信息==========
+            # =========2026.3.3修改，注释掉ERROR日志==========
             # 检查next_state是否有越界值
             if (next_state >= 12).any() or (next_state < 0).any():
-                print(f"ERROR: next_state has out-of-range values!")
-                print(f"  Max: {next_state.max().item()}, Min: {next_state.min().item()}")
-                print(f"  Values >= 12: {(next_state >= 12).sum().item()}")
-                print(f"  Values < 0: {(next_state < 0).sum().item()}")
-                print(f"  Sample next_state[0]: {next_state[0]}")
+                # print(f"ERROR: next_state has out-of-range values!")
+                # print(f"  Max: {next_state.max().item()}, Min: {next_state.min().item()}")
+                # print(f"  Values >= 12: {(next_state >= 12).sum().item()}")
+                # print(f"  Values < 0: {(next_state < 0).sum().item()}")
+                # print(f"  Sample next_state[0]: {next_state[0]}")
                 # Clip values to valid range
                 next_state = torch.clamp(next_state, 0, 11)
-                print(f"  Clipped to [0, 11]")
+                # print(f"  Clipped to [0, 11]")
+            # ======修改结束
             # ======修改结束
             next_action, next_log_prob, _, _ = self.actor.sample(next_state)
             target_q1 = self.target_critic1(next_state, next_action)

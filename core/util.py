@@ -17,14 +17,14 @@ def get_args():
     parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=1200,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--train_eps',default=2,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.97,type=float,help="discounted factor")  #折扣因子（更稳的长期回报）
     parser.add_argument('--critic_lr',default=3e-5,type=float,help="learning rate of critic")  #critic学习率（稳态配置）
     parser.add_argument('--actor_lr',default=2e-5,type=float,help="learning rate of actor")  #actor学习率（稳态配置）
     parser.add_argument('--memory_capacity',default=64000,type=int,help="memory capacity")  #经验池容量
-    parser.add_argument('--batch_size',default=256,type=int)  #批量学习数（稳态配置）
+    parser.add_argument('--batch_size',default=512,type=int)  #批量学习数  # 2026.3.3修改：提升到512以利用GPU并行
     parser.add_argument('--target_update',default=2,type=int)  #目标网络更新频率
     parser.add_argument('--tau',default=3e-4,type=float)  #软更新参数（稳态配置）
     parser.add_argument('--critic_hidden_dim',default=256,type=int)  #critic的dense层神经元  # 实验18：恢复256
@@ -34,12 +34,12 @@ def get_args():
     parser.add_argument('--sac_alpha',default=0.2,type=float,help="SAC initial temperature")  #SAC温度参数
     parser.add_argument('--sac_alpha_lr',default=1e-4,type=float,help="SAC alpha learning rate")  #SAC alpha学习率
     parser.add_argument('--reward_scale',default=10000.0,type=float,help="reward scaling factor for SAC/DDPG updates")  # 2026.2.20：提高到10000以稳定Q值
-    parser.add_argument('--eval_every',default=20,type=int,help="run deterministic eval every N episodes during training")
+    parser.add_argument('--eval_every',default=50,type=int,help="run deterministic eval every N episodes during training")  # 2026.3.4修改：从20改为50，减少评估次数
     parser.add_argument('--eval_eps',default=3,type=int,help="number of episodes per periodic eval")
     parser.add_argument('--exp_variant',default='a1',type=str,help="experiment variant key used by env")
     parser.add_argument('--reward_mode',default='shaping',type=str,help="reward mode: base or shaping")  # 2026.2.21: 启用shaping模式以包含充电奖励
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
-    parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
+    parser.add_argument('--device',default='cuda',type=str,help="cpu or cuda")  #运算方法  # 2026.3.3修改：启用GPU加速
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
     # =========2026.2.19修改，MARL Phase-1：添加多智能体参数==========
     parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 单智能体/多智能体模式

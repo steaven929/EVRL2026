@@ -20,11 +20,13 @@ def _aggregate_episode_metric(values):
 
 def marl_train(env, agent, cfg, path=None):
     """多智能体训练循环。"""
-    print("开始MARL训练...")
-    print(f"智能体数量: {env.n_agents}")
-    print("局部观测维度: 7 (含agent_id)")
-    print("动作维度: 3 (每个智能体)")
-    print(f"全局状态维度: {env.observation_space.shape[0]}")
+    # =========2026.3.3修改，注释掉详细信息，只保留关键日志==========
+    # print("开始MARL训练...")
+    # print(f"智能体数量: {env.n_agents}")
+    # print("局部观测维度: 7 (含agent_id)")
+    # print("动作维度: 3 (每个智能体)")
+    # print(f"全局状态维度: {env.observation_space.shape[0]}")
+    # ======修改结束
 
     rewards = []
     raw_rewards = []
@@ -112,18 +114,22 @@ def marl_train(env, agent, cfg, path=None):
             next_global_state, reward, done, info = env.step(actions)
             scaled_reward = reward / reward_scale
 
-            for metric_key in ep_metric_steps:
-                if metric_key in info:
-                    ep_metric_steps[metric_key].append(info[metric_key])
-                else:
-                    info_missing_counts[metric_key] += 1
+            # =========2026.3.3修改，减少指标计算频率以加速训练==========
+            # 每5步计算一次指标（而非每步都计算）
+            if ep_step % 5 == 0 or done:
+                for metric_key in ep_metric_steps:
+                    if metric_key in info:
+                        ep_metric_steps[metric_key].append(info[metric_key])
+                    else:
+                        info_missing_counts[metric_key] += 1
 
-            marl_metrics = compute_all_metrics(env, info)
-            improved_metrics = compute_all_improved_metrics(env, info)
-            for metric_key in ep_marl_metric_steps:
-                ep_marl_metric_steps[metric_key].append(marl_metrics.get(metric_key, np.nan))
-            for metric_key in ep_improved_metric_steps:
-                ep_improved_metric_steps[metric_key].append(improved_metrics.get(metric_key, np.nan))
+                marl_metrics = compute_all_metrics(env, info)
+                improved_metrics = compute_all_improved_metrics(env, info)
+                for metric_key in ep_marl_metric_steps:
+                    ep_marl_metric_steps[metric_key].append(marl_metrics.get(metric_key, np.nan))
+                for metric_key in ep_improved_metric_steps:
+                    ep_improved_metric_steps[metric_key].append(improved_metrics.get(metric_key, np.nan))
+            # ======修改结束
 
             next_obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
 
@@ -207,17 +213,16 @@ def marl_train(env, agent, cfg, path=None):
         else:
             ma_rewards.append(ep_reward)
 
-        print(
-            f"{i_ep+1}/{cfg['train_eps']}, "
-            f"Reward(raw/scaled): {ep_reward_raw:.2f}/{ep_reward:.2f}, "
-            f"MA: {ma_rewards[-1]:.2f}, "
-            f"ServiceRate(mean/last): {service_rate_mean:.4f}/{service_rate_last:.4f}, "
-            f"Steps: {ep_step}"
-        )
+        # =========2026.3.3修改，简化日志输出，只保留训练轮数==========
+        if (i_ep + 1) % 50 == 0 or i_ep == 0:  # 每50轮打印一次
+            print(f"Episode: {i_ep+1}/{cfg['train_eps']}")
+        # ======修改结束
 
         if (i_ep + 1) % 100 == 0 and path is not None:
             agent.save_model(path + f'marl_model_ep{i_ep+1}.pth')
-            print(f"模型已保存: {path}marl_model_ep{i_ep+1}.pth")
+            # =========2026.3.3修改，注释掉模型保存日志==========
+            # print(f"模型已保存: {path}marl_model_ep{i_ep+1}.pth")
+            # ======修改结束
 
     res_dic = {
         'rewards': rewards,
@@ -256,7 +261,9 @@ def marl_train(env, agent, cfg, path=None):
 
 def marl_test(env, agent, cfg, path=None):
     """多智能体测试循环。"""
-    print("开始MARL测试...")
+    # =========2026.3.3修改，注释掉测试开始日志==========
+    # print("开始MARL测试...")
+    # ======修改结束
 
     rewards = []
     reward_scale = float(cfg.get('reward_scale', 1.0))
@@ -287,10 +294,14 @@ def marl_test(env, agent, cfg, path=None):
             ep_step += 1
 
         rewards.append(ep_reward)
-        print(f"测试回合：{i_ep+1}/{cfg['test_eps']}，奖励：{ep_reward:.2f}，步数：{ep_step}")
+        # =========2026.3.3修改，注释掉测试回合日志==========
+        # print(f"测试回合：{i_ep+1}/{cfg['test_eps']}，奖励：{ep_reward:.2f}，步数：{ep_step}")
+        # ======修改结束
 
     if path is not None:
         np.save(path + 'marl_test_rewards.npy', rewards)
 
-    print(f"测试完成，平均奖励：{np.mean(rewards):.2f}")
+    # =========2026.3.3修改，注释掉测试完成日志==========
+    # print(f"测试完成，平均奖励：{np.mean(rewards):.2f}")
+    # ======修改结束
     return rewards

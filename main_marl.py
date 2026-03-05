@@ -39,17 +39,19 @@ def main():
     cfg['marl_mode'] = 'multi'
     cfg['n_agents'] = 50  # SIP数据集：50个区域
 
-    print("\n" + "="*80)
-    print("MARL Phase-1: 区域级多智能体强化学习")
-    print("="*80)
-    print(f"模式: {cfg['marl_mode']}")
-    print(f"智能体数量: {cfg['n_agents']}")
-    print(f"参数共享: {cfg.get('share_policy', True)}")
-    print(f"实验分支: {cfg.get('exp_variant', 'a1')}")
-    print(f"奖励模式: {cfg.get('reward_mode', 'base')}")
-    print(f"训练轮数: {cfg['train_eps']}")
-    print(f"测试轮数: {cfg['test_eps']}")
-    print("="*80 + "\n")
+    # =========2026.3.3修改，注释掉启动信息==========
+    # print("\n" + "="*80)
+    # print("MARL Phase-1: 区域级多智能体强化学习")
+    # print("="*80)
+    # print(f"模式: {cfg['marl_mode']}")
+    # print(f"智能体数量: {cfg['n_agents']}")
+    # print(f"参数共享: {cfg.get('share_policy', True)}")
+    # print(f"实验分支: {cfg.get('exp_variant', 'a1')}")
+    # print(f"奖励模式: {cfg.get('reward_mode', 'base')}")
+    # print(f"训练轮数: {cfg['train_eps']}")
+    # print(f"测试轮数: {cfg['test_eps']}")
+    # print("="*80 + "\n")
+    # ======修改结束
 
     # 创建环境和智能体
     env, agent = env_agent_config(cfg)
@@ -59,10 +61,11 @@ def main():
     path = f"./outputs/marl_{curr_time}/"
     os.makedirs(path, exist_ok=True)
 
-    # 训练
-    print("\n" + "="*80)
-    print("开始训练")
-    print("="*80)
+    # =========2026.3.3修改，注释掉训练开始标题==========
+    # print("\n" + "="*80)
+    # print("开始训练")
+    # print("="*80)
+    # ======修改结束
     res_dic = marl_train(env, agent, cfg, path=path)
 
     # 保存所有数据（与main.py一致）
@@ -78,22 +81,32 @@ def main():
         np.save(path + 'svc_history.npy', res_dic['svc_history'])
     if 'srd_history' in res_dic:
         np.save(path + 'srd_history.npy', res_dic['srd_history'])
+    # =========2026.3.3修改，恢复数据保存日志==========
     print(f"数据已保存到: {path}")
-    print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
+    # ======修改结束
+    # =========2026.3.3修改，注释掉Info字段缺失计数==========
+    # print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
+    # ======修改结束
 
     # 保存模型
     agent.save_model(path + 'marl_model_final.pth')
+    # =========2026.3.3修改，恢复模型保存日志==========
     print(f"模型已保存: {path}marl_model_final.pth")
+    # ======修改结束
 
     # 绘制训练曲线
+    # =========2026.3.3修改，恢复绘图日志==========
     print("\n绘制训练曲线...")
+    # ======修改结束
     plot_rewards(res_dic['rewards'], cfg, path=path + 'train_rewards.png', tag='train')
 
     # 绘制Critic Loss曲线
     plot_critic_losses(res_dic['critic_losses'], None, tag="train", save_path=path + "critic_loss_curve.png")
 
     # 生成综合指标图（与main.py一致的8个子图）
+    # =========2026.3.3修改，恢复绘图日志==========
     print("生成综合指标图...")
+    # ======修改结束
     fig, axes = plt.subplots(8, 1, figsize=(10, 20))
 
     # 子图1: Critic Loss
@@ -161,7 +174,9 @@ def main():
     plt.tight_layout()
     plt.savefig(path + 'final_metrics.png', dpi=300, bbox_inches='tight')
     plt.close()
+    # =========2026.3.3修改，恢复保存日志==========
     print(f"综合指标图已保存: {path}final_metrics.png")
+    # ======修改结束
 
     # =========2026.3.2修改，添加MARL专用指标图和对比图==========
     # 保存MARL专用指标数据
@@ -201,7 +216,9 @@ def main():
         np.save(path + 'dispatch_roi_history.npy', res_dic['dispatch_roi_history'])
 
     # 生成MARL专用综合指标图（12个子图）
+    # =========2026.3.3修改，恢复绘图日志==========
     print("生成MARL综合指标图...")
+    # ======修改结束
     fig, axes = plt.subplots(6, 2, figsize=(16, 24))
     axes = axes.flatten()
 
@@ -363,10 +380,14 @@ def main():
     plt.tight_layout()
     plt.savefig(path + 'marl_comprehensive_metrics.png', dpi=150, bbox_inches='tight')
     plt.close()
+    # =========2026.3.3修改，恢复保存日志==========
     print(f"MARL综合指标图已保存: {path}marl_comprehensive_metrics.png")
+    # ======修改结束
 
     # 生成旧版vs新版指标对比图
+    # =========2026.3.3修改，恢复绘图日志==========
     print("生成旧版vs新版指标对比图...")
+    # ======修改结束
     fig, axes = plt.subplots(3, 2, figsize=(16, 18))
     axes = axes.flatten()
 
@@ -464,10 +485,14 @@ def main():
     plt.tight_layout()
     plt.savefig(path + 'metrics_comparison_old_vs_new.png', dpi=150, bbox_inches='tight')
     plt.close()
+    # =========2026.3.3修改，恢复保存日志==========
     print(f"旧版vs新版指标对比图已保存: {path}metrics_comparison_old_vs_new.png")
+    # ======修改结束
 
     # 充电调度关键指标图（论文指标）
+    # =========2026.3.3修改，恢复绘图日志==========
     print("生成充电调度关键指标图...")
+    # ======修改结束
     fig, axes = plt.subplots(3, 2, figsize=(16, 16))
     axes = axes.flatten()
 
@@ -530,19 +555,25 @@ def main():
     plt.tight_layout()
     plt.savefig(path + 'charging_scheduling_metrics.png', dpi=150, bbox_inches='tight')
     plt.close()
+    # =========2026.3.3修改，恢复保存日志==========
     print(f"充电调度关键指标图已保存: {path}charging_scheduling_metrics.png")
+    # ======修改结束
     # ======修改结束
 
     # 测试
-    print("\n" + "="*80)
-    print("开始测试")
-    print("="*80)
+    # =========2026.3.3修改，注释掉测试标题==========
+    # print("\n" + "="*80)
+    # print("开始测试")
+    # print("="*80)
+    # ======修改结束
     test_rewards = marl_test(env, agent, cfg, path=path)
 
+    # =========2026.3.3修改，恢复完成标题==========
     print("\n" + "="*80)
     print("训练完成！")
     print(f"结果保存在: {path}")
     print("="*80)
+    # ======修改结束
 
 if __name__ == "__main__":
     main()

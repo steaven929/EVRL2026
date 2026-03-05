@@ -14,7 +14,8 @@
       "Bash(timeout:*)",
       "Bash(find:*)",
       "Bash(gh repo view:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(pip install:*)"
     ]
   },
   "enabledPlugins": {

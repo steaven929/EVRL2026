@@ -20,8 +20,24 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     # 创建问题实例
     model = gp.Model("Vehicle_Assignment")
     
+    # =========2026.3.3修改，优化Gurobi求解器性能==========
     # 设置输出标志，关闭求解输出
     model.setParam('OutputFlag', 0)
+    # 设置线程数（利用多核CPU）
+    model.setParam('Threads', 4)
+    # 设置MIP求解策略（0=自动，1=快速启发式）
+    model.setParam('MIPFocus', 1)
+    # 设置容差（稍微放宽精度以加速）
+    model.setParam('MIPGap', 0.01)  # 1%的最优性间隙
+    # =========2026.3.4修改，添加时间限制加速求解==========
+    # 设置最大求解时间（秒），避免单次求解过久
+    # 选项1: 不限制时间（最准确，但可能很慢）- 当前使用
+    # 选项2: TimeLimit=10.0（平衡速度和准确性）- 取消下行注释启用
+    # model.setParam('TimeLimit', 10.0)
+    # 选项3: TimeLimit=5.0（最快，但可能影响准确性）
+    # model.setParam('TimeLimit', 5.0)
+    # ======修改结束
+    # ======修改结束
     
     # 创建变量
     car_assignment = [[model.addVar(vtype=GRB.BINARY, name=f'car_assignment_{i}_{j}') for j in range(x)] for i in   #当前区域 → 区域 j的任务
