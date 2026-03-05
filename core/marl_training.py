@@ -109,7 +109,9 @@ def marl_train(env, agent, cfg, path=None):
         while not done:
             add_noise = True
             noise_scale = max(0.1, 0.3 * (1 - i_ep / cfg['train_eps']))
-            actions = agent.sample_action(obs_n, add_noise=add_noise, noise_scale=noise_scale)
+            # =========2026.3.5修改，方案2：传递全局状态给sample_action==========
+            actions = agent.sample_action(obs_n, global_state=global_state, add_noise=add_noise, noise_scale=noise_scale)
+            # ======修改结束
 
             next_global_state, reward, done, info = env.step(actions)
             scaled_reward = reward / reward_scale
@@ -284,7 +286,9 @@ def marl_test(env, agent, cfg, path=None):
         done = False
         info = {}
         while not done:
-            actions = agent.sample_action(obs_n, add_noise=False)
+            # =========2026.3.5修改，方案2：传递全局状态给sample_action==========
+            actions = agent.sample_action(obs_n, global_state=global_state, add_noise=False)
+            # ======修改结束
             next_global_state, reward, done, info = env.step(actions)
             next_obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
 

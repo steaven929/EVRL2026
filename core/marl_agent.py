@@ -63,14 +63,18 @@ class IPPOAgent:
         self.batch_size = batch_size
         self.device = torch.device(device)
 
+        # =========2026.3.5修改，方案2：Actor添加全局状态参数==========
         # 创建网络
         self.actor = SharedActor(
             obs_dim=obs_dim,
             n_agents=n_agents,
             agent_embed_dim=agent_embed_dim,
             hidden_dim=actor_hidden_dim,
-            action_dim=action_dim
+            action_dim=action_dim,
+            global_state_dim=global_state_dim,  # 新增
+            context_dim=32  # 新增：全局上下文维度
         ).to(self.device)
+        # ======修改结束
 
         self.critic = CentralizedCritic(
             global_state_dim=global_state_dim,
@@ -100,12 +104,13 @@ class IPPOAgent:
         # 损失函数 - 使用Huber Loss对大误差不敏感（P0修复）
         self.critic_criterion = nn.SmoothL1Loss()  # Huber Loss
 
-    def sample_action(self, obs_n, add_noise=False, noise_scale=0.1):
+    def sample_action(self, obs_n, global_state=None, add_noise=False, noise_scale=0.1):
         """
         采样联合动作
 
         Args:
             obs_n: numpy array, shape (n_agents, obs_dim+1) - 所有智能体的局部观测（含agent_id）
+            global_state: numpy array, shape (global_state_dim,) - 全局状态（可选）
             add_noise: 是否添加探索噪声
             noise_scale: 噪声尺度
 
@@ -120,9 +125,16 @@ class IPPOAgent:
         obs_tensor = torch.FloatTensor(obs).to(self.device)
         agent_ids_tensor = torch.LongTensor(agent_ids).to(self.device)
 
+        # =========2026.3.5修改，方案2：传递全局状态==========
+        global_state_tensor = None
+        if global_state is not None:
+            # 扩展全局状态到batch维度
+            global_state_tensor = torch.FloatTensor(global_state).unsqueeze(0).repeat(self.n_agents, 1).to(self.device)
+        # ======修改结束
+
         # 前向传播
         with torch.no_grad():
-            actions = self.actor(obs_tensor, agent_ids_tensor)  # (n_agents, action_dim)
+            actions = self.actor(obs_tensor, agent_ids_tensor, global_state_tensor)  # (n_agents, action_dim)
 
         # 转换为numpy
         actions = actions.cpu().numpy()
@@ -164,11 +176,13 @@ class IPPOAgent:
             next_obs = next_obs_n_batch[:, :, :self.obs_dim]  # (batch, n_agents, obs_dim)
             next_agent_ids = next_obs_n_batch[:, :, self.obs_dim].long()  # (batch, n_agents)
 
+            # =========2026.3.5修改，方案2：传递全局状态给Actor==========
             # 为每个agent采样next action
             next_actions_list = []
             for i in range(self.n_agents):
-                next_action_i = self.actor(next_obs[:, i, :], next_agent_ids[:, i])  # (batch, action_dim)
+                next_action_i = self.actor(next_obs[:, i, :], next_agent_ids[:, i], next_global_state_batch)  # (batch, action_dim)
                 next_actions_list.append(next_action_i)
+            # ======修改结束
             next_joint_action = torch.stack(next_actions_list, dim=1)  # (batch, n_agents, action_dim)
             next_joint_action_flat = next_joint_action.reshape(next_joint_action.shape[0], -1)  # (batch, n_agents*action_dim)
 
@@ -194,11 +208,13 @@ class IPPOAgent:
         obs = obs_n_batch[:, :, :self.obs_dim]  # (batch, n_agents, obs_dim)
         agent_ids = obs_n_batch[:, :, self.obs_dim].long()  # (batch, n_agents)
 
+        # =========2026.3.5修改，方案2：传递全局状态给Actor==========
         # 为每个agent采样action
         actions_list = []
         for i in range(self.n_agents):
-            action_i = self.actor(obs[:, i, :], agent_ids[:, i])  # (batch, action_dim)
+            action_i = self.actor(obs[:, i, :], agent_ids[:, i], global_state_batch)  # (batch, action_dim)
             actions_list.append(action_i)
+        # ======修改结束
         joint_action = torch.stack(actions_list, dim=1)  # (batch, n_agents, action_dim)
         joint_action_flat = joint_action.reshape(joint_action.shape[0], -1)  # (batch, n_agents*action_dim)
 
