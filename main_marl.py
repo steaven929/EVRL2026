@@ -56,9 +56,10 @@ def main():
     # 创建环境和智能体
     env, agent = env_agent_config(cfg)
 
-    # 设置保存路径
+    # 设置保存路径（包含训练轮数）
     curr_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = f"./outputs/marl_{curr_time}/"
+    train_eps = cfg.get('train_eps', 0)
+    path = f"./outputs/marl_{train_eps}ep_{curr_time}/"
     os.makedirs(path, exist_ok=True)
 
     # =========2026.3.3修改，注释掉训练开始标题==========
@@ -214,6 +215,38 @@ def main():
         np.save(path + 'effective_dispatch_rate_history.npy', res_dic['effective_dispatch_rate_history'])
     if 'dispatch_roi_history' in res_dic:
         np.save(path + 'dispatch_roi_history.npy', res_dic['dispatch_roi_history'])
+
+    # =========2026.3.6新增，保存训练元数据用于对比分析==========
+    import json
+    import time
+    metadata = {
+        'algo_name': 'MARL',
+        'seed': cfg['seed'],
+        'train_eps': cfg['train_eps'],
+        'n_agents': cfg.get('n_agents', 50),
+        'batch_size': cfg['batch_size'],
+        'actor_lr': cfg.get('actor_lr', 'N/A'),
+        'critic_lr': cfg.get('critic_lr', 'N/A'),
+        'gamma': cfg['gamma'],
+        'tau': cfg.get('tau', 'N/A'),
+        'memory_capacity': cfg['memory_capacity'],
+        'obs_dim': cfg.get('obs_dim', 6),
+        'action_dim': cfg.get('action_dim', 3),
+        'global_state_dim': cfg.get('global_state_dim', 251),
+        'timestamp': time.strftime('%Y%m%d-%H%M%S'),
+        'total_episodes': len(res_dic['rewards']),
+        'mean_reward': float(np.mean(res_dic['rewards'])),
+        'max_reward': float(np.max(res_dic['rewards'])),
+        'final_reward': float(res_dic['rewards'][-1]),
+        'std_reward': float(np.std(res_dic['rewards'])),
+        'mean_zone_coordination': float(np.mean(res_dic.get('zone_coordination_history', [0]))),
+        'mean_response_readiness': float(np.mean(res_dic.get('response_readiness_history', [0]))),
+        'mean_fleet_health': float(np.mean(res_dic.get('fleet_health_history', [0]))),
+    }
+    with open(path + 'training_metadata.json', 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"训练元数据已保存到: {path}training_metadata.json")
+    # ======修改结束
 
     # 生成MARL专用综合指标图（12个子图）
     # =========2026.3.3修改，恢复绘图日志==========

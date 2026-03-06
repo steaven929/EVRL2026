@@ -999,7 +999,17 @@ def _generate_statistical_report(per_run_rows, output_root: Path, stamp: str):
 
 
 def _run_single_algo(workdir: Path, output_root: Path, algo: str, seed: int, extra_args):
-    run_dir = output_root / f"single_{algo.lower()}_seed{seed}"
+    # 从 extra_args 中提取训练轮数
+    train_eps = 700  # 默认值
+    for i, arg in enumerate(extra_args):
+        if arg == '--train_eps' and i + 1 < len(extra_args):
+            try:
+                train_eps = int(extra_args[i + 1])
+            except ValueError:
+                pass
+            break
+
+    run_dir = output_root / f"single_{algo.lower()}_{train_eps}ep_seed{seed}"
     run_dir.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "main.py", "--algo_name", algo, "--seed", str(seed)] + extra_args
     print(f"[RUN] {' '.join(cmd)}")
@@ -1011,6 +1021,7 @@ def _run_single_algo(workdir: Path, output_root: Path, algo: str, seed: int, ext
         "runner": "main.py",
         "algo": algo,
         "seed": seed,
+        "train_eps": train_eps,
         "command": cmd,
         "returncode": proc.returncode,
         "elapsed_sec": elapsed,
@@ -1028,7 +1039,17 @@ def _run_single_algo(workdir: Path, output_root: Path, algo: str, seed: int, ext
 
 
 def _run_marl(workdir: Path, output_root: Path, label: str, seed: int, extra_args):
-    run_dir = output_root / f"marl_{label.lower()}_seed{seed}"
+    # 从 extra_args 中提取训练轮数
+    train_eps = 700  # 默认值
+    for i, arg in enumerate(extra_args):
+        if arg == '--train_eps' and i + 1 < len(extra_args):
+            try:
+                train_eps = int(extra_args[i + 1])
+            except ValueError:
+                pass
+            break
+
+    run_dir = output_root / f"marl_{label.lower()}_{train_eps}ep_seed{seed}"
     run_dir.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "main_marl.py", "--seed", str(seed)] + extra_args
     print(f"[RUN] {' '.join(cmd)}")
@@ -1040,6 +1061,7 @@ def _run_marl(workdir: Path, output_root: Path, label: str, seed: int, extra_arg
         "runner": "main_marl.py",
         "algo": label,
         "seed": seed,
+        "train_eps": train_eps,
         "command": cmd,
         "returncode": proc.returncode,
         "elapsed_sec": elapsed,

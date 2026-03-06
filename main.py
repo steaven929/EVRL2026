@@ -81,6 +81,33 @@ np.save('srd_history.npy', res_dic['srd_history'])  # 修改
 print(f"Loss数据和指标已保存")  # 修改
 print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
 
+# =========2026.3.6新增，保存训练元数据用于对比分析==========
+import json
+import time
+metadata = {
+    'algo_name': cfg['algo_name'],
+    'seed': cfg['seed'],
+    'train_eps': cfg['train_eps'],
+    'batch_size': cfg['batch_size'],
+    'actor_lr': cfg.get('actor_lr', cfg.get('lr', 'N/A')),
+    'critic_lr': cfg.get('critic_lr', cfg.get('lr', 'N/A')),
+    'gamma': cfg['gamma'],
+    'tau': cfg.get('tau', 'N/A'),
+    'memory_capacity': cfg['memory_capacity'],
+    'n_states': cfg['n_states'],
+    'n_actions': cfg['n_actions'],
+    'timestamp': time.strftime('%Y%m%d-%H%M%S'),
+    'total_episodes': len(res_dic['rewards']),
+    'mean_reward': float(np.mean(res_dic['rewards'])),
+    'max_reward': float(np.max(res_dic['rewards'])),
+    'final_reward': float(res_dic['rewards'][-1]),
+    'std_reward': float(np.std(res_dic['rewards'])),
+}
+with open('training_metadata.json', 'w') as f:
+    json.dump(metadata, f, indent=2)
+print(f"训练元数据已保存到: training_metadata.json")
+# ======修改结束
+
 # =========2026.1.31修改，保存训练好的模型==========
 agent.save_model('trained_model.pth')
 print(f"训练完成，模型已保存到: trained_model.pth")
