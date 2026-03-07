@@ -3,7 +3,7 @@ Flexible Algorithm Comparison Visualization Script
 Usage:
     python plot_flexible_comparison.py --algos SAC TD3 MARL
     python plot_flexible_comparison.py --algos DDPG SAC --output ddpg_vs_sac.png
-    python plot_flexible_comparison.py --paths outputs/sac_seed7 outputs/td3_seed7
+    python plot_flexible_comparison.py --paths output/sac_seed7 output/td3_seed7
 """
 
 import argparse
@@ -140,8 +140,9 @@ def plot_comparison(algos_data, output_path='comparison.png'):
     ax = fig.add_subplot(gs[1, 0])
     data_to_plot = [data['rewards'] for data in algos_data.values()]
     labels = list(algos_data.keys())
-    bp = ax.boxplot(data_to_plot, tick_labels=labels, patch_artist=True)
-    for patch, color in zip(bp['boxes'], plt.cm.Set3.colors[:len(labels)]):
+    bp = ax.boxplot(data_to_plot, labels=labels, patch_artist=True)
+    set3_colors = plt.get_cmap('Set3').colors
+    for patch, color in zip(bp['boxes'], set3_colors[:len(labels)]):
         patch.set_facecolor(color)
     ax.set_ylabel('Reward')
     ax.set_title('Distribution', fontsize=11, fontweight='bold')
@@ -229,7 +230,7 @@ def plot_comparison(algos_data, output_path='comparison.png'):
     print(f"Saved: {output_path}")
 
 
-def find_latest_run(algo_name, base_dir='outputs'):
+def find_latest_run(algo_name, base_dir='output'):
     """Find the latest training run for an algorithm"""
     base_path = Path(base_dir)
 
@@ -269,7 +270,7 @@ def main():
     parser.add_argument('--algos', nargs='+', help='Algorithm names (e.g., SAC TD3 MARL)')
     parser.add_argument('--paths', nargs='+', help='Algorithm data paths')
     parser.add_argument('--output', default='comparison.png', help='Output path')
-    parser.add_argument('--base-dir', default='outputs', help='Base directory for auto-search')
+    parser.add_argument('--base-dir', default='output', help='Base directory for auto-search')
     parser.add_argument('--latest', action='store_true', help='Use latest runs for each algorithm')
     parser.add_argument('--no-timestamp', action='store_true', help='Do not create timestamped folder')
     args = parser.parse_args()
@@ -279,9 +280,9 @@ def main():
     if not args.paths and not args.algos:
         # 方式1：指定具体路径
         args.paths = [
-            'outputs/marl_20260221-143622',
-            'outputs/marl_20260305-192426',
-            'outputs/compare_baseline2/single_sac_seed7'
+            'output/marl_20260221-143622',
+            'output/marl_20260305-192426',
+            'output/compare_baseline2/single_sac_seed7'
         ]
         args.algos = ['MARL-300ep', 'MARL-100ep', 'SAC-700ep']
 
@@ -297,7 +298,7 @@ def main():
     if not args.no_timestamp:
         import datetime
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        output_dir = Path('outputs/comparison_results') / timestamp
+        output_dir = Path('output/comparison_results') / timestamp
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # 如果用户指定了输出文件名，使用它；否则使用默认名
@@ -600,7 +601,8 @@ def plot_convergence_analysis(algos_data, output_dir):
     data_to_plot = [data['rewards'] for data in algos_data.values()]
     labels = list(algos_data.keys())
     bp = ax.boxplot(data_to_plot, labels=labels, patch_artist=True)
-    for patch, color in zip(bp['boxes'], plt.cm.Set3.colors[:len(labels)]):
+    set3_colors = plt.get_cmap('Set3').colors
+    for patch, color in zip(bp['boxes'], set3_colors[:len(labels)]):
         patch.set_facecolor(color)
     ax.set_ylabel('Reward')
     ax.set_title('Reward Distribution', fontweight='bold')
