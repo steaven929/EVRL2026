@@ -1,0 +1,127 @@
+{
+  "result_dir": "F:\\Claude code\\EVRL260207\\results\\paper_aligned_20260307-161851",
+  "alignment_rule": "All comparison plots are truncated to the shortest available episode length among compared algorithms/seeds.",
+  "fig1": {
+    "aligned_episodes": 150,
+    "algorithms": {
+      "MARL": {
+        "n_seeds": 3,
+        "seeds": [
+          11,
+          2,
+          7
+        ],
+        "mean_reward": 1507.6543416064853,
+        "final10_mean": 1802.5446240129252
+      },
+      "SAC": {
+        "n_seeds": 3,
+        "seeds": [
+          11,
+          2,
+          7
+        ],
+        "mean_reward": 1475.0649932371882,
+        "final10_mean": 1558.1835957231292
+      }
+    }
+  },
+  "fig2": {
+    "aligned_episodes": 150,
+    "algorithms": {
+      "MARL": {
+        "n_seeds": 3,
+        "auc_mean": 1507.6543416064853,
+        "auc_std": 196.53481493945623,
+        "final10_mean": 1802.5446240129252,
+        "final10_std": 587.6758877443988
+      },
+      "SAC": {
+        "n_seeds": 3,
+        "auc_mean": 1475.0649932371882,
+        "auc_std": 35.1171593564316,
+        "final10_mean": 1558.1835957231294,
+        "final10_std": 85.19334963457058
+      }
+    }
+  },
+  "fig3": {
+    "aligned_episodes": 10,
+    "algorithms": {
+      "MARL": {
+        "n_seeds": 3,
+        "seeds": [
+          11,
+          2,
+          7
+        ],
+        "mean_reward": 1386.492064695918,
+        "final10_mean": 1386.492064695918
+      },
+      "SAC": {
+        "n_seeds": 2,
+        "seeds": [
+          11,
+          2
+        ],
+        "mean_reward": 1344.5780195622451,
+        "final10_mean": 1344.5780195622451
+      },
+      "TD3": {
+        "n_seeds": 3,
+        "seeds": [
+          11,
+          2,
+          7
+        ],
+        "mean_reward": 1341.2739564244896,
+        "final10_mean": 1341.2739564244896
+      }
+    }
+  },
+  "fig4": {
+    "MARL": {
+      "ok": 17,
+      "total": 17
+    },
+    "SAC": {
+      "ok": 19,
+      "total": 20
+    },
+    "TD3": {
+      "ok": 8,
+      "total": 19
+    },
+    "DDPG": {
+      "ok": 0,
+      "total": 12
+    }
+  },
+  "fig5": {
+    "Service Quality Index": {
+      "episodes": 400,
+      "mean": 0.0008591425987030156,
+      "final10": 0.0
+    },
+    "Zone Coordination": {
+      "episodes": 400,
+      "mean": 0.030787902624774578,
+      "final10": 0.02987437814570314
+    },
+    "Response Readiness": {
+      "episodes": 400,
+      "mean": 0.6821187500000001,
+      "final10": 0.7106666666666666
+    },
+    "Energy Not Served": {
+      "episodes": 400,
+      "mean": 2111.77,
+      "final10": 1017.7666666666667
+    }
+  },
+  "source_runs": {
+    "run_150": "F:\\Claude code\\EVRL260207\\output2\\compare_baseline2\\run_20260304-012548",
+    "run_10": "F:\\Claude code\\EVRL260207\\output2\\compare_baseline2\\run_20260304-173148",
+    "marl_mechanism": "F:\\Claude code\\EVRL260207\\output2\\marl_20260305-204126"
+  }
+}
