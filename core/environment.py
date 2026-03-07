@@ -116,7 +116,10 @@ def env_agent_config(cfg):
         all_seed(env,seed=cfg['seed'])
     n_states = env.observation_space.shape[0]
     n_actions = env.action_space.shape[0]
-    cfg.update({"n_states":n_states,"n_actions":n_actions}) # 更新n_states和n_actions到cfg参数中
+    state_vocab_size = 64
+    if hasattr(env.observation_space, 'nvec'):
+        state_vocab_size = int(np.max(env.observation_space.nvec))
+    cfg.update({"n_states":n_states,"n_actions":n_actions, "state_vocab_size": state_vocab_size}) # 更新n_states和n_actions到cfg参数中
 
     # =========2026.2.19修改，MARL Phase-1：支持multi模式==========
     marl_mode = cfg.get('marl_mode', 'single')  # 默认single模式
@@ -178,14 +181,17 @@ def env_agent_config(cfg):
         )
     elif cfg['algo_name'] == 'TD3':
         models = {
-            "actor": Actor(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['actor_hidden_dim']),
-            "critic": Critic(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['critic_hidden_dim']),
-            "critic2": Critic(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['critic_hidden_dim']),
+            "actor": Actor(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['actor_hidden_dim'], vocab_size_override=cfg['state_vocab_size']),
+            "critic": Critic(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['critic_hidden_dim'], vocab_size_override=cfg['state_vocab_size']),
+            "critic2": Critic(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['critic_hidden_dim'], vocab_size_override=cfg['state_vocab_size']),
         }
         memories = {"memory": ReplayBuffer(cfg['memory_capacity'])}
         agent = TD3(models, memories, cfg)
     else:  # DDPG
-        models = {"actor":Actor(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['actor_hidden_dim']),"critic":Critic(n_states,n_actions,embedding_dims=cfg['actor_embed_dim'],hidden_dim=cfg['critic_hidden_dim'])}
+        models = {
+            "actor": Actor(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['actor_hidden_dim'], vocab_size_override=cfg['state_vocab_size']),
+            "critic": Critic(n_states, n_actions, embedding_dims=cfg['actor_embed_dim'], hidden_dim=cfg['critic_hidden_dim'], vocab_size_override=cfg['state_vocab_size']),
+        }
         memories = {"memory":ReplayBuffer(cfg['memory_capacity'])}
         agent = DDPG(models,memories,cfg)
 

@@ -50,12 +50,13 @@ path = config['path']
 training_set_number = config['training_set_number']  
 
 class Actor(nn.Module):
-    def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, init_w=3e-3):
+    def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, init_w=3e-3, vocab_size_override=None):
         super(Actor, self).__init__()
 
         # =========2026.2.11修改，实验11：回滚到单头网络==========
         # 嵌入层，适用于 MultiDiscrete 状态空间
-        self.embedding = nn.Embedding(vocab_size, embedding_dims)
+        effective_vocab_size = int(vocab_size_override) if vocab_size_override is not None else int(vocab_size)
+        self.embedding = nn.Embedding(effective_vocab_size, embedding_dims)
 
         # 全连接层定义
         self.linear1 = nn.Linear(n_states * embedding_dims, hidden_dim)
@@ -84,12 +85,13 @@ class Actor(nn.Module):
         return x
 
 class Critic(nn.Module):
-    def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, init_w=3e-3):
+    def __init__(self, n_states, n_actions, embedding_dims=8, hidden_dim=256, init_w=3e-3, vocab_size_override=None):
         super(Critic, self).__init__()
 
         # 嵌入层，适用于 MultiDiscrete 状态空间
         # =========2026.2.6修改，状态空间增强：使用新词汇表大小==========
-        self.embeddings = nn.Embedding(vocab_size, embedding_dims)
+        effective_vocab_size = int(vocab_size_override) if vocab_size_override is not None else int(vocab_size)
+        self.embeddings = nn.Embedding(effective_vocab_size, embedding_dims)
         # ======修改结束
         self.linearmod = nn.Linear(n_actions, embedding_dims * n_states)
 

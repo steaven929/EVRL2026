@@ -14,7 +14,7 @@ def get_args():
     """ 超参数
     """
     parser = argparse.ArgumentParser(description="hyperparameters")      
-    parser.add_argument('--algo_name',default='DDPG',type=str,help="name of algorithm")#算法名称
+    parser.add_argument('--algo_name',default='TD3',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
     parser.add_argument('--train_eps',default=10,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮

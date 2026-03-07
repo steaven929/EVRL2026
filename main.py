@@ -19,6 +19,7 @@ import core.environment as dclilyenv
 import core.training as dclilytrain
 import numpy as np
 import os
+from datetime import datetime
 
 from gym.envs.registration import register
 
@@ -45,6 +46,19 @@ os.chdir(target_dir)
 cp("..\\" + cfg['data_folder'])
 os.chdir('..')
 
+# 为每次运行创建独立输出目录：时间戳 + 算法名 + 训练轮数
+output_root = os.path.join(current_dir, 'output')
+os.makedirs(output_root, exist_ok=True)
+run_stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+run_dir = os.path.join(output_root, f"{run_stamp}_{str(cfg['algo_name']).upper()}_{int(cfg['train_eps'])}ep")
+os.makedirs(run_dir, exist_ok=True)
+cfg['run_output_dir'] = run_dir
+print(f"运行输出目录: {run_dir}")
+
+
+def out_file(filename):
+    return os.path.join(run_dir, filename)
+
 # 训练
 env, agent = dclilyenv.env_agent_config(cfg)
 
@@ -61,23 +75,23 @@ env, agent = dclilyenv.env_agent_config(cfg)
 res_dic = dclilytrain.train(cfg, env, agent)
 
 # 保存loss数据和指标数据  # 修改
-np.save('critic1_losses.npy', res_dic['critic1_losses'])  # 修改
+np.save(out_file('critic1_losses.npy'), res_dic['critic1_losses'])  # 修改
 if res_dic.get('critic2_losses'):  # 修改
-    np.save('critic2_losses.npy', res_dic['critic2_losses'])  # 修改
+    np.save(out_file('critic2_losses.npy'), res_dic['critic2_losses'])  # 修改
 if res_dic.get('actor_losses'):  # 修改
-    np.save('actor_losses.npy', res_dic['actor_losses'])  # 修改
+    np.save(out_file('actor_losses.npy'), res_dic['actor_losses'])  # 修改
 if res_dic.get('q_values'):  # 修改
-    np.save('q_values.npy', res_dic['q_values'])  # 修改
+    np.save(out_file('q_values.npy'), res_dic['q_values'])  # 修改
 if res_dic.get('target_q_values'):  # 修改
-    np.save('target_q_values.npy', res_dic['target_q_values'])  # 修改
-np.save('rewards.npy', res_dic['rewards'])  # 修改：保存 episode rewards
+    np.save(out_file('target_q_values.npy'), res_dic['target_q_values'])  # 修改
+np.save(out_file('rewards.npy'), res_dic['rewards'])  # 修改：保存 episode rewards
 if res_dic.get('raw_rewards'):
-    np.save('raw_rewards.npy', res_dic['raw_rewards'])
-np.save('eval_rewards.npy', res_dic.get('eval_rewards', []))
-np.save('eval_episodes.npy', res_dic.get('eval_episodes', []))
-np.save('rld_history.npy', res_dic['rld_history'])  # 修改
-np.save('svc_history.npy', res_dic['svc_history'])  # 修改
-np.save('srd_history.npy', res_dic['srd_history'])  # 修改
+    np.save(out_file('raw_rewards.npy'), res_dic['raw_rewards'])
+np.save(out_file('eval_rewards.npy'), res_dic.get('eval_rewards', []))
+np.save(out_file('eval_episodes.npy'), res_dic.get('eval_episodes', []))
+np.save(out_file('rld_history.npy'), res_dic['rld_history'])  # 修改
+np.save(out_file('svc_history.npy'), res_dic['svc_history'])  # 修改
+np.save(out_file('srd_history.npy'), res_dic['srd_history'])  # 修改
 print(f"Loss数据和指标已保存")  # 修改
 print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
 
@@ -103,19 +117,24 @@ metadata = {
     'final_reward': float(res_dic['rewards'][-1]),
     'std_reward': float(np.std(res_dic['rewards'])),
 }
-with open('training_metadata.json', 'w') as f:
+with open(out_file('training_metadata.json'), 'w') as f:
     json.dump(metadata, f, indent=2)
-print(f"训练元数据已保存到: training_metadata.json")
+print(f"训练元数据已保存到: {out_file('training_metadata.json')}")
 # ======修改结束
 
 # =========2026.1.31修改，保存训练好的模型==========
-agent.save_model('trained_model.pth')
-print(f"训练完成，模型已保存到: trained_model.pth")
+agent.save_model(out_file('trained_model.pth'))
+print(f"训练完成，模型已保存到: {out_file('trained_model.pth')}")
 # ======修改结束
 
 plot_rewards(res_dic['rewards'], cfg, tag="train")
 
-plot_critic_losses(res_dic['critic1_losses'], res_dic.get('critic2_losses', None), tag="train", save_path="critic_loss_curve.png")
+plot_critic_losses(
+    res_dic['critic1_losses'],
+    res_dic.get('critic2_losses', None),
+    tag="train",
+    save_path=out_file("critic_loss_curve.png")
+)
 
 # 生成包含7个子图的综合指标图  # 修改
 import matplotlib  # 修改
@@ -207,8 +226,8 @@ axes[7].legend(loc='upper right')  # 修改
 axes[7].grid(True, alpha=0.3)  # 修改
 
 plt.tight_layout()  # 修改
-plt.savefig('final_metrics.png', dpi=300, bbox_inches='tight')  # 修改
-print("综合指标图已保存: final_metrics.png")  # 修改
+plt.savefig(out_file('final_metrics.png'), dpi=300, bbox_inches='tight')  # 修改
+print(f"综合指标图已保存: {out_file('final_metrics.png')}")  # 修改
 plt.close()  # 修改
 
 #plot_vehicle_battery(np.array(res_dic['battery_log'][0]), cfg)
@@ -228,14 +247,15 @@ plt.close()  # 修改
 plot_vehicle_battery_heatmap(
     res_dic['battery_log'],
     title="Battery Heatmap",
-    save_path="battery_heatmap.png" # 明确指定保存路径
+    save_path=out_file("battery_heatmap.png") # 明确指定保存路径
 )
-print("电池热力图已保存: battery_heatmap.png")
+print(f"电池热力图已保存: {out_file('battery_heatmap.png')}")
 
 
 # 测试
 res_dic = dclilytrain.test(cfg, env, agent)
 plot_rewards(res_dic['rewards'], cfg, tag="test")  # 画出结果
+np.save(out_file('test_rewards.npy'), res_dic.get('rewards', []))
 #plot_vehicle_battery(np.array(res_dic['battery_log'][0]), cfg)
 
 # (这一趴貌似是我不小心多加进去的，重复了）
