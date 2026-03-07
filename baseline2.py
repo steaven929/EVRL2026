@@ -61,6 +61,8 @@ def load_algorithm_data(algo_path):
         'q_values': ['q_values.npy'],
         'target_q_values': ['target_q_values.npy'],
         'raw_rewards': ['raw_rewards.npy'],
+        'eval_rewards': ['eval_rewards.npy'],
+        'marl_test_rewards': ['marl_test_rewards.npy', 'test_rewards.npy'],
         'ma_rewards': ['ma_rewards.npy'],
         'svc_history': ['svc_history.npy'],
         'srd_history': ['srd_history.npy'],
@@ -68,6 +70,19 @@ def load_algorithm_data(algo_path):
         'zone_coordination': ['zone_coordination_history.npy'],
         'response_readiness': ['response_readiness_history.npy'],
         'fleet_health': ['fleet_health_history.npy'],
+        'charging_efficiency': ['charging_efficiency_history.npy'],
+        'vehicle_utilization': ['vehicle_utilization_history.npy'],
+        'charger_occupancy_rate': ['charger_occupancy_rate_history.npy'],
+        'charger_queue_delay': ['charger_queue_delay_history.npy'],
+        'energy_not_served': ['energy_not_served_history.npy'],
+        'safety_soc_violation_count': ['safety_soc_violation_count_history.npy'],
+        'charge_shift_success_rate': ['charge_shift_success_rate_history.npy'],
+        'weighted_service_rate': ['weighted_service_rate_history.npy'],
+        'effective_service_rate': ['effective_service_rate_history.npy'],
+        'service_quality_index': ['service_quality_index_history.npy'],
+        'dispatch_efficiency': ['dispatch_efficiency_history.npy'],
+        'effective_dispatch_rate': ['effective_dispatch_rate_history.npy'],
+        'dispatch_roi': ['dispatch_roi_history.npy'],
     }
 
     for key, filenames in optional_files.items():
@@ -89,6 +104,25 @@ def compute_stats(rewards):
         'final_10': np.mean(rewards[-10:]),
         'final_50': np.mean(rewards[-50:]) if len(rewards) >= 50 else np.mean(rewards),
     }
+
+
+def compute_sample_efficiency(rewards, threshold_pct=0.9):
+    if rewards is None or len(rewards) == 0:
+        return np.nan
+    rewards = np.asarray(rewards, dtype=float)
+    target = np.max(rewards) * float(threshold_pct)
+    hit = np.where(rewards >= target)[0]
+    return float(hit[0]) if len(hit) > 0 else float(len(rewards))
+
+
+def compute_auc(rewards):
+    if rewards is None or len(rewards) == 0:
+        return np.nan
+    rewards = np.asarray(rewards, dtype=float)
+    r_min = np.min(rewards)
+    r_max = np.max(rewards)
+    norm = (rewards - r_min) / (r_max - r_min + 1e-8)
+    return float(np.trapz(norm) / len(norm))
 
 
 def plot_comparison(algos_data, output_path='comparison.png'):
@@ -141,7 +175,7 @@ def plot_comparison(algos_data, output_path='comparison.png'):
     data_to_plot = [data['rewards'] for data in algos_data.values()]
     labels = list(algos_data.keys())
     bp = ax.boxplot(data_to_plot, labels=labels, patch_artist=True)
-    set3_colors = plt.get_cmap('Set3').colors
+    set3_colors = sns.color_palette('Set3', len(labels))
     for patch, color in zip(bp['boxes'], set3_colors[:len(labels)]):
         patch.set_facecolor(color)
     ax.set_ylabel('Reward')
@@ -226,6 +260,232 @@ def plot_comparison(algos_data, output_path='comparison.png'):
     algo_list = ', '.join(algos_data.keys())
     plt.suptitle(f'Comparison: {algo_list}', fontsize=14, fontweight='bold')
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_summary_bars(algos_data, output_dir):
+    """Generate 2x2 summary bars similar to baseline2.0."""
+    algos = list(algos_data.keys())
+    if not algos:
+        return
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
+
+    specs = [
+        ('Reward Last-50 Mean', 'reward_last50', 'higher'),
+        ('Eval Mean (single-agent)', 'eval_mean', 'higher'),
+        ('SVC Last-10 Mean', 'svc_last10', 'higher'),
+        ('RLD Last-10 Mean', 'rld_last10', 'lower'),
+    ]
+
+    metric_values = {algo: {} for algo in algos}
+    for algo, data in algos_data.items():
+        rewards = np.asarray(data.get('rewards', []), dtype=float)
+        eval_rewards = np.asarray(data.get('eval_rewards', []), dtype=float)
+        svc = np.asarray(data.get('svc_history', []), dtype=float)
+        rld = np.asarray(data.get('rld_history', []), dtype=float)
+        metric_values[algo]['reward_last50'] = float(np.mean(rewards[-50:])) if rewards.size else np.nan
+        metric_values[algo]['eval_mean'] = float(np.mean(eval_rewards)) if eval_rewards.size else np.nan
+        metric_values[algo]['svc_last10'] = float(np.mean(svc[-10:])) if svc.size else np.nan
+        metric_values[algo]['rld_last10'] = float(np.mean(rld[-10:])) if rld.size else np.nan
+
+    x = np.arange(len(algos))
+    for ax, (title, key, pref) in zip(axes, specs):
+        vals = [metric_values[a].get(key, np.nan) for a in algos]
+        bars = ax.bar(x, vals)
+        valid = [v for v in vals if not np.isnan(v)]
+        if valid:
+            best_idx = int(np.nanargmax(vals) if pref == 'higher' else np.nanargmin(vals))
+            bars[best_idx].set_edgecolor('red')
+            bars[best_idx].set_linewidth(3)
+        ax.set_xticks(x)
+        ax.set_xticklabels(algos, rotation=15, ha='right')
+        ax.set_title(f'{title} ({pref} is better)')
+        ax.grid(True, alpha=0.3, axis='y')
+
+    plt.tight_layout()
+    output_path = output_dir / 'comparison_summary.png'
+    plt.savefig(output_path, dpi=180, bbox_inches='tight')
+    plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_radar_chart(algos_data, output_dir):
+    """Generate multi-dimensional normalized radar chart."""
+    algos = list(algos_data.keys())
+    if not algos:
+        return
+
+    dims = [
+        ('reward_last50', 'Reward', 'higher'),
+        ('svc_last10', 'Service Rate', 'higher'),
+        ('srd_last10', 'Service Quality', 'higher'),
+        ('rld_last10', 'Efficiency', 'lower'),
+        ('reward_std', 'Stability', 'lower'),
+        ('conv_ep', 'Convergence', 'lower'),
+    ]
+
+    matrix = []
+    for _, data in algos_data.items():
+        rewards = np.asarray(data.get('rewards', []), dtype=float)
+        svc = np.asarray(data.get('svc_history', []), dtype=float)
+        srd = np.asarray(data.get('srd_history', []), dtype=float)
+        rld = np.asarray(data.get('rld_history', []), dtype=float)
+
+        reward_last50 = float(np.mean(rewards[-50:])) if rewards.size else np.nan
+        reward_std = float(np.std(rewards)) if rewards.size else np.nan
+        svc_last10 = float(np.mean(svc[-10:])) if svc.size else np.nan
+        srd_last10 = float(np.mean(srd[-10:])) if srd.size else np.nan
+        rld_last10 = float(np.mean(rld[-10:])) if rld.size else np.nan
+        conv_ep = compute_sample_efficiency(rewards, 0.9)
+
+        matrix.append([reward_last50, svc_last10, srd_last10, rld_last10, reward_std, conv_ep])
+
+    matrix = np.asarray(matrix, dtype=float)
+    norm = np.zeros_like(matrix)
+    for j, (_, _, pref) in enumerate(dims):
+        col = matrix[:, j]
+        valid = ~np.isnan(col)
+        if valid.sum() == 0:
+            continue
+        cmin = np.nanmin(col)
+        cmax = np.nanmax(col)
+        if abs(cmax - cmin) < 1e-8:
+            ncol = np.full_like(col, 0.5, dtype=float)
+        else:
+            ncol = (col - cmin) / (cmax - cmin)
+        if pref == 'lower':
+            ncol = 1.0 - ncol
+        norm[:, j] = ncol
+
+    labels = [d[1] for d in dims]
+    n = len(labels)
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
+    angles += angles[:1]
+
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(projection='polar'))
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    markers = ['o', 's', '^', 'D', 'P', 'X']
+
+    for i, algo in enumerate(algos):
+        vals = norm[i].tolist()
+        vals += vals[:1]
+        ax.plot(angles, vals, 'o-', linewidth=2, label=algo,
+                color=colors[i % len(colors)], marker=markers[i % len(markers)], markersize=6)
+        ax.fill(angles, vals, alpha=0.15, color=colors[i % len(colors)])
+
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_ylim(0, 1)
+    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], fontsize=8)
+    ax.grid(True, alpha=0.3)
+    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
+    plt.title('Multi-Dimensional Performance Radar Chart\n(Normalized, Higher is Better)',
+              fontsize=13, fontweight='bold', pad=20)
+
+    output_path = output_dir / 'comparison_radar.png'
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=180, bbox_inches='tight')
+    plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_sample_efficiency(algos_data, output_dir):
+    """Generate sample efficiency and AUC comparison."""
+    algos = list(algos_data.keys())
+    if not algos:
+        return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    rewards_map = {algo: np.asarray(data.get('rewards', []), dtype=float) for algo, data in algos_data.items()}
+    eps90 = [compute_sample_efficiency(rewards_map[a], 0.9) for a in algos]
+    eps95 = [compute_sample_efficiency(rewards_map[a], 0.95) for a in algos]
+
+    x = np.arange(len(algos))
+    width = 0.35
+    bars1 = ax1.bar(x - width / 2, eps90, width, label='90% Performance', alpha=0.8)
+    bars2 = ax1.bar(x + width / 2, eps95, width, label='95% Performance', alpha=0.8)
+    ax1.set_xlabel('Algorithm')
+    ax1.set_ylabel('Episodes Required')
+    ax1.set_title('Sample Efficiency: Episodes to Reach Target Performance')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(algos, rotation=10)
+    ax1.legend()
+    ax1.grid(True, alpha=0.3, axis='y')
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            h = bar.get_height()
+            if np.isfinite(h):
+                ax1.text(bar.get_x() + bar.get_width() / 2, h, f'{int(h)}', ha='center', va='bottom', fontsize=8)
+
+    auc_vals = [compute_auc(rewards_map[a]) for a in algos]
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    bars = ax2.bar(algos, auc_vals, alpha=0.8, color=[colors[i % len(colors)] for i in range(len(algos))])
+    ax2.set_xlabel('Algorithm')
+    ax2.set_ylabel('AUC (Normalized)')
+    ax2.set_title('Learning Curve AUC (Higher is Better)')
+    ax2.grid(True, alpha=0.3, axis='y')
+    for bar in bars:
+        h = bar.get_height()
+        if np.isfinite(h):
+            ax2.text(bar.get_x() + bar.get_width() / 2, h, f'{h:.3f}', ha='center', va='bottom', fontsize=9)
+
+    plt.tight_layout()
+    output_path = output_dir / 'comparison_sample_efficiency.png'
+    plt.savefig(output_path, dpi=180, bbox_inches='tight')
+    plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_business_metrics(algos_data, output_dir):
+    """Generate business metrics bars for SVC/RLD/SRD/Reward."""
+    algos = list(algos_data.keys())
+    if not algos:
+        return
+
+    metrics = [
+        ('Service Rate', 'svc_history', 'higher'),
+        ('Relocation Dist.', 'rld_history', 'lower'),
+        ('Service Quality', 'srd_history', 'higher'),
+        ('Reward (Last 50)', 'rewards', 'higher'),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    x = np.arange(len(algos))
+
+    for ax, (name, key, pref) in zip(axes, metrics):
+        vals = []
+        for algo in algos:
+            arr = np.asarray(algos_data[algo].get(key, []), dtype=float)
+            if arr.size == 0:
+                vals.append(np.nan)
+            else:
+                if key == 'rewards':
+                    vals.append(float(np.mean(arr[-50:])))
+                else:
+                    vals.append(float(np.mean(arr[-10:])))
+
+        bars = ax.bar(x, vals, color=[colors[i % len(colors)] for i in range(len(algos))], alpha=0.8)
+        valid = [v for v in vals if not np.isnan(v)]
+        if valid:
+            best_idx = int(np.nanargmax(vals) if pref == 'higher' else np.nanargmin(vals))
+            bars[best_idx].set_edgecolor('red')
+            bars[best_idx].set_linewidth(3)
+        ax.set_xticks(x)
+        ax.set_xticklabels(algos, rotation=10)
+        ax.set_title(f'{name} Comparison ({pref} is better)')
+        ax.grid(True, alpha=0.3, axis='y')
+
+    plt.suptitle('Business Metrics Comparison', fontsize=16, fontweight='bold', y=0.995)
+    plt.tight_layout()
+    output_path = output_dir / 'comparison_business_metrics.png'
+    plt.savefig(output_path, dpi=180, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_path}")
 
@@ -397,6 +657,26 @@ def main():
             plot_convergence_analysis(algos_data, output_dir)
         except Exception as e:
             print(f"Warning: Could not generate convergence analysis: {e}")
+
+        try:
+            plot_summary_bars(algos_data, output_dir)
+        except Exception as e:
+            print(f"Warning: Could not generate summary bars: {e}")
+
+        try:
+            plot_radar_chart(algos_data, output_dir)
+        except Exception as e:
+            print(f"Warning: Could not generate radar chart: {e}")
+
+        try:
+            plot_sample_efficiency(algos_data, output_dir)
+        except Exception as e:
+            print(f"Warning: Could not generate sample efficiency: {e}")
+
+        try:
+            plot_business_metrics(algos_data, output_dir)
+        except Exception as e:
+            print(f"Warning: Could not generate business metrics: {e}")
 
     # 保存对比元数据
     if not args.no_timestamp:
@@ -601,7 +881,7 @@ def plot_convergence_analysis(algos_data, output_dir):
     data_to_plot = [data['rewards'] for data in algos_data.values()]
     labels = list(algos_data.keys())
     bp = ax.boxplot(data_to_plot, labels=labels, patch_artist=True)
-    set3_colors = plt.get_cmap('Set3').colors
+    set3_colors = sns.color_palette('Set3', len(labels))
     for patch, color in zip(bp['boxes'], set3_colors[:len(labels)]):
         patch.set_facecolor(color)
     ax.set_ylabel('Reward')

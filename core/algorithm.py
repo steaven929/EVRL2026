@@ -11,6 +11,7 @@ import torch.optim as optim
 import numpy as np
 import math
 import copy
+import random
 
 class DDPG:
     def __init__(self, models, memories, cfg):
@@ -122,6 +123,96 @@ class DDPG:
         self.target_critic.load_state_dict(checkpoint['target_critic'])
         print(f"模型已从 {path} 加载")
     # ======修改结束
+
+
+class PureDDPG:
+    """Vanilla DDPG baseline without extra stabilization tricks."""
+
+    def __init__(self, models, memories, cfg):
+        self.device = torch.device(cfg['device'])
+        self.critic = models['critic'].to(self.device)
+        self.target_critic = models['critic'].to(self.device)
+        self.actor = models['actor'].to(self.device)
+        self.target_actor = models['actor'].to(self.device)
+
+        for target_param, param in zip(self.target_critic.parameters(), self.critic.parameters()):
+            target_param.data.copy_(param.data)
+        for target_param, param in zip(self.target_actor.parameters(), self.actor.parameters()):
+            target_param.data.copy_(param.data)
+
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=cfg['critic_lr'])
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=cfg['actor_lr'])
+        self.memory = memories['memory']
+        self.batch_size = cfg['batch_size']
+        self.gamma = cfg['gamma']
+        self.tau = cfg['tau']
+
+    def sample_action(self, state):
+        state = torch.LongTensor(state).unsqueeze(0).to(self.device)
+        action = self.actor(state)
+        return action.detach().cpu().numpy()[0]
+
+    @torch.no_grad()
+    def predict_action(self, state):
+        state = torch.LongTensor(state).unsqueeze(0).to(self.device)
+        action = self.actor(state)
+        return action.cpu().numpy()[0]
+
+    def update(self):
+        if len(self.memory) < self.batch_size:
+            return None
+
+        state, action, reward, next_state, done = self.memory.sample(self.batch_size)
+        state = torch.LongTensor(np.array(state)).to(self.device)
+        next_state = torch.LongTensor(np.array(next_state)).to(self.device)
+        action = torch.FloatTensor(np.array(action)).to(self.device)
+        reward = torch.FloatTensor(reward).unsqueeze(1).to(self.device)
+        done = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(self.device)
+
+        next_action = self.target_actor(next_state)
+        target_value = self.target_critic(next_state, next_action.detach())
+        expected_value = reward + (1.0 - done) * self.gamma * target_value
+
+        actual_value = self.critic(state, action)
+        critic_loss = nn.MSELoss()(actual_value, expected_value.detach())
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
+
+        policy_q_values = self.critic(state, self.actor(state))
+        actor_loss = -policy_q_values.mean()
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        self.actor_optimizer.step()
+
+        for target_param, param in zip(self.target_critic.parameters(), self.critic.parameters()):
+            target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
+        for target_param, param in zip(self.target_actor.parameters(), self.actor.parameters()):
+            target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
+
+        return {
+            "critic1_loss": float(critic_loss.item()),
+            "actor_loss": float(-policy_q_values.mean().item()),
+            "q_value": float(policy_q_values.mean().item()),
+            "target_q": float(target_value.mean().item()),
+        }
+
+    def save_model(self, path):
+        torch.save({
+            'actor': self.actor.state_dict(),
+            'critic': self.critic.state_dict(),
+            'target_actor': self.target_actor.state_dict(),
+            'target_critic': self.target_critic.state_dict(),
+        }, path)
+        print(f"模型已保存到: {path}")
+
+    def load_model(self, path):
+        checkpoint = torch.load(path, map_location=self.device)
+        self.actor.load_state_dict(checkpoint['actor'])
+        self.critic.load_state_dict(checkpoint['critic'])
+        self.target_actor.load_state_dict(checkpoint['target_actor'])
+        self.target_critic.load_state_dict(checkpoint['target_critic'])
+        print(f"模型已从 {path} 加载")
 
 
 # 其他的算法可以自己按照参考书写

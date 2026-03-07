@@ -88,8 +88,10 @@ def encode_custom_action(zone_to_counts, zone_from_counts=None, charge_pref=None
 
 def train(cfg, env, agent):
     print("开始训练！")
-    is_sac = str(cfg.get('algo_name', '')).upper() == 'SAC'
-    is_td3 = str(cfg.get('algo_name', '')).upper() == 'TD3'
+    algo_name = str(cfg.get('algo_name', '')).upper()
+    is_sac = algo_name == 'SAC'
+    is_td3 = algo_name == 'TD3'
+    is_pure_ddpg = algo_name == 'DDPG_PURE'
     exp_variant = str(cfg.get('exp_variant', 'a1')).lower()
     if hasattr(env, 'set_experiment_variant'):
         env.set_experiment_variant(exp_variant)
@@ -153,7 +155,7 @@ def train(cfg, env, agent):
 
             # =========2026.2.7修改，方案D2：充电维度噪声增强==========
             # 前20轮训练，对充电维度添加额外噪声（按动作维度动态切片）
-            if (not is_sac) and (not is_td3) and i_ep < 20:
+            if (not is_sac) and (not is_td3) and (not is_pure_ddpg) and i_ep < 20:
                 charge_slice = _charge_slice_from_action(action)
                 charge_dim = charge_slice.stop - charge_slice.start
                 charging_noise = np.random.uniform(-0.3, 0.3, size=charge_dim)
