@@ -1,0 +1,19 @@
+{
+  "algo_name": "TD3",
+  "seed": 2,
+  "train_eps": 1000,
+  "batch_size": 512,
+  "actor_lr": 2e-05,
+  "critic_lr": 3e-05,
+  "gamma": 0.97,
+  "tau": 0.0003,
+  "memory_capacity": 64000,
+  "n_states": 251,
+  "n_actions": 150,
+  "timestamp": "20260308-180556",
+  "total_episodes": 1000,
+  "mean_reward": 1603.8970687085716,
+  "max_reward": 2522.3239280000007,
+  "final_reward": 1863.4812160000004,
+  "std_reward": 335.2306173601669
+}
