@@ -7,6 +7,7 @@ Created on Tue Sep  3 19:24:55 2024
 
 import numpy as np
 import random
+from core.marl_metrics import compute_all_metrics
 
 
 def _charge_slice_from_action(action):
@@ -36,6 +37,30 @@ def _evaluate_policy(cfg, env, agent, num_episodes):
                 break
         rewards.append(ep_reward)
     return float(np.mean(rewards)) if rewards else 0.0
+
+
+def _episode_nanmean(arr):
+    arr = np.asarray(arr, dtype=float)
+    if arr.size == 0 or not np.any(np.isfinite(arr)):
+        return np.nan
+    with np.errstate(invalid='ignore'):
+        return float(np.nanmean(arr))
+
+
+def _safe_nanmean(arr, axis, fallback_shape):
+    arr = np.asarray(arr, dtype=float)
+    if arr.size == 0 or not np.any(np.isfinite(arr)):
+        return np.full(fallback_shape, np.nan, dtype=float)
+    finite = np.isfinite(arr)
+    counts = np.sum(finite, axis=axis)
+    summed = np.sum(np.where(finite, arr, 0.0), axis=axis)
+    denom = np.where(counts > 0, counts, 1)
+    mean = summed / denom
+    if np.isscalar(mean):
+        return float(mean) if counts > 0 else np.nan
+    mean = np.asarray(mean, dtype=float)
+    mean[np.asarray(counts) == 0] = np.nan
+    return mean
 
 class OUNoise(object):
     '''Ornstein–Uhlenbeck噪声
@@ -110,6 +135,27 @@ def train(cfg, env, agent):
     eval_rewards, eval_episodes = [], []
     raw_rewards = []
 
+    time_num = int(cfg.get('max_steps', 0))
+    if time_num <= 0:
+        time_num = 26
+    zone_num = int(getattr(env, 'ZONE_NUM', max(1, int(env.action_space.shape[0] // 3))))
+
+    svc_by_timestep, rld_by_timestep, srd_by_timestep = [], [], []
+    reward_by_timestep, total_demand_by_timestep, served_orders_by_timestep = [], [], []
+    charging_efficiency_by_timestep, charger_queue_delay_by_timestep = [], []
+    energy_not_served_by_timestep, soc_violation_by_timestep = [], []
+
+    demand_by_timestep_zone, served_by_timestep_zone = [], []
+    service_rate_by_timestep_zone, charging_actions_by_timestep_zone = [], []
+    dispatch_by_timestep_zone = []
+    parking_available_by_timestep_zone, parking_used_by_timestep_zone = [], []
+    charger_available_by_timestep_zone, charger_used_by_timestep_zone = [], []
+
+    charging_efficiency_history = []
+    charger_queue_delay_history = []
+    energy_not_served_history = []
+    safety_soc_violation_count_history = []
+
     info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
 
     battery_log = []  # 修改：在所有episode之前初始化，用于存储所有episode的电池数据  # 修改
@@ -135,6 +181,27 @@ def train(cfg, env, agent):
         ep_reward = 0.0
         ep_reward_raw = 0.0
         current_ep_battery_log = []  # 修改：每个episode初始化当前episode的电池日志  # 修改
+
+        ep_svc_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_rld_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_srd_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_reward_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_total_demand_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_served_orders_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_ce_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_qd_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_ens_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_socv_by_t = np.full(time_num, np.nan, dtype=float)
+
+        ep_demand_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_served_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_service_rate_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_charging_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_dispatch_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_parking_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_parking_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_charger_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_charger_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
 
         for i_step in range(cfg['max_steps']):
             action = agent.sample_action(state)
@@ -166,6 +233,84 @@ def train(cfg, env, agent):
             ep_reward_raw += reward
             scaled_reward = reward / reward_scale
             ep_reward += scaled_reward
+
+            step_idx = min(i_step, time_num - 1)
+            ep_reward_by_t[step_idx] = float(scaled_reward)
+            info_dict = info if isinstance(info, dict) else {}
+
+            if 'svc' in info_dict:
+                ep_svc_by_t[step_idx] = float(info_dict['svc'])
+            if 'rld' in info_dict:
+                ep_rld_by_t[step_idx] = float(info_dict['rld'])
+            if 'srd' in info_dict:
+                ep_srd_by_t[step_idx] = float(info_dict['srd'])
+            if 'total_demand' in info_dict:
+                ep_total_demand_by_t[step_idx] = float(info_dict['total_demand'])
+            if 'served_orders' in info_dict:
+                ep_served_orders_by_t[step_idx] = float(info_dict['served_orders'])
+
+            if 'demand_matrix' in info_dict:
+                dm = np.asarray(info_dict['demand_matrix'], dtype=float)
+                if dm.ndim == 2:
+                    z = min(zone_num, dm.shape[0])
+                    ep_demand_by_tz[step_idx, :z] = np.sum(dm[:z, :], axis=1)
+
+            if 'demand_orders' in info_dict:
+                sm = np.asarray(info_dict['demand_orders'], dtype=float)
+                if sm.ndim == 2:
+                    z = min(zone_num, sm.shape[0])
+                    ep_served_by_tz[step_idx, :z] = np.sum(sm[:z, :], axis=1)
+
+            if np.any(np.isfinite(ep_demand_by_tz[step_idx])) and np.any(np.isfinite(ep_served_by_tz[step_idx])):
+                dem = ep_demand_by_tz[step_idx]
+                srv = ep_served_by_tz[step_idx]
+                rate = np.full(zone_num, np.nan, dtype=float)
+                valid = np.isfinite(dem) & np.isfinite(srv) & (dem > 0)
+                rate[valid] = srv[valid] / dem[valid]
+                ep_service_rate_by_tz[step_idx] = rate
+
+            if 'charging_actions' in info_dict and isinstance(info_dict['charging_actions'], dict):
+                carr = np.zeros(zone_num, dtype=float)
+                for k, v in info_dict['charging_actions'].items():
+                    try:
+                        zi = int(k)
+                        if 0 <= zi < zone_num:
+                            carr[zi] = float(v)
+                    except Exception:
+                        continue
+                ep_charging_by_tz[step_idx] = carr
+
+            if 'action_table_true' in info_dict:
+                am = np.asarray(info_dict['action_table_true'], dtype=float)
+                if am.ndim == 2:
+                    z = min(zone_num, am.shape[0])
+                    ep_dispatch_by_tz[step_idx, :z] = np.sum(am[:z, :], axis=1)
+
+            if 'parking_available_by_zone' in info_dict:
+                pa = np.asarray(info_dict['parking_available_by_zone'], dtype=float)
+                z = min(zone_num, pa.shape[0])
+                ep_parking_available_by_tz[step_idx, :z] = pa[:z]
+
+            if 'parking_used_by_zone' in info_dict:
+                pu = np.asarray(info_dict['parking_used_by_zone'], dtype=float)
+                z = min(zone_num, pu.shape[0])
+                ep_parking_used_by_tz[step_idx, :z] = pu[:z]
+
+            if 'charger_available_by_zone' in info_dict:
+                ca = np.asarray(info_dict['charger_available_by_zone'], dtype=float)
+                z = min(zone_num, ca.shape[0])
+                ep_charger_available_by_tz[step_idx, :z] = ca[:z]
+
+            if 'charger_used_by_zone' in info_dict:
+                cu = np.asarray(info_dict['charger_used_by_zone'], dtype=float)
+                z = min(zone_num, cu.shape[0])
+                ep_charger_used_by_tz[step_idx, :z] = cu[:z]
+
+            step_metrics = compute_all_metrics(env, info_dict)
+            ep_ce_by_t[step_idx] = float(step_metrics.get('charging_efficiency', np.nan))
+            ep_qd_by_t[step_idx] = float(step_metrics.get('charger_queue_delay', np.nan))
+            ep_ens_by_t[step_idx] = float(step_metrics.get('energy_not_served', np.nan))
+            ep_socv_by_t[step_idx] = float(step_metrics.get('safety_soc_violation_count', np.nan))
 
             # 记录环境指标  # 修改
             if 'rld' in info:  # 修改
@@ -203,6 +348,32 @@ def train(cfg, env, agent):
         rewards.append(ep_reward)
         raw_rewards.append(ep_reward_raw)
 
+        svc_by_timestep.append(ep_svc_by_t)
+        rld_by_timestep.append(ep_rld_by_t)
+        srd_by_timestep.append(ep_srd_by_t)
+        reward_by_timestep.append(ep_reward_by_t)
+        total_demand_by_timestep.append(ep_total_demand_by_t)
+        served_orders_by_timestep.append(ep_served_orders_by_t)
+        charging_efficiency_by_timestep.append(ep_ce_by_t)
+        charger_queue_delay_by_timestep.append(ep_qd_by_t)
+        energy_not_served_by_timestep.append(ep_ens_by_t)
+        soc_violation_by_timestep.append(ep_socv_by_t)
+
+        demand_by_timestep_zone.append(ep_demand_by_tz)
+        served_by_timestep_zone.append(ep_served_by_tz)
+        service_rate_by_timestep_zone.append(ep_service_rate_by_tz)
+        charging_actions_by_timestep_zone.append(ep_charging_by_tz)
+        dispatch_by_timestep_zone.append(ep_dispatch_by_tz)
+        parking_available_by_timestep_zone.append(ep_parking_available_by_tz)
+        parking_used_by_timestep_zone.append(ep_parking_used_by_tz)
+        charger_available_by_timestep_zone.append(ep_charger_available_by_tz)
+        charger_used_by_timestep_zone.append(ep_charger_used_by_tz)
+
+        charging_efficiency_history.append(_episode_nanmean(ep_ce_by_t))
+        charger_queue_delay_history.append(_episode_nanmean(ep_qd_by_t))
+        energy_not_served_history.append(_episode_nanmean(ep_ens_by_t))
+        safety_soc_violation_count_history.append(_episode_nanmean(ep_socv_by_t))
+
         if eval_every > 0 and (i_ep + 1) % eval_every == 0:
             eval_reward = _evaluate_policy(cfg, env, agent, eval_eps)
             eval_rewards.append(eval_reward)
@@ -211,6 +382,51 @@ def train(cfg, env, agent):
         battery_log.extend(current_ep_battery_log)  # 修改：将当前episode的电池数据追加到总列表  # 修改
     print(f"[InfoCoverage] missing counts: {info_missing_counts}")
     print("完成训练！")
+
+    if svc_by_timestep:
+        svc_by_timestep_arr = np.asarray(svc_by_timestep, dtype=float)
+        rld_by_timestep_arr = np.asarray(rld_by_timestep, dtype=float)
+        srd_by_timestep_arr = np.asarray(srd_by_timestep, dtype=float)
+        reward_by_timestep_arr = np.asarray(reward_by_timestep, dtype=float)
+        total_demand_by_timestep_arr = np.asarray(total_demand_by_timestep, dtype=float)
+        served_orders_by_timestep_arr = np.asarray(served_orders_by_timestep, dtype=float)
+        charging_efficiency_by_timestep_arr = np.asarray(charging_efficiency_by_timestep, dtype=float)
+        charger_queue_delay_by_timestep_arr = np.asarray(charger_queue_delay_by_timestep, dtype=float)
+        energy_not_served_by_timestep_arr = np.asarray(energy_not_served_by_timestep, dtype=float)
+        soc_violation_by_timestep_arr = np.asarray(soc_violation_by_timestep, dtype=float)
+    else:
+        svc_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        rld_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        srd_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        reward_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        total_demand_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        served_orders_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        charging_efficiency_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        charger_queue_delay_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        energy_not_served_by_timestep_arr = np.empty((0, time_num), dtype=float)
+        soc_violation_by_timestep_arr = np.empty((0, time_num), dtype=float)
+
+    if demand_by_timestep_zone:
+        demand_by_timestep_zone_arr = np.asarray(demand_by_timestep_zone, dtype=float)
+        served_by_timestep_zone_arr = np.asarray(served_by_timestep_zone, dtype=float)
+        service_rate_by_timestep_zone_arr = np.asarray(service_rate_by_timestep_zone, dtype=float)
+        charging_actions_by_timestep_zone_arr = np.asarray(charging_actions_by_timestep_zone, dtype=float)
+        dispatch_by_timestep_zone_arr = np.asarray(dispatch_by_timestep_zone, dtype=float)
+        parking_available_by_timestep_zone_arr = np.asarray(parking_available_by_timestep_zone, dtype=float)
+        parking_used_by_timestep_zone_arr = np.asarray(parking_used_by_timestep_zone, dtype=float)
+        charger_available_by_timestep_zone_arr = np.asarray(charger_available_by_timestep_zone, dtype=float)
+        charger_used_by_timestep_zone_arr = np.asarray(charger_used_by_timestep_zone, dtype=float)
+    else:
+        demand_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        served_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        service_rate_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        charging_actions_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        dispatch_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        parking_available_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        parking_used_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        charger_available_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+        charger_used_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
+
     return {'rewards': rewards,
     'raw_rewards': raw_rewards,
     'eval_rewards': eval_rewards,
@@ -224,7 +440,56 @@ def train(cfg, env, agent):
     'rld_history': rld_history,  # 修改
     'svc_history': svc_history,  # 修改
     'srd_history': srd_history,
-    'info_missing_counts': info_missing_counts}  # 修改
+    'info_missing_counts': info_missing_counts,
+    'charging_efficiency_history': charging_efficiency_history,
+    'charger_queue_delay_history': charger_queue_delay_history,
+    'energy_not_served_history': energy_not_served_history,
+    'safety_soc_violation_count_history': safety_soc_violation_count_history,
+
+    'svc_by_timestep': svc_by_timestep_arr,
+    'rld_by_timestep': rld_by_timestep_arr,
+    'srd_by_timestep': srd_by_timestep_arr,
+    'reward_by_timestep': reward_by_timestep_arr,
+    'total_demand_by_timestep': total_demand_by_timestep_arr,
+    'served_orders_by_timestep': served_orders_by_timestep_arr,
+    'charging_efficiency_by_timestep': charging_efficiency_by_timestep_arr,
+    'charger_queue_delay_by_timestep': charger_queue_delay_by_timestep_arr,
+    'energy_not_served_by_timestep': energy_not_served_by_timestep_arr,
+    'soc_violation_by_timestep': soc_violation_by_timestep_arr,
+
+    'svc_timestep_mean': _safe_nanmean(svc_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'rld_timestep_mean': _safe_nanmean(rld_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'srd_timestep_mean': _safe_nanmean(srd_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'reward_timestep_mean': _safe_nanmean(reward_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'total_demand_timestep_mean': _safe_nanmean(total_demand_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'served_orders_timestep_mean': _safe_nanmean(served_orders_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'charging_efficiency_timestep_mean': _safe_nanmean(charging_efficiency_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'charger_queue_delay_timestep_mean': _safe_nanmean(charger_queue_delay_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'energy_not_served_timestep_mean': _safe_nanmean(energy_not_served_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'soc_violation_timestep_mean': _safe_nanmean(soc_violation_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+
+    'zone_ids': np.arange(zone_num, dtype=int),
+    'timestep_ids': np.arange(time_num, dtype=int),
+    'demand_by_timestep_zone': demand_by_timestep_zone_arr,
+    'served_by_timestep_zone': served_by_timestep_zone_arr,
+    'service_rate_by_timestep_zone': service_rate_by_timestep_zone_arr,
+    'charging_actions_by_timestep_zone': charging_actions_by_timestep_zone_arr,
+    'dispatch_by_timestep_zone': dispatch_by_timestep_zone_arr,
+    'parking_available_by_timestep_zone': parking_available_by_timestep_zone_arr,
+    'parking_used_by_timestep_zone': parking_used_by_timestep_zone_arr,
+    'charger_available_by_timestep_zone': charger_available_by_timestep_zone_arr,
+    'charger_used_by_timestep_zone': charger_used_by_timestep_zone_arr,
+
+    'demand_timestep_zone_mean': _safe_nanmean(demand_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'served_timestep_zone_mean': _safe_nanmean(served_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'service_rate_timestep_zone_mean': _safe_nanmean(service_rate_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'charging_actions_timestep_zone_mean': _safe_nanmean(charging_actions_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'dispatch_timestep_zone_mean': _safe_nanmean(dispatch_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'parking_available_timestep_zone_mean': _safe_nanmean(parking_available_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'parking_used_timestep_zone_mean': _safe_nanmean(parking_used_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'charger_available_timestep_zone_mean': _safe_nanmean(charger_available_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    'charger_used_timestep_zone_mean': _safe_nanmean(charger_used_by_timestep_zone_arr, axis=0, fallback_shape=(time_num, zone_num)),
+    }  # 修改
 
 def test(cfg, env, agent):
     print("开始测试！")

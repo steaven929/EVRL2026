@@ -216,6 +216,54 @@ def main():
     if 'dispatch_roi_history' in res_dic:
         np.save(path + 'dispatch_roi_history.npy', res_dic['dispatch_roi_history'])
 
+    # =========2026.3.12新增，保存26时间片级序列与均值=========
+    timestep_keys = [
+        'zone_ids',
+        'timestep_ids',
+        'svc_by_timestep',
+        'rld_by_timestep',
+        'srd_by_timestep',
+        'reward_by_timestep',
+        'total_demand_by_timestep',
+        'served_orders_by_timestep',
+        'charging_efficiency_by_timestep',
+        'charger_queue_delay_by_timestep',
+        'energy_not_served_by_timestep',
+        'soc_violation_by_timestep',
+        'svc_timestep_mean',
+        'rld_timestep_mean',
+        'srd_timestep_mean',
+        'reward_timestep_mean',
+        'total_demand_timestep_mean',
+        'served_orders_timestep_mean',
+        'charging_efficiency_timestep_mean',
+        'charger_queue_delay_timestep_mean',
+        'energy_not_served_timestep_mean',
+        'soc_violation_timestep_mean',
+        'demand_by_timestep_zone',
+        'served_by_timestep_zone',
+        'service_rate_by_timestep_zone',
+        'charging_actions_by_timestep_zone',
+        'dispatch_by_timestep_zone',
+        'demand_timestep_zone_mean',
+        'served_timestep_zone_mean',
+        'service_rate_timestep_zone_mean',
+        'charging_actions_timestep_zone_mean',
+        'dispatch_timestep_zone_mean',
+        'parking_available_by_timestep_zone',
+        'parking_used_by_timestep_zone',
+        'charger_available_by_timestep_zone',
+        'charger_used_by_timestep_zone',
+        'parking_available_timestep_zone_mean',
+        'parking_used_timestep_zone_mean',
+        'charger_available_timestep_zone_mean',
+        'charger_used_timestep_zone_mean',
+    ]
+    for key in timestep_keys:
+        if key in res_dic:
+            np.save(path + f'{key}.npy', res_dic[key])
+    # ======新增结束
+
     # =========2026.3.6新增，保存训练元数据用于对比分析==========
     import json
     import time

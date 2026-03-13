@@ -61,6 +61,31 @@ def marl_train(env, agent, cfg, path=None):
     effective_dispatch_rate_history = []
     dispatch_roi_history = []
 
+    # 时间片级(0~TIME_NUM-1)指标：用于后续按26时间片分析
+    time_num = int(getattr(env, 'TIME_NUM', cfg.get('TIME_NUM', 26)))
+    zone_num = int(getattr(env, 'n_agents', cfg.get('n_agents', 50)))
+    svc_by_timestep = []
+    rld_by_timestep = []
+    srd_by_timestep = []
+    reward_by_timestep = []
+    total_demand_by_timestep = []
+    served_orders_by_timestep = []
+    charging_efficiency_by_timestep = []
+    charger_queue_delay_by_timestep = []
+    energy_not_served_by_timestep = []
+    soc_violation_by_timestep = []
+
+    # 时间片×区域级指标（shape: [train_eps, time_num, zone_num]）
+    demand_by_timestep_zone = []
+    served_by_timestep_zone = []
+    service_rate_by_timestep_zone = []
+    charging_actions_by_timestep_zone = []
+    dispatch_by_timestep_zone = []
+    parking_available_by_timestep_zone = []
+    parking_used_by_timestep_zone = []
+    charger_available_by_timestep_zone = []
+    charger_used_by_timestep_zone = []
+
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
         reward_scale = 1.0
@@ -106,7 +131,31 @@ def marl_train(env, agent, cfg, path=None):
             'dispatch_roi': [],
         }
 
+        # 每个episode内的时间片序列（固定长度time_num，不足补nan）
+        ep_svc_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_rld_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_srd_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_reward_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_total_demand_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_served_orders_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_ce_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_qd_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_ens_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_socv_by_t = np.full(time_num, np.nan, dtype=float)
+
+        # 区域级序列
+        ep_demand_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_served_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_service_rate_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_charging_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_dispatch_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_parking_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_parking_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_charger_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_charger_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+
         while not done:
+            step_idx = min(ep_step, time_num - 1)
             add_noise = True
             noise_scale = max(0.1, 0.3 * (1 - i_ep / cfg['train_eps']))
             # =========2026.3.5修改，方案2：传递全局状态给sample_action==========
@@ -115,6 +164,84 @@ def marl_train(env, agent, cfg, path=None):
 
             next_global_state, reward, done, info = env.step(actions)
             scaled_reward = reward / reward_scale
+
+            # 时间片级原始记录（每一步都记，后续可直接做26时间片分析）
+            ep_reward_by_t[step_idx] = float(scaled_reward)
+            if isinstance(info, dict):
+                if 'svc' in info:
+                    ep_svc_by_t[step_idx] = float(info['svc'])
+                if 'rld' in info:
+                    ep_rld_by_t[step_idx] = float(info['rld'])
+                if 'srd' in info:
+                    ep_srd_by_t[step_idx] = float(info['srd'])
+                if 'total_demand' in info:
+                    ep_total_demand_by_t[step_idx] = float(info['total_demand'])
+                if 'served_orders' in info:
+                    ep_served_orders_by_t[step_idx] = float(info['served_orders'])
+
+                # 区域级：需求与满足（按origin区域汇总）
+                if 'demand_matrix' in info:
+                    dm = np.asarray(info['demand_matrix'], dtype=float)
+                    if dm.ndim == 2:
+                        z = min(zone_num, dm.shape[0])
+                        ep_demand_by_tz[step_idx, :z] = np.sum(dm[:z, :], axis=1)
+                if 'demand_orders' in info:
+                    sm = np.asarray(info['demand_orders'], dtype=float)
+                    if sm.ndim == 2:
+                        z = min(zone_num, sm.shape[0])
+                        ep_served_by_tz[step_idx, :z] = np.sum(sm[:z, :], axis=1)
+                # 区域级服务率（无需求记为nan，避免把0需求误当1）
+                if np.any(np.isfinite(ep_demand_by_tz[step_idx])) and np.any(np.isfinite(ep_served_by_tz[step_idx])):
+                    dem = ep_demand_by_tz[step_idx]
+                    srv = ep_served_by_tz[step_idx]
+                    rate = np.full(zone_num, np.nan, dtype=float)
+                    valid = np.isfinite(dem) & np.isfinite(srv) & (dem > 0)
+                    rate[valid] = srv[valid] / dem[valid]
+                    ep_service_rate_by_tz[step_idx] = rate
+
+                # 区域级充电执行（zone_id: count）
+                if 'charging_actions' in info and isinstance(info['charging_actions'], dict):
+                    carr = np.zeros(zone_num, dtype=float)
+                    for k, v in info['charging_actions'].items():
+                        try:
+                            zi = int(k)
+                            if 0 <= zi < zone_num:
+                                carr[zi] = float(v)
+                        except Exception:
+                            continue
+                    ep_charging_by_tz[step_idx] = carr
+
+                # 区域级调度执行（按origin行和）
+                if 'action_table_true' in info:
+                    am = np.asarray(info['action_table_true'], dtype=float)
+                    if am.ndim == 2:
+                        z = min(zone_num, am.shape[0])
+                        ep_dispatch_by_tz[step_idx, :z] = np.sum(am[:z, :], axis=1)
+
+                # 区域级停车/充电占用
+                if 'parking_available_by_zone' in info:
+                    pa = np.asarray(info['parking_available_by_zone'], dtype=float)
+                    z = min(zone_num, pa.shape[0])
+                    ep_parking_available_by_tz[step_idx, :z] = pa[:z]
+                if 'parking_used_by_zone' in info:
+                    pu = np.asarray(info['parking_used_by_zone'], dtype=float)
+                    z = min(zone_num, pu.shape[0])
+                    ep_parking_used_by_tz[step_idx, :z] = pu[:z]
+                if 'charger_available_by_zone' in info:
+                    ca = np.asarray(info['charger_available_by_zone'], dtype=float)
+                    z = min(zone_num, ca.shape[0])
+                    ep_charger_available_by_tz[step_idx, :z] = ca[:z]
+                if 'charger_used_by_zone' in info:
+                    cu = np.asarray(info['charger_used_by_zone'], dtype=float)
+                    z = min(zone_num, cu.shape[0])
+                    ep_charger_used_by_tz[step_idx, :z] = cu[:z]
+
+            # 充电机制按步记录（不降采样）
+            step_marl_metrics = compute_all_metrics(env, info)
+            ep_ce_by_t[step_idx] = float(step_marl_metrics.get('charging_efficiency', np.nan))
+            ep_qd_by_t[step_idx] = float(step_marl_metrics.get('charger_queue_delay', np.nan))
+            ep_ens_by_t[step_idx] = float(step_marl_metrics.get('energy_not_served', np.nan))
+            ep_socv_by_t[step_idx] = float(step_marl_metrics.get('safety_soc_violation_count', np.nan))
 
             # =========2026.3.3修改，减少指标计算频率以加速训练==========
             # 每5步计算一次指标（而非每步都计算）
@@ -208,6 +335,29 @@ def marl_train(env, agent, cfg, path=None):
         effective_dispatch_rate_history.append(effective_dispatch_rate_mean)
         dispatch_roi_history.append(dispatch_roi_mean)
 
+        # 保存该episode的时间片序列
+        svc_by_timestep.append(ep_svc_by_t)
+        rld_by_timestep.append(ep_rld_by_t)
+        srd_by_timestep.append(ep_srd_by_t)
+        reward_by_timestep.append(ep_reward_by_t)
+        total_demand_by_timestep.append(ep_total_demand_by_t)
+        served_orders_by_timestep.append(ep_served_orders_by_t)
+        charging_efficiency_by_timestep.append(ep_ce_by_t)
+        charger_queue_delay_by_timestep.append(ep_qd_by_t)
+        energy_not_served_by_timestep.append(ep_ens_by_t)
+        soc_violation_by_timestep.append(ep_socv_by_t)
+
+        # 保存该episode的区域级序列
+        demand_by_timestep_zone.append(ep_demand_by_tz)
+        served_by_timestep_zone.append(ep_served_by_tz)
+        service_rate_by_timestep_zone.append(ep_service_rate_by_tz)
+        charging_actions_by_timestep_zone.append(ep_charging_by_tz)
+        dispatch_by_timestep_zone.append(ep_dispatch_by_tz)
+        parking_available_by_timestep_zone.append(ep_parking_available_by_tz)
+        parking_used_by_timestep_zone.append(ep_parking_used_by_tz)
+        charger_available_by_timestep_zone.append(ep_charger_available_by_tz)
+        charger_used_by_timestep_zone.append(ep_charger_used_by_tz)
+
         rewards.append(ep_reward)
         raw_rewards.append(ep_reward_raw)
         if ma_rewards:
@@ -257,6 +407,49 @@ def marl_train(env, agent, cfg, path=None):
         'dispatch_efficiency_history': dispatch_efficiency_history,
         'effective_dispatch_rate_history': effective_dispatch_rate_history,
         'dispatch_roi_history': dispatch_roi_history,
+        # 时间片级原始序列（shape: [train_eps, time_num]）
+        'svc_by_timestep': np.asarray(svc_by_timestep, dtype=float),
+        'rld_by_timestep': np.asarray(rld_by_timestep, dtype=float),
+        'srd_by_timestep': np.asarray(srd_by_timestep, dtype=float),
+        'reward_by_timestep': np.asarray(reward_by_timestep, dtype=float),
+        'total_demand_by_timestep': np.asarray(total_demand_by_timestep, dtype=float),
+        'served_orders_by_timestep': np.asarray(served_orders_by_timestep, dtype=float),
+        'charging_efficiency_by_timestep': np.asarray(charging_efficiency_by_timestep, dtype=float),
+        'charger_queue_delay_by_timestep': np.asarray(charger_queue_delay_by_timestep, dtype=float),
+        'energy_not_served_by_timestep': np.asarray(energy_not_served_by_timestep, dtype=float),
+        'soc_violation_by_timestep': np.asarray(soc_violation_by_timestep, dtype=float),
+        # 时间片均值曲线（跨episode）
+        'svc_timestep_mean': np.nanmean(np.asarray(svc_by_timestep, dtype=float), axis=0),
+        'rld_timestep_mean': np.nanmean(np.asarray(rld_by_timestep, dtype=float), axis=0),
+        'srd_timestep_mean': np.nanmean(np.asarray(srd_by_timestep, dtype=float), axis=0),
+        'reward_timestep_mean': np.nanmean(np.asarray(reward_by_timestep, dtype=float), axis=0),
+        'total_demand_timestep_mean': np.nanmean(np.asarray(total_demand_by_timestep, dtype=float), axis=0),
+        'served_orders_timestep_mean': np.nanmean(np.asarray(served_orders_by_timestep, dtype=float), axis=0),
+        'charging_efficiency_timestep_mean': np.nanmean(np.asarray(charging_efficiency_by_timestep, dtype=float), axis=0),
+        'charger_queue_delay_timestep_mean': np.nanmean(np.asarray(charger_queue_delay_by_timestep, dtype=float), axis=0),
+        'energy_not_served_timestep_mean': np.nanmean(np.asarray(energy_not_served_by_timestep, dtype=float), axis=0),
+        'soc_violation_timestep_mean': np.nanmean(np.asarray(soc_violation_by_timestep, dtype=float), axis=0),
+        # 区域级矩阵与索引
+        'zone_ids': np.arange(zone_num, dtype=int),
+        'timestep_ids': np.arange(time_num, dtype=int),
+        'demand_by_timestep_zone': np.asarray(demand_by_timestep_zone, dtype=float),
+        'served_by_timestep_zone': np.asarray(served_by_timestep_zone, dtype=float),
+        'service_rate_by_timestep_zone': np.asarray(service_rate_by_timestep_zone, dtype=float),
+        'charging_actions_by_timestep_zone': np.asarray(charging_actions_by_timestep_zone, dtype=float),
+        'dispatch_by_timestep_zone': np.asarray(dispatch_by_timestep_zone, dtype=float),
+        'demand_timestep_zone_mean': np.nanmean(np.asarray(demand_by_timestep_zone, dtype=float), axis=0),
+        'served_timestep_zone_mean': np.nanmean(np.asarray(served_by_timestep_zone, dtype=float), axis=0),
+        'service_rate_timestep_zone_mean': np.nanmean(np.asarray(service_rate_by_timestep_zone, dtype=float), axis=0),
+        'charging_actions_timestep_zone_mean': np.nanmean(np.asarray(charging_actions_by_timestep_zone, dtype=float), axis=0),
+        'dispatch_timestep_zone_mean': np.nanmean(np.asarray(dispatch_by_timestep_zone, dtype=float), axis=0),
+        'parking_available_by_timestep_zone': np.asarray(parking_available_by_timestep_zone, dtype=float),
+        'parking_used_by_timestep_zone': np.asarray(parking_used_by_timestep_zone, dtype=float),
+        'charger_available_by_timestep_zone': np.asarray(charger_available_by_timestep_zone, dtype=float),
+        'charger_used_by_timestep_zone': np.asarray(charger_used_by_timestep_zone, dtype=float),
+        'parking_available_timestep_zone_mean': np.nanmean(np.asarray(parking_available_by_timestep_zone, dtype=float), axis=0),
+        'parking_used_timestep_zone_mean': np.nanmean(np.asarray(parking_used_by_timestep_zone, dtype=float), axis=0),
+        'charger_available_timestep_zone_mean': np.nanmean(np.asarray(charger_available_by_timestep_zone, dtype=float), axis=0),
+        'charger_used_timestep_zone_mean': np.nanmean(np.asarray(charger_used_by_timestep_zone, dtype=float), axis=0),
     }
     return res_dic
 

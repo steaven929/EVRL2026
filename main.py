@@ -92,6 +92,63 @@ np.save(out_file('eval_episodes.npy'), res_dic.get('eval_episodes', []))
 np.save(out_file('rld_history.npy'), res_dic['rld_history'])  # 修改
 np.save(out_file('svc_history.npy'), res_dic['svc_history'])  # 修改
 np.save(out_file('srd_history.npy'), res_dic['srd_history'])  # 修改
+
+optional_episode_metric_keys = [
+    'charging_efficiency_history',
+    'charger_queue_delay_history',
+    'energy_not_served_history',
+    'safety_soc_violation_count_history',
+]
+for key in optional_episode_metric_keys:
+    if key in res_dic:
+        np.save(out_file(f'{key}.npy'), res_dic[key])
+
+timestep_keys = [
+    'zone_ids',
+    'timestep_ids',
+    'svc_by_timestep',
+    'rld_by_timestep',
+    'srd_by_timestep',
+    'reward_by_timestep',
+    'total_demand_by_timestep',
+    'served_orders_by_timestep',
+    'charging_efficiency_by_timestep',
+    'charger_queue_delay_by_timestep',
+    'energy_not_served_by_timestep',
+    'soc_violation_by_timestep',
+    'svc_timestep_mean',
+    'rld_timestep_mean',
+    'srd_timestep_mean',
+    'reward_timestep_mean',
+    'total_demand_timestep_mean',
+    'served_orders_timestep_mean',
+    'charging_efficiency_timestep_mean',
+    'charger_queue_delay_timestep_mean',
+    'energy_not_served_timestep_mean',
+    'soc_violation_timestep_mean',
+    'demand_by_timestep_zone',
+    'served_by_timestep_zone',
+    'service_rate_by_timestep_zone',
+    'charging_actions_by_timestep_zone',
+    'dispatch_by_timestep_zone',
+    'demand_timestep_zone_mean',
+    'served_timestep_zone_mean',
+    'service_rate_timestep_zone_mean',
+    'charging_actions_timestep_zone_mean',
+    'dispatch_timestep_zone_mean',
+    'parking_available_by_timestep_zone',
+    'parking_used_by_timestep_zone',
+    'charger_available_by_timestep_zone',
+    'charger_used_by_timestep_zone',
+    'parking_available_timestep_zone_mean',
+    'parking_used_timestep_zone_mean',
+    'charger_available_timestep_zone_mean',
+    'charger_used_timestep_zone_mean',
+]
+for key in timestep_keys:
+    if key in res_dic:
+        np.save(out_file(f'{key}.npy'), res_dic[key])
+
 print(f"Loss数据和指标已保存")  # 修改
 print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
 

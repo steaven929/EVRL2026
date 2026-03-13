@@ -1637,6 +1637,34 @@ class dclily(gym.Env):
         # ======修改结束
         # ======修改结束
 
+        # =========2026.3.12新增，按区域统计停车与充电占用==========
+        parking_available_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        parking_used_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        charger_available_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        charger_used_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+
+        for zi in range(self.ZONE_NUM):
+            # 可用停车位：环境中维护的剩余总车位
+            if self.available is not None and len(self.available) > 1 and len(self.available[1]) > zi:
+                free_parking = float(self.available[1][zi])
+            else:
+                free_parking = 0.0
+
+            total_parking = float(ZONES[zi].get("num_parking_slots", 0)) if zi < len(ZONES) else 0.0
+            used_parking = max(0.0, total_parking - free_parking)
+
+            parking_available_by_zone[zi] = max(0.0, free_parking)
+            parking_used_by_zone[zi] = used_parking
+
+            chargers = self.charging_stations.get(zi, []) if hasattr(self, 'charging_stations') else []
+            total_chargers = float(len(chargers))
+            used_chargers = float(sum(1 for ch in chargers if ch.get("occupied_by") is not None))
+            free_chargers = max(0.0, total_chargers - used_chargers)
+
+            charger_available_by_zone[zi] = free_chargers
+            charger_used_by_zone[zi] = used_chargers
+        # ======新增结束
+
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
         info = {            ##0729 计算trb论文指标加入
             "rld": self._last_rld,          ##0729 计算trb论文指标加入
@@ -1651,6 +1679,11 @@ class dclily(gym.Env):
             "action_table_true": action_table_true,  # RL调度倾向矩阵
             "service_rate": float(service_rate),
             "reward_mode": self.reward_mode,
+            # 区域级停车/充电占用信息（用于时间片-区域分析）
+            "parking_available_by_zone": parking_available_by_zone,
+            "parking_used_by_zone": parking_used_by_zone,
+            "charger_available_by_zone": charger_available_by_zone,
+            "charger_used_by_zone": charger_used_by_zone,
         }           ##0729 计算trb论文指标加入
         # ======修改结束
 
