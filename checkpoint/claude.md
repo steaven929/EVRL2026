@@ -290,3 +290,11 @@ state = np.concatenate([od_part, charger_states, num_chargers_feat,
 - ✅ 实验6：混合策略（中等惩罚 + 高充电奖励）
 - 备选方案A：回到实验4参数，仅提升充电奖励到3000-5000
 - 备选方案B：分阶段训练（前期高惩罚，后期降低）
+
+---
+
+## 2026-03-15 配置同步记录
+
+- 已按 `data/new_setting区分功能区.txt` 的 1000 车列更新 `data/SIP/config_sip.json` 与 `data/SIP/config.json` 的各区停车位和充电桩数量。
+- 已将 SIP 运行基准车辆总数统一为 1000：`specific/dclily_elec.py` 强制覆盖段 `CAR_NUM = 1000`，并同步 `data/SIP/config*.json` 中 `CAR_NUM = 1000`。
+- 已重建 `data/SIP/capacity.csv`：第1行（初始车辆分布）按 `od_probability * 1000` 分配且总和=1000；第2行使用 `p_limit_1000`，避免 `self.CAR_NUM` 与 `self.car` 长度不一致。

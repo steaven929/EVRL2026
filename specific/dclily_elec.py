@@ -50,9 +50,9 @@ OD_MAX = config['OD_MAX']
 DIST_MAX = config['DIST_MAX']
 
 # =========2026.2.19修改，切换到SIP大规模数据集==========
-# 强制覆盖配置参数以使用SIP数据集（50区域，200车辆）
+# 强制覆盖配置参数以使用SIP数据集（50区域，1000车辆）
 ZONE_NUM = 50
-CAR_NUM = 200
+CAR_NUM = 1000
 TIME_NUM = 26
 TIME_LENGTH = 30
 TIME_SLICE = 1
