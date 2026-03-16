@@ -62,6 +62,16 @@ def out_file(filename):
 # 训练
 env, agent = dclilyenv.env_agent_config(cfg)
 
+# =========2026.1.30修改，最优解求解==========
+# 统一时间步配置，避免 max_steps 与环境真实时域不一致导致内存放大
+env_time_num = int(getattr(env, 'TIME_NUM', 26)) if hasattr(env, 'TIME_NUM') else 26
+if env_time_num <= 0:
+    env_time_num = 26
+cfg['log_time_num'] = env_time_num
+if int(cfg.get('max_steps', env_time_num)) > env_time_num:
+    cfg['max_steps'] = env_time_num
+# ======修改结束
+
 
 # ✅ 添加：给环境绑定 ZONE_NUM 属性（用于切片）
 #env.ZONE_NUM = env.action_space.shape[0] //

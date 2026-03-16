@@ -38,10 +38,26 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     # model.setParam('TimeLimit', 5.0)
     # ======修改结束
     # ======修改结束
+
+    # =========2026.1.30修改，最优解求解==========
+    # 内存保护：允许节点写盘，降低分支定界峰值内存压力
+    model.setParam('NodefileStart', 0.5)
+    # ======修改结束
     
-    # 创建变量
-    car_assignment = [[model.addVar(vtype=GRB.BINARY, name=f'car_assignment_{i}_{j}') for j in range(x)] for i in   #当前区域 → 区域 j的任务
-                      range(m)]
+    # =========2026.1.30修改，最优解求解==========
+    # 创建变量：对不可行分配直接设置 ub=0，等价替代后续大量 car_assignment==0 约束
+    car_assignment = []
+    for i in range(m):
+        row_vars = []
+        car_zone = int(car[i][0])
+        car_soc = float(car[i][1])
+        for j in range(x):
+            feasible = (car_zone != j) and (dist[car_zone][j] <= car_soc)
+            ub = 1.0 if feasible else 0.0
+            row_vars.append(model.addVar(vtype=GRB.BINARY, lb=0.0, ub=ub, name=f'car_assignment_{i}_{j}'))
+        car_assignment.append(row_vars)
+    # ======修改结束
+
     zone_assignment = [[model.addVar(lb=0, vtype=GRB.INTEGER, name=f'zone_assignment_{i}_{j}') for j in range(x)] for i
                        in range(x)]
     available_assignment = [model.addVar(lb=0, vtype=GRB.INTEGER, name=f'zone_assignment_{i}') for i in range(x)]
@@ -82,9 +98,7 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
         model.addConstr(available_assignment[i] >= 0)
         for j in range(x):
             model.addConstr(zone_assignment[i][j] <= demand[i][j])  # 分配少于需求
-            for k in range(m):
-                if car[k][0] == i and (dist[i][j] > car[k][1] or i == j):  # 扫描所有i-j，找所有起点为i的车，如果到不了则置为0，如果i=j自己到自己也置为0
-                    model.addConstr(car_assignment[k][j] == 0)
+            # car_assignment 不可行项已通过变量上界 ub=0 固化，这里不再重复添加等式约束
     
     for i in range(m):
         if car[i][2] <= 0:
@@ -104,82 +118,87 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
                     gp.quicksum(car_assignment[kk][j] for kk in range(m) if car[kk][0] == i)
                 )
     
-    # 求解问题
-    model.optimize()
+    # =========2026.1.30修改，最优解求解==========
+    try:
+        # 求解问题
+        model.optimize()
+
+        # 处理解
+        zone_assignment_np = np.zeros((x, x), dtype=int)
+
+        avail[1] = np.array([var.X for var in available_assignment])
     
-    # 处理解
-    
-    zone_assignment_np = np.zeros((x, x), dtype=int)
-    
-    avail[1] = np.array([var.X for var in available_assignment])
-    
-    if re > 0 and revise >= 3:
-        reward_zone = available - avail[1] - pre_avail
+        reward_zone = np.array([0] * x)
         reward_zone_num = np.array([0] * x)
         reward_zone_value = np.array([0.0] * x)
-        if detail:
-            print(available)
-            print(avail[1])
-            print(pre_avail)
-            print("额外奖励")
-            print(reward_zone)
+        if re > 0 and revise >= 3:
+            reward_zone = available - avail[1] - pre_avail
+            if detail:
+                print(available)
+                print(avail[1])
+                print(pre_avail)
+                print("额外奖励")
+                print(reward_zone)
     
-    for i in range(m):  # 车数
-        for j in range(x):  # zone数
-            if car_assignment[i][j].x > 0.5 and car[i][0] != j:
-                avail[0][car[i][0]] -= 1
-                zone_assignment_np[car[i][0]][j] += 1
-                # avail[1][car[i][0]] += 1
-                # avail[1][j] -= 1
-                car[i][2] = dist[car[i][0]][j]
-                real_reward_back[car[i][0]] += re * car[i][2]
-                if re < 0:
-                    if revise < 2:
-                        reward[timestep][car[i][0]] += re * car[i][2]  # 调度惩罚
+        for i in range(m):  # 车数
+            for j in range(x):  # zone数
+                if car_assignment[i][j].x > 0.5 and car[i][0] != j:
+                    avail[0][car[i][0]] -= 1
+                    zone_assignment_np[car[i][0]][j] += 1
+                    # avail[1][car[i][0]] += 1
+                    # avail[1][j] -= 1
+                    car[i][2] = dist[car[i][0]][j]
+                    real_reward_back[car[i][0]] += re * car[i][2]
+                    if re < 0:
+                        if revise < 2:
+                            reward[timestep][car[i][0]] += re * car[i][2]  # 调度惩罚
+                        else:
+                            reward[timestep][car[i][0]] += re * car[i][2]  # 后续增加电费
+                        car_mem[i][0] = car[i][0]
+                        car_mem[i][1] = timestep
+                        car_mem[i][2] = 0
+                        if detail:
+                            print("%.1f 车辆%d调度%d -> %d，时间片%d" % (re * car[i][2], i, car[i][0], j, timestep))
                     else:
-                        reward[timestep][car[i][0]] += re * car[i][2]  # 后续增加电费
-                    car_mem[i][0] = car[i][0]
-                    car_mem[i][1] = timestep
-                    car_mem[i][2] = 0
+                        if revise >= 3:
+                            if reward_zone[j] > 0:
+                                reward_zone_num += 1
+                                reward_zone_value += re * car[i][2]
+
+                        if car_mem[i][0] != -1:
+                            if detail:
+                                print("%.1f 车辆%d完成%d -> %d，车辆来自调度区域%d 时间%d" % (
+                                re * car[i][2], i, car[i][0], j, car_mem[i][0], car_mem[i][1]))
+
+                            reward[car_mem[i][1]][car_mem[i][0]] += re * car[i][2]
+                            car_mem[i][0] = -1
+                            # car_mem[i][2]=2
+                        else:
+                            if revise >= 2:
+                                reward[timestep][car[i][0]] += re * car[i][2]
+                            if detail:
+                                print("%.1f 车辆%d完成%d -> %d" % (re * car[i][2], i, car[i][0], j))
+
+                    car[i][1] -= car[i][2]
+                    car[i][0] = j
+    
+        real_reward += real_reward_back
+
+        if revise == 0:
+            reward[timestep] = real_reward_back
+
+        if re > 0 and revise == 3:
+            for i in range(x):
+                if reward_zone[i] > 0:
+                    rrr = reward_zone_value[i] / reward_zone_num[i] * reward_zone[i]
+                    reward[timestep][i] += rrr
                     if detail:
-                        print("%.1f 车辆%d调度%d -> %d，时间片%d" % (re * car[i][2], i, car[i][0], j, timestep))
-                else:
-                    if revise >= 3:
-                        if reward_zone[j] > 0:
-                            reward_zone_num += 1
-                            reward_zone_value += re * car[i][2]
-                    
-                    if car_mem[i][0] != -1:
-                        if detail:
-                            print("%.1f 车辆%d完成%d -> %d，车辆来自调度区域%d 时间%d" % (
-                            re * car[i][2], i, car[i][0], j, car_mem[i][0], car_mem[i][1]))
-                        
-                        reward[car_mem[i][1]][car_mem[i][0]] += re * car[i][2]
-                        car_mem[i][0] = -1
-                        # car_mem[i][2]=2
-                    else:
-                        if revise >= 2:
-                            reward[timestep][car[i][0]] += re * car[i][2]
-                        if detail:
-                            print("%.1f 车辆%d完成%d -> %d" % (re * car[i][2], i, car[i][0], j))
-                
-                car[i][1] -= car[i][2]
-                car[i][0] = j
-    
-    real_reward += real_reward_back
-    
-    if revise == 0:
-        reward[timestep] = real_reward_back
-    
-    if re > 0 and revise == 3:
-        for i in range(x):
-            if reward_zone[i] > 0:
-                rrr = reward_zone_value[i] / reward_zone_num[i] * reward_zone[i]
-                reward[timestep][i] += rrr
-                if detail:
-                    print("区域%d让出%d个位置，额外奖励%.1f" % (i, reward_zone[i], rrr))
-    
-    return car, avail, car_mem, reward, real_reward, zone_assignment_np
+                        print("区域%d让出%d个位置，额外奖励%.1f" % (i, reward_zone[i], rrr))
+
+        return car, avail, car_mem, reward, real_reward, zone_assignment_np
+    finally:
+        model.dispose()
+    # ======修改结束
 
 
 def test():
