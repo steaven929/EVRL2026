@@ -298,3 +298,6 @@ state = np.concatenate([od_part, charger_states, num_chargers_feat,
 - 已按 `data/new_setting区分功能区.txt` 的 1000 车列更新 `data/SIP/config_sip.json` 与 `data/SIP/config.json` 的各区停车位和充电桩数量。
 - 已将 SIP 运行基准车辆总数统一为 1000：`specific/dclily_elec.py` 强制覆盖段 `CAR_NUM = 1000`，并同步 `data/SIP/config*.json` 中 `CAR_NUM = 1000`。
 - 已重建 `data/SIP/capacity.csv`：第1行（初始车辆分布）按 `od_probability * 1000` 分配且总和=1000；第2行使用 `p_limit_1000`，避免 `self.CAR_NUM` 与 `self.car` 长度不一致。
+- 已修复 `core/training.py` 内存放大问题：日志时间维度改为环境 `TIME_NUM`（可由 `log_time_num` 覆盖），不再直接使用 `max_steps` 预分配 `(max_steps, zone_num)` 大矩阵。
+- 已修复 `specific/optim.py` 的Gurobi内存压力点：不可行 `car_assignment` 变量改为 `ub=0`（替代大量零约束），并在每次求解后 `model.dispose()` 显式释放模型内存。
+- 已在 `main.py` 与 `core/util.py` 同步时间步防护：默认 `max_steps=26`，并在运行时将 `cfg['max_steps']` 与 `cfg['log_time_num']` 对齐到环境 `TIME_NUM`，防止出现 `(100000, 50)` 级日志预分配。

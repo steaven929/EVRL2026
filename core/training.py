@@ -135,9 +135,19 @@ def train(cfg, env, agent):
     eval_rewards, eval_episodes = [], []
     raw_rewards = []
 
-    time_num = int(cfg.get('max_steps', 0))
+    env_time_num = int(getattr(env, 'TIME_NUM', 26))
+    if env_time_num <= 0:
+        env_time_num = 26
+
+    max_steps = int(cfg.get('max_steps', 0))
+    if max_steps <= 0:
+        max_steps = env_time_num
+
+    # 日志时间维度应跟随环境真实时域，而不是训练循环上限(max_steps)
+    time_num = int(cfg.get('log_time_num', env_time_num))
     if time_num <= 0:
-        time_num = 26
+        time_num = env_time_num
+    time_num = min(time_num, max_steps)
     zone_num = int(getattr(env, 'ZONE_NUM', max(1, int(env.action_space.shape[0] // 3))))
 
     svc_by_timestep, rld_by_timestep, srd_by_timestep = [], [], []
@@ -203,7 +213,7 @@ def train(cfg, env, agent):
         ep_charger_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
         ep_charger_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
 
-        for i_step in range(cfg['max_steps']):
+        for i_step in range(max_steps):
             action = agent.sample_action(state)
             if ou_noise is not None:
                 action = ou_noise.get_action(action, i_step+1)
