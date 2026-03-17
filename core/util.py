@@ -17,16 +17,16 @@ def get_args():
     parser.add_argument('--algo_name',default='TD3',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=1000,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--train_eps',default=1500,type=int,help="episodes of training") #训练轮数（MARL优化默认1500轮）
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=26,type=int,help="steps per episode") #最大步数与TIME_NUM对齐，避免无效超大预设
-    parser.add_argument('--gamma',default=0.97,type=float,help="discounted factor")  #折扣因子（更稳的长期回报）
-    parser.add_argument('--critic_lr',default=3e-5,type=float,help="learning rate of critic")  #critic学习率（稳态配置）
-    parser.add_argument('--actor_lr',default=2e-5,type=float,help="learning rate of actor")  #actor学习率（稳态配置）
-    parser.add_argument('--memory_capacity',default=64000,type=int,help="memory capacity")  #经验池容量
-    parser.add_argument('--batch_size',default=512,type=int)  #批量学习数  # 2026.3.3修改：提升到512以利用GPU并行
+    parser.add_argument('--gamma',default=0.98,type=float,help="discounted factor")  #折扣因子（MARL优化默认）
+    parser.add_argument('--critic_lr',default=1e-4,type=float,help="learning rate of critic")  #critic学习率（MARL优化默认）
+    parser.add_argument('--actor_lr',default=5e-5,type=float,help="learning rate of actor")  #actor学习率（MARL优化默认）
+    parser.add_argument('--memory_capacity',default=128000,type=int,help="memory capacity")  #经验池容量（MARL优化默认）
+    parser.add_argument('--batch_size',default=256,type=int)  #批量学习数（MARL优化默认）
     parser.add_argument('--target_update',default=2,type=int)  #目标网络更新频率
-    parser.add_argument('--tau',default=3e-4,type=float)  #软更新参数（稳态配置）
+    parser.add_argument('--tau',default=8e-4,type=float)  #软更新参数（MARL优化默认）
     parser.add_argument('--critic_hidden_dim',default=256,type=int)  #critic的dense层神经元  # 实验18：恢复256
     parser.add_argument('--actor_hidden_dim',default=256,type=int)   #actor的dense层神经元  # 实验18：恢复256
     parser.add_argument('--critic_embed_dim',default=8,type=int)  #critic的embedding层  # 实验18：恢复8
@@ -49,6 +49,15 @@ def get_args():
     parser.add_argument('--target_policy_noise',default=0.08,type=float,help="TD3 target policy smoothing noise std")
     parser.add_argument('--target_noise_clip',default=0.15,type=float,help="TD3 target policy noise clip")
     parser.add_argument('--expl_noise',default=0.1,type=float,help="TD3 exploration noise std")
+    parser.add_argument('--battery_log_keep_steps',default=2000,type=int,help="max timesteps kept for battery heatmap during training")
+    parser.add_argument('--battery_log_stride',default=1,type=int,help="record one battery snapshot every N env steps")
+    parser.add_argument('--marl_metric_sample_every',default=1,type=int,help="sample interval for MARL per-step metrics")
+    parser.add_argument('--marl_noise_start',default=0.35,type=float,help="initial exploration noise scale for MARL")
+    parser.add_argument('--marl_noise_min',default=0.12,type=float,help="minimum exploration noise scale for MARL")
+    parser.add_argument('--marl_noise_decay_power',default=1.4,type=float,help="decay curvature for MARL exploration noise")
+    parser.add_argument('--marl_noise_warmup_eps',default=50,type=int,help="warmup episodes before MARL noise decay")
+    parser.add_argument('--marl_service_target',default=0.85,type=float,help="target svc used for MARL adaptive exploration")
+    parser.add_argument('--marl_noise_service_boost',default=0.10,type=float,help="extra noise when svc is below target")
     # ======修改结束
     # =========2026.2.13修改，修复命令行参数解析==========
     # 原代码：args = parser.parse_args([])  # 传入空列表会忽略命令行参数！

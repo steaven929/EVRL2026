@@ -23,7 +23,7 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-from core.util import get_args, plot_rewards, plot_critic_losses
+from core.util import get_args, plot_rewards, plot_critic_losses, cp
 from core.environment import env_agent_config
 from core.marl_training import marl_train, marl_test
 
@@ -38,6 +38,13 @@ def main():
     # 强制设置为multi模式
     cfg['marl_mode'] = 'multi'
     cfg['n_agents'] = 50  # SIP数据集：50个区域
+
+    # 与 main.py 对齐：按 data_folder 同步配置到 specific/config.json
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    target_dir = os.path.join(current_dir, 'specific')
+    os.chdir(target_dir)
+    cp("..\\" + cfg['data_folder'])
+    os.chdir(current_dir)
 
     # =========2026.3.3修改，注释掉启动信息==========
     # print("\n" + "="*80)
@@ -56,6 +63,14 @@ def main():
     # 创建环境和智能体
     env, agent = env_agent_config(cfg)
 
+    # 与 main.py 对齐：统一时间步配置
+    env_time_num = int(getattr(env, 'TIME_NUM', 26)) if hasattr(env, 'TIME_NUM') else 26
+    if env_time_num <= 0:
+        env_time_num = 26
+    cfg['log_time_num'] = env_time_num
+    if int(cfg.get('max_steps', env_time_num)) > env_time_num:
+        cfg['max_steps'] = env_time_num
+
     # 设置保存路径（包含训练轮数）
     curr_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_eps = cfg.get('train_eps', 0)
@@ -73,6 +88,10 @@ def main():
     np.save(path + 'critic_losses.npy', res_dic['critic_losses'])
     np.save(path + 'actor_losses.npy', res_dic['actor_losses'])
     np.save(path + 'rewards.npy', res_dic['rewards'])
+    if 'eval_rewards' in res_dic:
+        np.save(path + 'eval_rewards.npy', res_dic['eval_rewards'])
+    if 'eval_episodes' in res_dic:
+        np.save(path + 'eval_episodes.npy', res_dic['eval_episodes'])
     if 'raw_rewards' in res_dic:
         np.save(path + 'raw_rewards.npy', res_dic['raw_rewards'])
     np.save(path + 'ma_rewards.npy', res_dic['ma_rewards'])

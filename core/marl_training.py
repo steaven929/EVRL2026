@@ -62,7 +62,36 @@ def marl_train(env, agent, cfg, path=None):
     dispatch_roi_history = []
 
     # 时间片级(0~TIME_NUM-1)指标：用于后续按26时间片分析
-    time_num = int(getattr(env, 'TIME_NUM', cfg.get('TIME_NUM', 26)))
+    env_time_num = int(getattr(env, 'TIME_NUM', cfg.get('TIME_NUM', 26)))
+    if env_time_num <= 0:
+        env_time_num = 26
+    max_steps = int(cfg.get('max_steps', 0))
+    if max_steps <= 0:
+        max_steps = env_time_num
+    time_num = int(cfg.get('log_time_num', env_time_num))
+    if time_num <= 0:
+        time_num = env_time_num
+    time_num = min(time_num, max_steps)
+
+    eval_every = int(cfg.get('eval_every', 0))
+    eval_eps = max(1, int(cfg.get('eval_eps', 1)))
+    marl_metric_sample_every = int(cfg.get('marl_metric_sample_every', 1))
+    if marl_metric_sample_every <= 0:
+        marl_metric_sample_every = 1
+
+    marl_noise_start = float(cfg.get('marl_noise_start', 0.35))
+    marl_noise_min = float(cfg.get('marl_noise_min', 0.12))
+    marl_noise_decay_power = float(cfg.get('marl_noise_decay_power', 1.4))
+    marl_noise_warmup_eps = int(cfg.get('marl_noise_warmup_eps', 50))
+    marl_service_target = float(cfg.get('marl_service_target', 0.85))
+    marl_noise_service_boost = float(cfg.get('marl_noise_service_boost', 0.10))
+
+    marl_noise_start = max(0.0, marl_noise_start)
+    marl_noise_min = max(0.0, min(marl_noise_min, marl_noise_start if marl_noise_start > 0 else marl_noise_min))
+    marl_noise_decay_power = max(0.1, marl_noise_decay_power)
+    marl_noise_warmup_eps = max(0, marl_noise_warmup_eps)
+    marl_service_target = max(0.0, min(1.0, marl_service_target))
+    marl_noise_service_boost = max(0.0, marl_noise_service_boost)
     zone_num = int(getattr(env, 'n_agents', cfg.get('n_agents', 50)))
     svc_by_timestep = []
     rld_by_timestep = []
@@ -85,6 +114,8 @@ def marl_train(env, agent, cfg, path=None):
     parking_used_by_timestep_zone = []
     charger_available_by_timestep_zone = []
     charger_used_by_timestep_zone = []
+    eval_rewards = []
+    eval_episodes = []
 
     reward_scale = float(cfg.get('reward_scale', 1.0))
     if reward_scale <= 0:
@@ -154,10 +185,21 @@ def marl_train(env, agent, cfg, path=None):
         ep_charger_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
         ep_charger_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
 
-        while not done:
+        # 自适应探索：先高噪声探索，再按训练进度和上一轮服务率退火
+        if cfg['train_eps'] > marl_noise_warmup_eps:
+            progress = max(0.0, min(1.0, (i_ep - marl_noise_warmup_eps) / max(1, cfg['train_eps'] - marl_noise_warmup_eps)))
+        else:
+            progress = 1.0
+        base_noise = marl_noise_min + (marl_noise_start - marl_noise_min) * ((1.0 - progress) ** marl_noise_decay_power)
+        last_svc = float(svc_last_history[-1]) if len(svc_last_history) > 0 else marl_service_target
+        svc_gap = max(0.0, marl_service_target - last_svc)
+        noise_scale_ep = base_noise + marl_noise_service_boost * svc_gap
+        noise_scale_ep = max(marl_noise_min, min(marl_noise_start + marl_noise_service_boost, noise_scale_ep))
+
+        while (not done) and (ep_step < max_steps):
             step_idx = min(ep_step, time_num - 1)
             add_noise = True
-            noise_scale = max(0.1, 0.3 * (1 - i_ep / cfg['train_eps']))
+            noise_scale = noise_scale_ep
             # =========2026.3.5修改，方案2：传递全局状态给sample_action==========
             actions = agent.sample_action(obs_n, global_state=global_state, add_noise=add_noise, noise_scale=noise_scale)
             # ======修改结束
@@ -245,7 +287,7 @@ def marl_train(env, agent, cfg, path=None):
 
             # =========2026.3.3修改，减少指标计算频率以加速训练==========
             # 每5步计算一次指标（而非每步都计算）
-            if ep_step % 5 == 0 or done:
+            if ep_step % marl_metric_sample_every == 0 or done:
                 for metric_key in ep_metric_steps:
                     if metric_key in info:
                         ep_metric_steps[metric_key].append(info[metric_key])
@@ -376,6 +418,12 @@ def marl_train(env, agent, cfg, path=None):
             # print(f"模型已保存: {path}marl_model_ep{i_ep+1}.pth")
             # ======修改结束
 
+        if eval_every > 0 and (i_ep + 1) % eval_every == 0:
+            eval_mean = _marl_evaluate_policy(env, agent, cfg, eval_eps, max_steps)
+            eval_rewards.append(float(eval_mean))
+            eval_episodes.append(int(i_ep + 1))
+            print(f"  [MARL Eval] Episode {i_ep + 1}: mean reward={eval_mean:.2f} over {eval_eps} eps")
+
     res_dic = {
         'rewards': rewards,
         'raw_rewards': raw_rewards,
@@ -450,6 +498,8 @@ def marl_train(env, agent, cfg, path=None):
         'parking_used_timestep_zone_mean': np.nanmean(np.asarray(parking_used_by_timestep_zone, dtype=float), axis=0),
         'charger_available_timestep_zone_mean': np.nanmean(np.asarray(charger_available_by_timestep_zone, dtype=float), axis=0),
         'charger_used_timestep_zone_mean': np.nanmean(np.asarray(charger_used_by_timestep_zone, dtype=float), axis=0),
+        'eval_rewards': np.asarray(eval_rewards, dtype=float),
+        'eval_episodes': np.asarray(eval_episodes, dtype=int),
     }
     return res_dic
 
@@ -470,6 +520,13 @@ def marl_test(env, agent, cfg, path=None):
     if hasattr(env, 'set_reward_mode'):
         env.set_reward_mode(cfg.get('reward_mode', 'base'))
 
+    env_time_num = int(getattr(env, 'TIME_NUM', cfg.get('TIME_NUM', 26)))
+    if env_time_num <= 0:
+        env_time_num = 26
+    max_steps = int(cfg.get('max_steps', 0))
+    if max_steps <= 0:
+        max_steps = env_time_num
+
     for i_ep in range(cfg['test_eps']):
         ep_reward = 0
         ep_step = 0
@@ -478,7 +535,7 @@ def marl_test(env, agent, cfg, path=None):
 
         done = False
         info = {}
-        while not done:
+        while (not done) and (ep_step < max_steps):
             # =========2026.3.5修改，方案2：传递全局状态给sample_action==========
             actions = agent.sample_action(obs_n, global_state=global_state, add_noise=False)
             # ======修改结束
@@ -502,3 +559,28 @@ def marl_test(env, agent, cfg, path=None):
     # print(f"测试完成，平均奖励：{np.mean(rewards):.2f}")
     # ======修改结束
     return rewards
+
+
+def _marl_evaluate_policy(env, agent, cfg, num_episodes, max_steps):
+    rewards = []
+    reward_scale = float(cfg.get('reward_scale', 1.0))
+    if reward_scale <= 0:
+        reward_scale = 1.0
+
+    for _ in range(num_episodes):
+        global_state = env.reset()
+        obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
+        ep_reward = 0.0
+        ep_step = 0
+        done = False
+        while (not done) and (ep_step < max_steps):
+            actions = agent.sample_action(obs_n, global_state=global_state, add_noise=False)
+            next_global_state, reward, done, _ = env.step(actions)
+            next_obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
+            obs_n = next_obs_n
+            global_state = next_global_state
+            ep_reward += reward / reward_scale
+            ep_step += 1
+        rewards.append(ep_reward)
+
+    return float(np.mean(rewards)) if rewards else 0.0

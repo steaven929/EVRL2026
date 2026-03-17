@@ -7,6 +7,7 @@ Created on Tue Sep  3 19:24:55 2024
 
 import numpy as np
 import random
+from collections import deque
 from core.marl_metrics import compute_all_metrics
 
 
@@ -168,7 +169,13 @@ def train(cfg, env, agent):
 
     info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
 
-    battery_log = []  # 修改：在所有episode之前初始化，用于存储所有episode的电池数据  # 修改
+    battery_log_keep_steps = int(cfg.get('battery_log_keep_steps', 2000))
+    if battery_log_keep_steps <= 0:
+        battery_log_keep_steps = 1
+    battery_log_stride = int(cfg.get('battery_log_stride', 1))
+    if battery_log_stride <= 0:
+        battery_log_stride = 1
+    battery_log = deque(maxlen=battery_log_keep_steps)
 
     # =========2026.2.7修改：保存探索期动作==========
     exploration_actions_saved = False  # 标记是否已保存探索期动作
@@ -336,8 +343,9 @@ def train(cfg, env, agent):
             else:
                 info_missing_counts['srd'] += 1
 
-            battery_snapshot = [car[1] for car in env.car]  # 20250726添加，画图1用 # 每步记录所有车辆电量
-            current_ep_battery_log.append(battery_snapshot) # 20250726添加，画图1用
+            if (i_step % battery_log_stride) == 0:
+                battery_snapshot = np.asarray([car[1] for car in env.car], dtype=np.float32)
+                current_ep_battery_log.append(battery_snapshot)
 
             agent.memory.push((state, action, scaled_reward, next_state, bool(done)))
             #agent.update()  #2026.1.22修改
@@ -389,7 +397,7 @@ def train(cfg, env, agent):
             eval_rewards.append(eval_reward)
             eval_episodes.append(i_ep + 1)
             print(f"  [Eval] Episode {i_ep+1}: mean reward={eval_reward:.2f} over {eval_eps} eps")
-        battery_log.extend(current_ep_battery_log)  # 修改：将当前episode的电池数据追加到总列表  # 修改
+        battery_log.extend(current_ep_battery_log)
     print(f"[InfoCoverage] missing counts: {info_missing_counts}")
     print("完成训练！")
 
@@ -437,11 +445,16 @@ def train(cfg, env, agent):
         charger_available_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
         charger_used_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
 
+    if len(battery_log) > 0:
+        battery_log_arr = np.asarray(list(battery_log), dtype=np.float32)
+    else:
+        battery_log_arr = np.empty((0, int(getattr(env, 'CAR_NUM', 0))), dtype=np.float32)
+
     return {'rewards': rewards,
     'raw_rewards': raw_rewards,
     'eval_rewards': eval_rewards,
     'eval_episodes': eval_episodes,
-    'battery_log': battery_log,
+    'battery_log': battery_log_arr,
     'critic1_losses': critic1_losses,
     'critic2_losses': critic2_losses,
     'actor_losses': actor_losses,

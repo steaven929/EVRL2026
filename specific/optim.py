@@ -23,8 +23,8 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     # =========2026.3.3修改，优化Gurobi求解器性能==========
     # 设置输出标志，关闭求解输出
     model.setParam('OutputFlag', 0)
-    # 设置线程数（利用多核CPU）
-    model.setParam('Threads', 4)
+    # 设置线程数（线程越多通常越吃内存）
+    model.setParam('Threads', 2)
     # 设置MIP求解策略（0=自动，1=快速启发式）
     model.setParam('MIPFocus', 1)
     # 设置容差（稍微放宽精度以加速）
@@ -40,8 +40,10 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
     # ======修改结束
 
     # =========2026.1.30修改，最优解求解==========
-    # 内存保护：允许节点写盘，降低分支定界峰值内存压力
-    model.setParam('NodefileStart', 0.5)
+    # 内存保护：允许节点更早写盘，降低分支定界峰值内存压力
+    model.setParam('NodefileStart', 0.25)
+    # 达到软内存上限时返回MEM_LIMIT，避免直接OOM崩溃
+    model.setParam('SoftMemLimit', 8)
     # ======修改结束
     
     # =========2026.1.30修改，最优解求解==========

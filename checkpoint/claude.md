@@ -301,3 +301,6 @@ state = np.concatenate([od_part, charger_states, num_chargers_feat,
 - 已修复 `core/training.py` 内存放大问题：日志时间维度改为环境 `TIME_NUM`（可由 `log_time_num` 覆盖），不再直接使用 `max_steps` 预分配 `(max_steps, zone_num)` 大矩阵。
 - 已修复 `specific/optim.py` 的Gurobi内存压力点：不可行 `car_assignment` 变量改为 `ub=0`（替代大量零约束），并在每次求解后 `model.dispose()` 显式释放模型内存。
 - 已在 `main.py` 与 `core/util.py` 同步时间步防护：默认 `max_steps=26`，并在运行时将 `cfg['max_steps']` 与 `cfg['log_time_num']` 对齐到环境 `TIME_NUM`，防止出现 `(100000, 50)` 级日志预分配。
+- 已新增长训内存防护：`core/training.py` 的 `battery_log` 改为有界缓存（`battery_log_keep_steps` + `battery_log_stride`），避免1000车场景下日志无限累积；`specific/optim.py` 将 `Threads` 下调到2，并设置 `NodefileStart=0.25`、`SoftMemLimit=8` 降低Gurobi OOM概率。
+- 已对齐单智能体与MARL基线口径：`main_marl.py` 新增 `data_folder -> specific/config.json` 复制链路；并在运行时将 `cfg['max_steps']` 与 `cfg['log_time_num']` 对齐环境 `TIME_NUM`。`core/marl_training.py` 新增 `max_steps` 上限、周期评估（`eval_rewards/eval_episodes`）和 `marl_metric_sample_every` 参数（默认1，每步采样）。
+- 已加入MARL策略优化（不改reward权重）：`core/marl_training.py` 使用“自适应探索噪声日程”（`marl_noise_start/min/decay_power/warmup_eps` + `marl_service_target` 驱动的噪声补偿），当上一轮 `svc` 低于目标时自动提高探索强度。
