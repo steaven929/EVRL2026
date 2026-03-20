@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument('--algo_name',default='TD3',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=1500,type=int,help="episodes of training") #训练轮数（MARL优化默认1500轮）
+    parser.add_argument('--train_eps',default=1,type=int,help="episodes of training") #训练轮数（MARL优化默认1500轮）
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=26,type=int,help="steps per episode") #最大步数与TIME_NUM对齐，避免无效超大预设
     parser.add_argument('--gamma',default=0.98,type=float,help="discounted factor")  #折扣因子（MARL优化默认）

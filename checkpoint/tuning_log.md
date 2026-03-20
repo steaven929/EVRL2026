@@ -218,6 +218,47 @@
 **理论依据**:
 * 固定惩罚-500使得充电奖励100几乎不可见（信噪比1:5）
 * 移除固定惩罚后，充电奖励成为主导信号
+
+---
+
+## 2026-03-17: [分支实验MARL-BASELINE-ALIGN] 1000车口径统一 + MARL无权重策略优化
+**背景**: 用户目标是“不改reward权重，让MARL在公平口径下优于SAC/TD3”。先修复内存与口径偏差，再优化MARL学习效率。
+
+### 参数变动（已写入默认）
+| 参数 (Parameter) | 旧值 (Old) | 新值 (New) | 变动理由 |
+| :--- | :--- | :--- | :--- |
+| `train_eps` | `1000` | **`1500`** | MARL后段提升明显，延长训练窗口 |
+| `batch_size` | `512` | **`256`** | 提高更新响应速度，降低“学习过慢” |
+| `memory_capacity` | `64000` | **`128000`** | 覆盖更多状态转移，降低策略遗忘 |
+| `actor_lr` | `2e-5` | **`5e-5`** | 提升策略更新幅度 |
+| `critic_lr` | `3e-5` | **`1e-4`** | 提升价值学习速度 |
+| `gamma` | `0.97` | **`0.98`** | 强化中长期回报传播 |
+| `tau` | `3e-4` | **`8e-4`** | 加快目标网络跟踪 |
+| `max_steps` | `26(已设)` | `26(保持)` | 与TIME_NUM一致，防止日志内存放大 |
+
+### 新增MARL探索参数（默认值）
+| 参数 | 默认值 | 作用 |
+| :--- | :--- | :--- |
+| `marl_noise_start` | `0.35` | 前期探索强度 |
+| `marl_noise_min` | `0.12` | 后期探索下限 |
+| `marl_noise_decay_power` | `1.4` | 衰减曲线形状 |
+| `marl_noise_warmup_eps` | `50` | 热启动轮数 |
+| `marl_service_target` | `0.85` | 服务率目标（用于自适应噪声） |
+| `marl_noise_service_boost` | `0.10` | 低svc时的噪声增益 |
+| `marl_metric_sample_every` | `1` | 指标采样频率（每步） |
+
+### 训练流程口径对齐（非超参但影响可比性）
+- `main_marl.py` 新增 `data_folder -> specific/config.json` 同步（对齐 `main.py`）。
+- `main_marl.py`/`core/marl_training.py` 对齐 `max_steps/log_time_num` 到环境 `TIME_NUM`。
+- MARL新增周期评估并落盘：`eval_rewards.npy`、`eval_episodes.npy`。
+
+### 实验结果（当前为冒烟验证）
+- 代码语法与最小训练通过；新输出目录已包含周期评估文件。
+- 长轮次收益尚待统一种子组（2/7/11）正式对比验证。
+
+### 结论
+- ✅ **Keep（阶段性）**：保留当前默认参数与口径对齐改动，进入多seed正式评估。
+- 下一步：在统一口径下比较 MARL/SAC/TD3 的 `tail100 mean reward` 与 `svc/srd/rld`。
 * 5倍增强确保充电收益远大于短期成本
 
 **预期效果**:

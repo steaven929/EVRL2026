@@ -304,3 +304,62 @@ state = np.concatenate([od_part, charger_states, num_chargers_feat,
 - 已新增长训内存防护：`core/training.py` 的 `battery_log` 改为有界缓存（`battery_log_keep_steps` + `battery_log_stride`），避免1000车场景下日志无限累积；`specific/optim.py` 将 `Threads` 下调到2，并设置 `NodefileStart=0.25`、`SoftMemLimit=8` 降低Gurobi OOM概率。
 - 已对齐单智能体与MARL基线口径：`main_marl.py` 新增 `data_folder -> specific/config.json` 复制链路；并在运行时将 `cfg['max_steps']` 与 `cfg['log_time_num']` 对齐环境 `TIME_NUM`。`core/marl_training.py` 新增 `max_steps` 上限、周期评估（`eval_rewards/eval_episodes`）和 `marl_metric_sample_every` 参数（默认1，每步采样）。
 - 已加入MARL策略优化（不改reward权重）：`core/marl_training.py` 使用“自适应探索噪声日程”（`marl_noise_start/min/decay_power/warmup_eps` + `marl_service_target` 驱动的噪声补偿），当上一轮 `svc` 低于目标时自动提高探索强度。
+
+---
+
+## 2026-03-17 会话总接续记忆（跨窗口恢复用）
+
+### A. 本轮用户目标与结论
+- 用户主目标：在 1000 车场景下稳定训练，并让 MARL 在公平口径下尽量优于 SAC/TD3。
+- 关键结论：
+  - 之前的 `(100000, 50)` 内存报错来自日志时间维度错误绑定 `max_steps`，已修复。
+  - TD3 的 Gurobi OOM 主要由大规模重复求解 + 长训内存压力叠加导致，已做减压改造。
+  - MARL 与单智能体对比口径曾不完全一致，已补齐关键口径（配置同步、时间步、评估输出、采样频率）。
+
+### B. 本轮已完成的代码与配置变更（核心）
+- 1000车配置落地：
+  - `data/SIP/config_sip.json`、`data/SIP/config.json`：按 `data/new_setting区分功能区.txt` 的 1000 车列更新各区 `num_parking_slots`/`charging_slots`，并设 `CAR_NUM=1000`。
+  - `specific/dclily_elec.py`：强制覆盖 `CAR_NUM=1000`。
+  - `data/SIP/capacity.csv`：重建为“第1行初始车辆分布总和=1000，第2行停车位上限=1000列配置”。
+- 内存与稳定性修复：
+  - `core/training.py`：日志时间维度改为 `TIME_NUM/log_time_num`，与 `max_steps` 解耦；`battery_log` 改为有界缓存并支持步长采样。
+  - `core/util.py`：`max_steps` 默认改为 26；新增 `battery_log_keep_steps`、`battery_log_stride`。
+  - `specific/optim.py`：不可行分配改 `ub=0`（替代大量 `==0` 约束）；求解后 `model.dispose()`；Gurobi 参数降内存（线程降低、NodefileStart 提前、SoftMemLimit）。
+- MARL口径对齐与策略优化：
+  - `main_marl.py`：补齐 `cp(..\data_folder)` 配置同步；对齐 `max_steps/log_time_num`；新增保存 `eval_rewards/eval_episodes`。
+  - `core/marl_training.py`：支持 `max_steps` 上限、周期评估、`marl_metric_sample_every`；新增自适应探索噪声日程。
+  - `core/util.py`：新增 MARL 噪声参数；并将默认训练参数切到当前优化版本（见 C 节）。
+
+### C. 当前默认参数快照（以 `core/util.py` 为准）
+- 训练：`train_eps=1500`, `test_eps=10`, `max_steps=26`
+- 优化：`batch_size=256`, `memory_capacity=128000`, `actor_lr=5e-5`, `critic_lr=1e-4`, `gamma=0.98`, `tau=8e-4`
+- 奖励：`reward_scale=10000`, `reward_mode=shaping`
+- MARL探索：
+  - `marl_noise_start=0.35`, `marl_noise_min=0.12`, `marl_noise_decay_power=1.4`, `marl_noise_warmup_eps=50`
+  - `marl_service_target=0.85`, `marl_noise_service_boost=0.10`
+  - `marl_metric_sample_every=1`
+
+### D. 已验证运行（可追溯）
+- 1000车验证：运行时核验 `module_CAR_NUM=1000 / env_CAR_NUM=1000 / len_car=1000`。
+- 冒烟通过：
+  - `main.py`（SAC/TD3/DDPG 最小轮次）可完成训练+测试并产出目录。
+  - `main_marl.py` 口径对齐后可完成训练+测试，且输出 `eval_rewards.npy`、`eval_episodes.npy`。
+
+### E. 仍需关注的风险与注意事项
+- 16GB机器（当前可用内存偏低）长训仍有峰值风险：建议关闭大进程并降低并发压力。
+- `main_marl.py` 参数打印里 `algo_name` 可能显示 `TD3`，但 MARL 路径由 `marl_mode='multi'` 强制；以入口脚本为准。
+- 结果对比优先看 `tail100 mean reward` + `svc/srd/rld`，避免只看单次峰值。
+
+### F. 下次新窗口恢复步骤（必须）
+1. 先读本文件本节（`checkpoint/claude.md`）。
+2. 再读 `results/SESSION_HANDOFF_20260317.md`（本次完整操作纪要）。
+3. 按同口径运行：
+   - `python -u main_marl.py --data_folder data/SIP/`
+   - `python -u main.py --algo_name SAC --data_folder data/SIP/`
+   - `python -u main.py --algo_name TD3 --data_folder data/SIP/`
+
+### G. 消融实验入口（去除Gurobi优化器）
+- 新增独立脚本：`main_marl_no_gurobi.py`。
+- 设计方式：不改原有 `main_marl.py` 与 `specific/optim.py`，仅在新入口中 monkeypatch `specific.optim.solveproblem` 为启发式调度器，再调用原 `main_marl.main()`。
+- 口径对齐：参数解析、`data_folder -> specific/config.json` 同步、`max_steps/log_time_num` 对齐、训练/评估/指标输出目录结构，均沿用 `main_marl.py`。
+- 运行方式：`python -u main_marl_no_gurobi.py --data_folder data/SIP/ [其他参数]`。
