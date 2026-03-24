@@ -20,8 +20,10 @@ def get_args():
     parser.add_argument('--train_eps',default=1,type=int,help="episodes of training") #训练轮数（MARL优化默认1500轮）
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=26,type=int,help="steps per episode") #最大步数与TIME_NUM对齐，避免无效超大预设
-    parser.add_argument('--gamma',default=0.98,type=float,help="discounted factor")  #折扣因子（MARL优化默认）
-    parser.add_argument('--critic_lr',default=1e-4,type=float,help="learning rate of critic")  #critic学习率（MARL优化默认）
+    # =========2026.3.24修改，基于0317结果调参：噪声优化+收敛延长==========
+    parser.add_argument('--gamma',default=0.99,type=float,help="discounted factor")  #折扣因子（0.98→0.99，更重视长期收益降低RLD）
+    parser.add_argument('--critic_lr',default=8e-5,type=float,help="learning rate of critic")  #critic学习率（1e-4→8e-5，Critic已稳定防抖）
+    # ======修改结束
     parser.add_argument('--actor_lr',default=5e-5,type=float,help="learning rate of actor")  #actor学习率（MARL优化默认）
     parser.add_argument('--memory_capacity',default=128000,type=int,help="memory capacity")  #经验池容量（MARL优化默认）
     parser.add_argument('--batch_size',default=256,type=int)  #批量学习数（MARL优化默认）
@@ -52,9 +54,11 @@ def get_args():
     parser.add_argument('--battery_log_keep_steps',default=2000,type=int,help="max timesteps kept for battery heatmap during training")
     parser.add_argument('--battery_log_stride',default=1,type=int,help="record one battery snapshot every N env steps")
     parser.add_argument('--marl_metric_sample_every',default=1,type=int,help="sample interval for MARL per-step metrics")
-    parser.add_argument('--marl_noise_start',default=0.35,type=float,help="initial exploration noise scale for MARL")
-    parser.add_argument('--marl_noise_min',default=0.12,type=float,help="minimum exploration noise scale for MARL")
-    parser.add_argument('--marl_noise_decay_power',default=1.4,type=float,help="decay curvature for MARL exploration noise")
+    # =========2026.3.24修改，噪声衰减参数优化（解决train/eval gap=3000问题）==========
+    parser.add_argument('--marl_noise_start',default=0.30,type=float,help="initial exploration noise scale for MARL")  # 0.35→0.30
+    parser.add_argument('--marl_noise_min',default=0.05,type=float,help="minimum exploration noise scale for MARL")  # 0.12→0.05，下限过高是gap根因
+    parser.add_argument('--marl_noise_decay_power',default=3.0,type=float,help="decay curvature for MARL exploration noise")  # 1.4→3.0，加速前期衰减
+    # ======修改结束
     parser.add_argument('--marl_noise_warmup_eps',default=50,type=int,help="warmup episodes before MARL noise decay")
     parser.add_argument('--marl_service_target',default=0.85,type=float,help="target svc used for MARL adaptive exploration")
     parser.add_argument('--marl_noise_service_boost',default=0.10,type=float,help="extra noise when svc is below target")

@@ -15,7 +15,8 @@
       "Bash(find:*)",
       "Bash(gh repo view:*)",
       "WebFetch(domain:github.com)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(python -c \":*)"
     ]
   },
   "enabledPlugins": {
