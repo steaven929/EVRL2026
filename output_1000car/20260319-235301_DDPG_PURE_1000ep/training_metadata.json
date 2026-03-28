@@ -1,0 +1,19 @@
+{
+  "algo_name": "DDPG_PURE",
+  "seed": 7,
+  "train_eps": 1000,
+  "batch_size": 256,
+  "actor_lr": 1e-05,
+  "critic_lr": 2e-05,
+  "gamma": 0.97,
+  "tau": 0.0001,
+  "memory_capacity": 128000,
+  "n_states": 251,
+  "n_actions": 150,
+  "timestamp": "20260320-195116",
+  "total_episodes": 1000,
+  "mean_reward": 14602.50329910724,
+  "max_reward": 18844.893623140822,
+  "final_reward": 15098.996161151019,
+  "std_reward": 1279.7771327163587
+}

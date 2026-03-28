@@ -1,0 +1,19 @@
+{
+  "algo_name": "SAC",
+  "seed": 2,
+  "train_eps": 1000,
+  "batch_size": 256,
+  "actor_lr": 5e-05,
+  "critic_lr": 0.0001,
+  "gamma": 0.98,
+  "tau": 0.0008,
+  "memory_capacity": 128000,
+  "n_states": 251,
+  "n_actions": 150,
+  "timestamp": "20260319-161111",
+  "total_episodes": 1000,
+  "mean_reward": 14049.753564082932,
+  "max_reward": 20219.75670973878,
+  "final_reward": 15723.93956035102,
+  "std_reward": 1732.5513826009856
+}
