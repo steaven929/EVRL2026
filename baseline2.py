@@ -15,6 +15,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+from matplotlib.lines import Line2D
 from pathlib import Path
 
 sns.set_style("whitegrid")
@@ -372,7 +373,7 @@ def plot_radar_chart(algos_data, output_dir):
     for i, algo in enumerate(algos):
         vals = norm[i].tolist()
         vals += vals[:1]
-        ax.plot(angles, vals, 'o-', linewidth=2, label=algo,
+        ax.plot(angles, vals, '-', linewidth=2, label=algo,
                 color=colors[i % len(colors)], marker=markers[i % len(markers)], markersize=6)
         ax.fill(angles, vals, alpha=0.15, color=colors[i % len(colors)])
 
@@ -488,6 +489,51 @@ def plot_business_metrics(algos_data, output_dir):
     plt.savefig(output_path, dpi=180, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_path}")
+
+
+def plot_algorithm_legend(algos_data, output_dir):
+    """Generate standalone legend for algorithms."""
+    algos = list(algos_data.keys())
+    if not algos:
+        return
+
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    markers = ['o', 's', '^', 'D', 'P', 'X']
+
+    handles = []
+    for i, algo in enumerate(algos):
+        handles.append(
+            Line2D(
+                [0], [0],
+                color=colors[i % len(colors)],
+                marker=markers[i % len(markers)],
+                linewidth=2.4,
+                markersize=8,
+                label=algo
+            )
+        )
+
+    fig_w = max(6.0, 1.9 * len(algos))
+    fig, ax = plt.subplots(figsize=(fig_w, 1.8))
+    ax.axis('off')
+    ax.legend(
+        handles=handles,
+        loc='center',
+        ncol=min(4, len(algos)),
+        frameon=False,
+        fontsize=12,
+        handlelength=2.2,
+        columnspacing=1.2
+    )
+
+    png_path = output_dir / 'comparison_algorithm_legend.png'
+    svg_path = output_dir / 'comparison_algorithm_legend.svg'
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=220, bbox_inches='tight', transparent=True)
+    plt.savefig(svg_path, bbox_inches='tight', transparent=True)
+    plt.close()
+    print(f"Saved: {png_path}")
+    print(f"Saved: {svg_path}")
 
 
 def find_latest_run(algo_name, base_dir='output'):
@@ -677,6 +723,11 @@ def main():
             plot_business_metrics(algos_data, output_dir)
         except Exception as e:
             print(f"Warning: Could not generate business metrics: {e}")
+
+        try:
+            plot_algorithm_legend(algos_data, output_dir)
+        except Exception as e:
+            print(f"Warning: Could not generate algorithm legend: {e}")
 
     # 保存对比元数据
     if not args.no_timestamp:

@@ -121,6 +121,12 @@ def marl_train(env, agent, cfg, path=None):
     if reward_scale <= 0:
         reward_scale = 1.0
 
+    marl_updates_per_step = max(1, int(cfg.get('marl_updates_per_step', 1)))
+    marl_learning_starts = int(cfg.get('marl_learning_starts', cfg.get('batch_size', 128)))
+    if marl_learning_starts < int(cfg.get('batch_size', 128)):
+        marl_learning_starts = int(cfg.get('batch_size', 128))
+    total_env_steps = 0
+
     if hasattr(env, 'set_experiment_variant'):
         env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
     if hasattr(env, 'set_reward_mode'):
@@ -314,12 +320,14 @@ def marl_train(env, agent, cfg, path=None):
                 done=done,
             )
 
-            if len(agent.memory) >= cfg['batch_size']:
-                critic_loss, actor_loss = agent.update()
-                if critic_loss is not None:
-                    critic_losses.append(critic_loss)
-                if actor_loss is not None and np.isfinite(actor_loss):
-                    actor_losses.append(actor_loss)
+            total_env_steps += 1
+            if len(agent.memory) >= cfg['batch_size'] and total_env_steps >= marl_learning_starts:
+                for _ in range(marl_updates_per_step):
+                    critic_loss, actor_loss = agent.update()
+                    if critic_loss is not None and np.isfinite(critic_loss):
+                        critic_losses.append(critic_loss)
+                    if actor_loss is not None and np.isfinite(actor_loss):
+                        actor_losses.append(actor_loss)
 
             obs_n = next_obs_n
             global_state = next_global_state

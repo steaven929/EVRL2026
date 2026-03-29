@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Created on Tue Sep  3 19:26:35 2024
 
@@ -15,13 +15,13 @@ import gym
 from specific.model import Actor, Critic
 from core.algorithm import DDPG, PureDDPG, SAC, TD3
 from core.buffer import ReplayBuffer
-# =========2026.2.19修改，MARL Phase-1：导入MARL组件==========
+# =========2026.2.19淇敼锛孧ARL Phase-1锛氬鍏ARL缁勪欢==========
 from core.marl_agent import IPPOAgent
-# ======修改结束
+# ======淇敼缁撴潫
 
 
 class NormalizedActions(gym.ActionWrapper):
-    ''' 将action范围重定在[0.1]之间，貌似不需要
+    ''' 灏哸ction鑼冨洿閲嶅畾鍦╗0.1]涔嬮棿锛岃矊浼间笉闇€瑕?
     '''
     def action(self, action):
         # low_bound   = self.action_space.low
@@ -31,9 +31,9 @@ class NormalizedActions(gym.ActionWrapper):
         return action
 
 
-# =========2026.2.20修改，MARL适配器：联合动作与局部观测==========
+# =========2026.2.20淇敼锛孧ARL閫傞厤鍣細鑱斿悎鍔ㄤ綔涓庡眬閮ㄨ娴?=========
 class MARLAdapter(gym.Wrapper):
-    """将单智能体环境包装为MARL接口。"""
+    """Wrap single-agent environment with a MARL interface."""
 
     def __init__(self, env, n_agents):
         super().__init__(env)
@@ -87,7 +87,7 @@ class MARLAdapter(gym.Wrapper):
             state[-1],
         ], dtype=np.float32)
         return np.concatenate([local_obs, np.array([float(agent_id)], dtype=np.float32)], axis=0)
-# ======修改结束
+# ======淇敼缁撴潫
 
     # def reverse_action(self, action):
     #     low_bound   = self.action_space.low
@@ -97,7 +97,7 @@ class MARLAdapter(gym.Wrapper):
     #     return action
     
 def all_seed(env,seed = 1):
-    ''' 万能的seed函数
+    ''' 涓囪兘鐨剆eed鍑芥暟
     '''
     env.seed(seed) # env config
     np.random.seed(seed)
@@ -111,7 +111,7 @@ def all_seed(env,seed = 1):
     torch.backends.cudnn.enabled = False
     
 def env_agent_config(cfg):
-    env = NormalizedActions(gym.make(cfg['env_name'])) # 装饰action噪声
+    env = NormalizedActions(gym.make(cfg['env_name'])) # 瑁呴グaction鍣０
     if cfg['seed'] !=0:
         all_seed(env,seed=cfg['seed'])
     n_states = env.observation_space.shape[0]
@@ -119,10 +119,9 @@ def env_agent_config(cfg):
     state_vocab_size = 64
     if hasattr(env.observation_space, 'nvec'):
         state_vocab_size = int(np.max(env.observation_space.nvec))
-    cfg.update({"n_states":n_states,"n_actions":n_actions, "state_vocab_size": state_vocab_size}) # 更新n_states和n_actions到cfg参数中
-
-    # =========2026.2.19修改，MARL Phase-1：支持multi模式==========
-    marl_mode = cfg.get('marl_mode', 'single')  # 默认single模式
+    cfg.update({"n_states":n_states,"n_actions":n_actions, "state_vocab_size": state_vocab_size}) # 鏇存柊n_states鍜宯_actions鍒癱fg鍙傛暟涓?
+    # =========2026.2.19淇敼锛孧ARL Phase-1锛氭敮鎸乵ulti妯″紡==========
+    marl_mode = cfg.get('marl_mode', 'single')  # 榛樿single妯″紡
 
     if marl_mode == 'multi':
         inferred_agents = n_actions // 3
@@ -135,13 +134,13 @@ def env_agent_config(cfg):
 
         env = MARLAdapter(env, n_agents=cfg['n_agents'])
 
-        # 多智能体模式：IPPO with Parameter Sharing
+        # 澶氭櫤鑳戒綋妯″紡锛欼PPO with Parameter Sharing
         agent = IPPOAgent(
-            obs_dim=6,  # 局部观测维度（不含agent_id）
-            n_agents=cfg.get('n_agents', 50),  # 智能体数量（区域数）
-            action_dim=3,  # 每个智能体的动作维度
-            global_state_dim=n_states,  # 全局状态维度
-            agent_embed_dim=16,  # agent_id embedding维度
+            obs_dim=6,  # 灞€閮ㄨ娴嬬淮搴︼紙涓嶅惈agent_id锛?
+            n_agents=cfg.get('n_agents', 50),  # 鏅鸿兘浣撴暟閲忥紙鍖哄煙鏁帮級
+            action_dim=3,  # 姣忎釜鏅鸿兘浣撶殑鍔ㄤ綔缁村害
+            global_state_dim=n_states,  # 鍏ㄥ眬鐘舵€佺淮搴?
+            agent_embed_dim=16,  # agent_id embedding缁村害
             actor_hidden_dim=cfg.get('actor_hidden_dim', 128),
             critic_hidden_dim=cfg.get('critic_hidden_dim', 256),
             actor_lr=cfg['actor_lr'],
@@ -150,26 +149,29 @@ def env_agent_config(cfg):
             tau=cfg['tau'],
             batch_size=cfg['batch_size'],
             memory_capacity=cfg['memory_capacity'],
+            policy_delay=cfg.get('marl_policy_delay', cfg.get('policy_delay', 2)),
+            target_policy_noise=cfg.get('marl_target_policy_noise', cfg.get('target_policy_noise', 0.08)),
+            target_noise_clip=cfg.get('marl_target_noise_clip', cfg.get('target_noise_clip', 0.15)),
             device=cfg['device']
         )
         return env, agent
-    # ======修改结束
+    # ======淇敼缁撴潫
 
-    # 根据算法名称选择不同的agent（单智能体模式）
+    # 鏍规嵁绠楁硶鍚嶇О閫夋嫨涓嶅悓鐨刟gent锛堝崟鏅鸿兘浣撴ā寮忥級
     if cfg['algo_name'] == 'SAC':
         memory = ReplayBuffer(cfg['memory_capacity'])
-        # =========2026.2.19修改，增加vocab_size以支持SIP数据集==========
-        # SIP数据集：OD_MAX=13, TIME_NUM=26
-        # vocab_size需要 >= max(OD_MAX, TIME_NUM) = 26
+        # =========2026.2.19淇敼锛屽鍔爒ocab_size浠ユ敮鎸丼IP鏁版嵁闆?=========
+        # SIP鏁版嵁闆嗭細OD_MAX=13, TIME_NUM=26
+        # vocab_size闇€瑕?>= max(OD_MAX, TIME_NUM) = 26
         agent = SAC(
             n_states=n_states,
             n_actions=n_actions,
             memory=memory,
-            vocab_size=30,  # 从12增加到30，支持SIP数据集（OD_MAX=13, TIME_NUM=26）
-            # ======修改结束
+            vocab_size=30,  # 浠?2澧炲姞鍒?0锛屾敮鎸丼IP鏁版嵁闆嗭紙OD_MAX=13, TIME_NUM=26锛?
+            # ======淇敼缁撴潫
             embedding_dims=cfg['actor_embed_dim'],
             hidden_dim=cfg['actor_hidden_dim'],
-            use_dual_head=cfg.get('use_dual_head', False),  # 是否使用双头架构
+            use_dual_head=cfg.get('use_dual_head', False),  # 鏄惁浣跨敤鍙屽ご鏋舵瀯
             actor_lr=cfg['actor_lr'],
             critic_lr=cfg['critic_lr'],
             alpha_lr=cfg.get('sac_alpha_lr', 3e-4),
@@ -210,37 +212,37 @@ import numpy as np
 
 
 def manual_action_test(env, custom_action=None):
-    print("\n=== 手动动作测试开始 ===")
+    print("\n=== 鎵嬪姩鍔ㄤ綔娴嬭瘯寮€濮?===")
 
     obs = env.reset()
 
-    # 从动作空间推断 ZONE_NUM
+    # 浠庡姩浣滅┖闂存帹鏂?ZONE_NUM
     Z = env.action_space.shape[0] // 3
 
-    # 如果未指定动作，则构造一个有代表性的动作
+    # 濡傛灉鏈寚瀹氬姩浣滐紝鍒欐瀯閫犱竴涓湁浠ｈ〃鎬х殑鍔ㄤ綔
     if custom_action is None:
         custom_action = np.array([
-            1.0, 0.0, 0.0, 0.0,  # 出发倾向：只从区域0发车
-            0.0, 1.0, 0.0, 0.0,  # 目的地倾向：送去区域1
-            1.0, 0.0, 0.0, 0.0  # 充电倾向：偏好去区域1充电
+            1.0, 0.0, 0.0, 0.0,  # 鍑哄彂鍊惧悜锛氬彧浠庡尯鍩?鍙戣溅
+            0.0, 1.0, 0.0, 0.0,  # 鐩殑鍦板€惧悜锛氶€佸幓鍖哄煙1
+            1.0, 0.0, 0.0, 0.0  # 鍏呯數鍊惧悜锛氬亸濂藉幓鍖哄煙1鍏呯數
         ])
 
     print("\n[Manual Action Input]")
-    print("出发倾向:", custom_action[0:Z])
-    print("目的地倾向:", custom_action[Z:2 * Z])
-    print("充电倾向:", custom_action[2 * Z:3 * Z])
+    print("鍑哄彂鍊惧悜:", custom_action[0:Z])
+    print("鐩殑鍦板€惧悜:", custom_action[Z:2 * Z])
+    print("鍏呯數鍊惧悜:", custom_action[2 * Z:3 * Z])
 
-    # 执行一步调度
+    # 鎵ц涓€姝ヨ皟搴?
     obs, reward, done, _ = env.step(custom_action)
 
     print(f"\n[Step 0 Completed] Reward = {reward:.2f}, Terminal = {done}")
-    print("=== 手动动作测试结束 ===\n")
+    print("=== 鎵嬪姩鍔ㄤ綔娴嬭瘯缁撴潫 ===\n")
 
 
 def test_handle_vehicle_charging(self):
-    # 假设车辆编号为0
+    # 鍋囪杞﹁締缂栧彿涓?
     vehicle_id = 0
-    self.car = [[0, 100, 0]]  # 当前位置0，电量100，当前无任务
+    self.car = [[0, 100, 0]]  # 褰撳墠浣嶇疆0锛岀數閲?00锛屽綋鍓嶆棤浠诲姟
 
     self.dist = np.array([
         [0, 10, 20, 30],
@@ -250,31 +252,32 @@ def test_handle_vehicle_charging(self):
     ])
 
     self.available = np.array([
-        [1, 1, 0, 0],  # 当前泊位占用情况
-        [2, 2, 2, 2],  # 多余行：用于pre_avail对比
+        [1, 1, 0, 0],  # 褰撳墠娉婁綅鍗犵敤鎯呭喌
+        [2, 2, 2, 2],  # 澶氫綑琛岋細鐢ㄤ簬pre_avail瀵规瘮
     ])
 
     self.mem_available = np.array([
-        [2, 2, 2, 2]  # 总容量
+        [2, 2, 2, 2]  # 鎬诲閲?
     ])
 
     global CHARGER_ZONES
-    CHARGER_ZONES = [1, 2]  # 假设1、2区有充电桩
+    CHARGER_ZONES = [1, 2]  # 鍋囪1銆?鍖烘湁鍏呯數妗?
 
-    # case: 目标区域 1 有桩有位，应直接派往
-    print("🚗 车辆前往区域 1")
+    # case: 鐩爣鍖哄煙 1 鏈夋々鏈変綅锛屽簲鐩存帴娲惧線
+    print("馃殫 杞﹁締鍓嶅線鍖哄煙 1")
     result = self.handle_vehicle_charging(vehicle_id, 1)
-    print(f"结果目标区域: {result}, 车辆状态: {self.car[vehicle_id]}")
+    print(f"缁撴灉鐩爣鍖哄煙: {result}, 杞﹁締鐘舵€? {self.car[vehicle_id]}")
 
-    # case: 目标区域 2 没有位，应寻找替代区
-    self.available[0][2] = 2  # 已满
-    print("🚗 车辆尝试前往已满的区域 2")
+    # case: 鐩爣鍖哄煙 2 娌℃湁浣嶏紝搴斿鎵炬浛浠ｅ尯
+    self.available[0][2] = 2  # 宸叉弧
+    print("馃殫 杞﹁締灏濊瘯鍓嶅線宸叉弧鐨勫尯鍩?2")
     result = self.handle_vehicle_charging(vehicle_id, 2)
-    print(f"结果目标区域: {result}, 车辆状态: {self.car[vehicle_id]}")
+    print(f"缁撴灉鐩爣鍖哄煙: {result}, 杞﹁締鐘舵€? {self.car[vehicle_id]}")
 
-    # case: 当前电量不足以到达目标
-    self.car[vehicle_id][1] = 5  # 电量过低
-    print("🚗 电量不足，前往区域 3（无充电桩）")
+    # case: 褰撳墠鐢甸噺涓嶈冻浠ュ埌杈剧洰鏍?
+    self.car[vehicle_id][1] = 5  # 鐢甸噺杩囦綆
+    print("馃殫 鐢甸噺涓嶈冻锛屽墠寰€鍖哄煙 3锛堟棤鍏呯數妗╋級")
     result = self.handle_vehicle_charging(vehicle_id, 3)
-    print(f"结果目标区域: {result}, 车辆状态: {self.car[vehicle_id]}")
+    print(f"缁撴灉鐩爣鍖哄煙: {result}, 杞﹁締鐘舵€? {self.car[vehicle_id]}")
+
 
