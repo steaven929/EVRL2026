@@ -112,6 +112,12 @@ def all_seed(env,seed = 1):
     
 def env_agent_config(cfg):
     env = NormalizedActions(gym.make(cfg['env_name'])) # 瑁呴グaction鍣０
+    base_env = env.unwrapped if hasattr(env, 'unwrapped') else env
+    if hasattr(base_env, 'set_day_sampling'):
+        base_env.set_day_sampling(
+            same_day_train_test=bool(cfg.get('same_day_train_test', False)),
+            fixed_day_index=int(cfg.get('fixed_day_index', 1)),
+        )
     if cfg['seed'] !=0:
         all_seed(env,seed=cfg['seed'])
     n_states = env.observation_space.shape[0]

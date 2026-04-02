@@ -61,18 +61,20 @@ def get_args():
     parser.add_argument('--battery_log_stride',default=1,type=int,help="record one battery snapshot every N env steps")
     parser.add_argument('--marl_metric_sample_every',default=1,type=int,help="sample interval for MARL per-step metrics")
     # =========2026.3.27淇敼锛孧ARL鎺㈢储鍣０杩涗竴姝ュ帇缂╋紙淇train/eval gap 22%锛?=========
-    parser.add_argument('--marl_noise_start',default=0.10,type=float,help="initial exploration noise scale for MARL")  # 0.30鈫?.15锛?0鏅鸿兘浣撳彔鍔犳晥搴斿ぇ椤婚檷浣?
-    parser.add_argument('--marl_noise_min',default=0.01,type=float,help="minimum exploration noise scale for MARL")  # 0.05鈫?.03锛屽悗鏈熸帴杩戠‘瀹氭€х瓥鐣?
+    parser.add_argument('--marl_noise_start',default=0.12,type=float,help="initial exploration noise scale for MARL")  # 0.30鈫?.15锛?0鏅鸿兘浣撳彔鍔犳晥搴斿ぇ椤婚檷浣?
+    parser.add_argument('--marl_noise_min',default=0.02,type=float,help="minimum exploration noise scale for MARL")  # 0.05鈫?.03锛屽悗鏈熸帴杩戠‘瀹氭€х瓥鐣?
     parser.add_argument('--marl_noise_decay_power',default=2.0,type=float,help="decay curvature for MARL exploration noise")  # 3.0鈫?.0锛屽钩婊戣“鍑忔洸绾?
     # ======淇敼缁撴潫
     parser.add_argument('--marl_noise_warmup_eps',default=30,type=int,help="warmup episodes before MARL noise decay")  # 50鈫?0锛屾洿鏃╁紑濮嬭“鍑?
     parser.add_argument('--marl_service_target',default=0.85,type=float,help="target svc used for MARL adaptive exploration")
-    parser.add_argument('--marl_noise_service_boost',default=0.04,type=float,help="extra noise when svc is below target")
-    parser.add_argument('--marl_updates_per_step',default=3,type=int,help="number of gradient updates per env step for MARL")
-    parser.add_argument('--marl_learning_starts',default=4096,type=int,help="minimum replay size before MARL updates")
+    parser.add_argument('--marl_noise_service_boost',default=0.05,type=float,help="extra noise when svc is below target")
+    parser.add_argument('--marl_updates_per_step',default=4,type=int,help="number of gradient updates per env step for MARL")
+    parser.add_argument('--marl_learning_starts',default=2048,type=int,help="minimum replay size before MARL updates")
     parser.add_argument('--marl_policy_delay',default=2,type=int,help="delayed actor update frequency for MARL twin-critic")
     parser.add_argument('--marl_target_policy_noise',default=0.08,type=float,help="target action smoothing noise std for MARL")
     parser.add_argument('--marl_target_noise_clip',default=0.15,type=float,help="target action smoothing noise clip for MARL")
+    parser.add_argument('--same_day_train_test',default=False,type=bool,help="if True, both train and test use the same OD training day")
+    parser.add_argument('--fixed_day_index',default=1,type=int,help="1-based training day index used when same_day_train_test=True")
     # ======淇敼缁撴潫
     # =========2026.2.13淇敼锛屼慨澶嶅懡浠よ鍙傛暟瑙ｆ瀽==========
     # 鍘熶唬鐮侊細args = parser.parse_args([])  # 浼犲叆绌哄垪琛ㄤ細蹇界暐鍛戒护琛屽弬鏁帮紒

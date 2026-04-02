@@ -131,6 +131,8 @@ def marl_train(env, agent, cfg, path=None):
         env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
     if hasattr(env, 'set_reward_mode'):
         env.set_reward_mode(cfg.get('reward_mode', 'base'))
+    if hasattr(env, 'set_training_mode'):
+        env.set_training_mode(1)
 
     for i_ep in range(cfg['train_eps']):
         ep_reward = 0.0
@@ -527,6 +529,8 @@ def marl_test(env, agent, cfg, path=None):
         env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
     if hasattr(env, 'set_reward_mode'):
         env.set_reward_mode(cfg.get('reward_mode', 'base'))
+    if hasattr(env, 'set_training_mode'):
+        env.set_training_mode(0)
 
     env_time_num = int(getattr(env, 'TIME_NUM', cfg.get('TIME_NUM', 26)))
     if env_time_num <= 0:

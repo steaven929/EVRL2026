@@ -148,7 +148,10 @@ class dclily(gym.Env):
         super(dclily, self).__init__()
 
         # 定义动作空间和观测空间
-        self.config = config  #1011增强rl逻辑时 新增
+        self.config = config  # runtime config
+        self.same_day_train_test = bool(self.config.get('same_day_train_test', False))
+        self.fixed_day_index = int(self.config.get('fixed_day_index', 1))
+        self.fixed_day_index = max(1, min(training_set_number, self.fixed_day_index))  #1011增强rl逻辑时 新增
 
         self.training = 1  # 1是否处于训练模式的标志
         self.action_space = ACTION_SPACE  # 1环境的动作空间
@@ -260,6 +263,11 @@ class dclily(gym.Env):
                 f.write(f"{t},{v.id},{v.origin},{v.destination},{v.soc:.2f},"
                         f"{v.current_zone},{v.target_zone},{v.distance_to_target:.2f}\n")
     
+    def set_day_sampling(self, same_day_train_test=False, fixed_day_index=1):
+        self.same_day_train_test = bool(same_day_train_test)
+        idx = int(fixed_day_index)
+        self.fixed_day_index = max(1, min(training_set_number, idx))
+
     def write_od_left(self, new):
         if self.training:  # 根据 self.training 的标志判断当前模式是训练模式还是测试模式，然后选择不同的文件来加载 OD（Origin-Destination）需求数据，并计算每个区域的 OD 流量（流入和流出量）
             if new:
@@ -283,14 +291,20 @@ class dclily(gym.Env):
                     self.mem_od_in.append(od_in)
                     self.mem_od_out.append(od_out)
 
-            a = random.randint(0, training_set_number - 1)
+            if self.same_day_train_test:
+                a = self.fixed_day_index - 1
+            else:
+                a = random.randint(0, training_set_number - 1)
             OD_demand = self.mem_od_demand[a]
             df_od = np.array(OD_demand)
             od_in = self.mem_od_in[a]
             od_out = self.mem_od_out[a]
         else:
             # 目前默认只有一个测试场景
-            OD_demand = pd.read_csv(path + 'od_demand_test.csv')
+            if self.same_day_train_test:
+                OD_demand = pd.read_csv(path + f'od_demand_{self.fixed_day_index}.csv')
+            else:
+                OD_demand = pd.read_csv(path + 'od_demand_test.csv')
             df_od = np.array([[[0] * ZONE_NUM] * ZONE_NUM] * (OD_demand.shape[1] - 2))
             for i in range(OD_demand.shape[0]):
                 for j in range(2, OD_demand.shape[1]):
