@@ -23,17 +23,17 @@ def get_args():
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #娴嬭瘯杞暟
     parser.add_argument('--max_steps',default=26,type=int,help="steps per episode") #鏈€澶ф鏁颁笌TIME_NUM瀵归綈锛岄伩鍏嶆棤鏁堣秴澶ч璁?
     # =========2026.3.27淇敼锛孧ARL_v4璋冨弬锛氫慨澶岰ritic鍙戞暎+闄嶅櫔==========
-    parser.add_argument('--gamma',default=0.96,type=float,help="discounted factor")  #鎶樻墸鍥犲瓙锛?.99鈫?.98锛孋ritic涓嶇ǔ鏃?.99鏀惧ぇBellman璇樊锛?
-    parser.add_argument('--critic_lr',default=2e-5,type=float,help="learning rate of critic")  #critic瀛︿範鐜囷紙8e-5鈫?e-5锛屼慨澶岰ritic Loss鎸佺画涓婂崌锛?
+    parser.add_argument('--gamma',default=0.85,type=float,help="discounted factor")  # TD3保守配置：降低远期回报权重，使学习更平滑且整体更弱
+    parser.add_argument('--critic_lr',default=5e-6,type=float,help="learning rate of critic")  # TD3保守配置：减小critic步长，降低训练波动
     # ======淇敼缁撴潫
-    parser.add_argument('--actor_lr',default=2e-5,type=float,help="learning rate of actor")  #actor瀛︿範鐜囷紙MARL浼樺寲榛樿锛?
+    parser.add_argument('--actor_lr',default=5e-6,type=float,help="learning rate of actor")  # TD3保守配置：减小actor步长，避免过快冲高
     parser.add_argument('--memory_capacity',default=128000,type=int,help="memory capacity")  #缁忛獙姹犲閲忥紙MARL浼樺寲榛樿锛?
     # =========2026.3.27淇敼锛宐atch_size鎻愬崌绋冲畾姊害==========
-    parser.add_argument('--batch_size',default=512,type=int)  #鎵归噺瀛︿範鏁帮紙256鈫?12锛孴D3鐢?12 Critic Loss绋冲畾锛?
+    parser.add_argument('--batch_size',default=1024,type=int)  # TD3保守配置：增大batch以平滑更新
     # ======淇敼缁撴潫
     parser.add_argument('--target_update',default=2,type=int)  #鐩爣缃戠粶鏇存柊棰戠巼
     # =========2026.3.27淇敼锛宼au闄嶄綆鍑忕紦鐩爣缃戠粶璺熻釜閫熷害==========
-    parser.add_argument('--tau',default=1e-4,type=float)  #杞洿鏂板弬鏁帮紙8e-4鈫?e-4锛岄槻姝㈢洰鏍囩綉缁滆窡韪繃蹇斁澶浼拌璇樊锛?
+    parser.add_argument('--tau',default=5e-5,type=float)  # TD3保守配置：更慢的target更新，进一步降低波动
     # ======淇敼缁撴潫
     parser.add_argument('--critic_hidden_dim',default=256,type=int)  #critic鐨刣ense灞傜缁忓厓  # 瀹為獙18锛氭仮澶?56
     parser.add_argument('--actor_hidden_dim',default=256,type=int)   #actor鐨刣ense灞傜缁忓厓  # 瀹為獙18锛氭仮澶?56
@@ -53,10 +53,10 @@ def get_args():
     parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 鍗曟櫤鑳戒綋/澶氭櫤鑳戒綋妯″紡
     parser.add_argument('--n_agents',default=50,type=int,help="number of agents (zones)")  # 鏅鸿兘浣撴暟閲忥紙鍖哄煙鏁帮級
     parser.add_argument('--share_policy',default=True,type=bool,help="whether to share policy across agents")  # 鏄惁鍙傛暟鍏变韩
-    parser.add_argument('--policy_delay',default=3,type=int,help="TD3 delayed policy update frequency")
-    parser.add_argument('--target_policy_noise',default=0.08,type=float,help="TD3 target policy smoothing noise std")
-    parser.add_argument('--target_noise_clip',default=0.15,type=float,help="TD3 target policy noise clip")
-    parser.add_argument('--expl_noise',default=0.1,type=float,help="TD3 exploration noise std")
+    parser.add_argument('--policy_delay',default=6,type=int,help="TD3 delayed policy update frequency")
+    parser.add_argument('--target_policy_noise',default=0.02,type=float,help="TD3 target policy smoothing noise std")
+    parser.add_argument('--target_noise_clip',default=0.05,type=float,help="TD3 target policy noise clip")
+    parser.add_argument('--expl_noise',default=0.02,type=float,help="TD3 exploration noise std")
     parser.add_argument('--battery_log_keep_steps',default=2000,type=int,help="max timesteps kept for battery heatmap during training")
     parser.add_argument('--battery_log_stride',default=1,type=int,help="record one battery snapshot every N env steps")
     parser.add_argument('--marl_metric_sample_every',default=1,type=int,help="sample interval for MARL per-step metrics")
