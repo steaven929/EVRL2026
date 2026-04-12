@@ -155,9 +155,6 @@ def env_agent_config(cfg):
             tau=cfg['tau'],
             batch_size=cfg['batch_size'],
             memory_capacity=cfg['memory_capacity'],
-            policy_delay=cfg.get('marl_policy_delay', cfg.get('policy_delay', 2)),
-            target_policy_noise=cfg.get('marl_target_policy_noise', cfg.get('target_policy_noise', 0.08)),
-            target_noise_clip=cfg.get('marl_target_noise_clip', cfg.get('target_noise_clip', 0.15)),
             device=cfg['device']
         )
         return env, agent

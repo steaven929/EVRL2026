@@ -42,6 +42,9 @@ def test_marl_smoke():
     # 创建环境和智能体
     print("\n1. 创建环境和智能体...")
     env, agent = env_agent_config(cfg)
+    assert hasattr(agent, 'critic'), "rollback MARL agent must keep a single centralized critic"
+    assert not hasattr(agent, 'critic2'), "rollback MARL agent must not expose critic2"
+    assert not hasattr(agent, 'target_critic2'), "rollback MARL agent must not expose target_critic2"
     print(f"   ✓ 环境创建成功")
     print(f"   ✓ 智能体数量: {env.n_agents}")
     print(f"   ✓ 全局状态维度: {env.observation_space.shape[0]}")
