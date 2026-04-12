@@ -18,7 +18,7 @@ def get_args():
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #鐜ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #鏁版嵁浣嶇疆
     # =========2026.3.27淇敼锛屽欢闀胯缁冭疆鏁拌嚦1500==========
-    parser.add_argument('--train_eps',default=1000,type=int,help="episodes of training") #璁粌杞暟锛?鈫?500锛孋ritic绋冲畾鍚庨渶鏇村杞鏀剁泭锛?
+    parser.add_argument('--train_eps',default=10,type=int,help="episodes of training") #璁粌杞暟锛?鈫?500锛孋ritic绋冲畾鍚庨渶鏇村杞鏀剁泭锛?
     # ======淇敼缁撴潫
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #娴嬭瘯杞暟
     parser.add_argument('--max_steps',default=26,type=int,help="steps per episode") #鏈€澶ф鏁颁笌TIME_NUM瀵归綈锛岄伩鍏嶆棤鏁堣秴澶ч璁?
