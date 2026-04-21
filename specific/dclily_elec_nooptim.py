@@ -15,6 +15,7 @@ import threading
 
 class dclily(_BaseDclily):
     _solveproblem_patch_lock = threading.Lock()
+    _local_idle_reserve = 1
 
     def _greedy_dispatch_solveproblem(self, dist, avail, demand, car, reward, re,
                                       car_mem, timestep, real_reward, detail,
@@ -41,6 +42,9 @@ class dclily(_BaseDclily):
                     continue
 
                 for _ in range(trip_count):
+                    if origin < len(avail[0]) and int(avail[0][origin]) <= self._local_idle_reserve:
+                        break
+
                     chosen_vehicle = -1
                     for vid in range(len(car)):
                         if int(car[vid][0]) != origin:
@@ -111,6 +115,9 @@ class dclily(_BaseDclily):
                     continue
 
                 for _ in range(trip_count):
+                    if origin < len(avail[0]) and int(avail[0][origin]) <= self._local_idle_reserve:
+                        break
+
                     chosen_vehicle = -1
                     for vid in range(len(car)):
                         if int(car[vid][0]) != origin:
