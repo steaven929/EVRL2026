@@ -1,0 +1,45 @@
+﻿MARL Reward Tuning Profiles (Next Steps)
+Location: same folder as core/util.py
+Baseline now in util.py: Profile A
+
+Current Profile A (already set in util.py)
+- marl_updates_per_step = 4
+- marl_learning_starts = 2048
+- marl_noise_start = 0.12
+- marl_noise_min = 0.02
+- marl_noise_service_boost = 0.05
+- marl_policy_delay = 2 (unchanged)
+
+========================================
+Profile B (more aggressive for higher reward)
+Only modify these params from current A:
+- marl_updates_per_step: 4 -> 5
+- marl_noise_start: 0.12 -> 0.14
+- marl_noise_service_boost: 0.05 -> 0.06
+Keep unchanged:
+- marl_learning_starts = 2048
+- marl_noise_min = 0.02
+- marl_policy_delay = 2
+
+Suggested run:
+python main_marl.py --train_eps 1000 --test_eps 10
+
+========================================
+Profile C (stability-focused, reduce late collapse)
+Only modify these params from current A:
+- marl_learning_starts: 2048 -> 3072
+- marl_noise_start: 0.12 -> 0.11
+- marl_noise_min: 0.02 -> 0.015
+- marl_policy_delay: 2 -> 3
+Keep unchanged:
+- marl_updates_per_step = 4
+- marl_noise_service_boost = 0.05
+
+Suggested run:
+python main_marl.py --train_eps 1000 --test_eps 10
+
+========================================
+Evaluation rule after each run
+- Primary: rewards.npy tail100 mean
+- Secondary: training_metadata.json max_reward and mean_reward
+- Keep run folders under output_1000car and compare with previous MARL runs.
