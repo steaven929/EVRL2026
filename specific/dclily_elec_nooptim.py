@@ -15,7 +15,30 @@ import threading
 
 class dclily(_BaseDclily):
     _solveproblem_patch_lock = threading.Lock()
-    _local_idle_reserve = 1
+    _local_idle_reserve = 2
+    _dispatch_soc_factor = 1.5
+    _demand_soc_factor = 1.3
+    _dispatch_fraction_cap = 0.35
+    _demand_fraction_cap = 0.5
+
+    def _get_local_idle_reserve(self):
+        return int(getattr(self, "_local_idle_reserve", 2))
+
+    def _get_soc_factor(self, kind):
+        if kind == "dispatch":
+            return float(getattr(self, "_dispatch_soc_factor", 1.5))
+        return float(getattr(self, "_demand_soc_factor", 1.3))
+
+    def _get_fraction_cap(self, kind):
+        if kind == "dispatch":
+            return float(getattr(self, "_dispatch_fraction_cap", 0.35))
+        return float(getattr(self, "_demand_fraction_cap", 0.5))
+
+    def _get_max_executions(self, trip_count, kind):
+        if trip_count <= 0:
+            return 0
+        cap = self._get_fraction_cap(kind)
+        return max(1, int(np.floor(float(trip_count) * cap)))
 
     def _greedy_dispatch_solveproblem(self, dist, avail, demand, car, reward, re,
                                       car_mem, timestep, real_reward, detail,
@@ -36,13 +59,14 @@ class dclily(_BaseDclily):
                 trip_count = int(demand[origin][dest])
                 if trip_count <= 0:
                     continue
+                trip_count = self._get_max_executions(trip_count, "dispatch")
 
                 trip_dist = float(dist[origin][dest])
                 if trip_dist < 0:
                     continue
 
                 for _ in range(trip_count):
-                    if origin < len(avail[0]) and int(avail[0][origin]) <= self._local_idle_reserve:
+                    if origin < len(avail[0]) and int(avail[0][origin]) <= self._get_local_idle_reserve():
                         break
 
                     chosen_vehicle = -1
@@ -51,7 +75,7 @@ class dclily(_BaseDclily):
                             continue
                         if int(car[vid][2]) > 0:
                             continue
-                        if float(car[vid][1]) < trip_dist:
+                        if float(car[vid][1]) < trip_dist * self._get_soc_factor("dispatch"):
                             continue
                         chosen_vehicle = vid
                         break
@@ -109,13 +133,14 @@ class dclily(_BaseDclily):
                 trip_count = int(demand[origin][dest])
                 if trip_count <= 0:
                     continue
+                trip_count = self._get_max_executions(trip_count, "demand")
 
                 trip_dist = float(dist[origin][dest])
                 if trip_dist < 0:
                     continue
 
                 for _ in range(trip_count):
-                    if origin < len(avail[0]) and int(avail[0][origin]) <= self._local_idle_reserve:
+                    if origin < len(avail[0]) and int(avail[0][origin]) <= self._get_local_idle_reserve():
                         break
 
                     chosen_vehicle = -1
@@ -124,7 +149,7 @@ class dclily(_BaseDclily):
                             continue
                         if int(car[vid][2]) > 0:
                             continue
-                        if float(car[vid][1]) < trip_dist:
+                        if float(car[vid][1]) < trip_dist * self._get_soc_factor("demand"):
                             continue
                         chosen_vehicle = vid
                         break
