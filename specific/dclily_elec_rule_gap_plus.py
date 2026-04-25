@@ -8,31 +8,31 @@ from specific.dclily_elec_nooptim import dclily as _NoOptimDclily
 
 
 class dclily(_NoOptimDclily):
-    _rule_gap_plus_local_idle_reserve = 1
-    _rule_gap_plus_dispatch_fraction_cap = 0.4
-    _rule_gap_plus_service_fraction_cap = 0.9
+    _rule_gap_plus_local_idle_reserve = 2
+    _rule_gap_plus_dispatch_fraction_cap = 0.3
+    _rule_gap_plus_service_fraction_cap = 0.75
     _rule_gap_plus_low_soc_threshold = 0.4
-    _rule_gap_plus_dispatch_soc_factor = 1.1
-    _rule_gap_plus_service_soc_factor = 1.0
+    _rule_gap_plus_dispatch_soc_factor = 1.25
+    _rule_gap_plus_service_soc_factor = 1.1
 
-    _local_idle_reserve = 1
-    _dispatch_fraction_cap = 0.4
-    _demand_fraction_cap = 0.9
-    _dispatch_soc_factor = 1.1
-    _demand_soc_factor = 1.0
+    _local_idle_reserve = 2
+    _dispatch_fraction_cap = 0.3
+    _demand_fraction_cap = 0.75
+    _dispatch_soc_factor = 1.25
+    _demand_soc_factor = 1.1
 
     def _get_rule_gap_plus_local_idle_reserve(self):
-        return int(getattr(self, "_rule_gap_plus_local_idle_reserve", 1))
+        return int(getattr(self, "_rule_gap_plus_local_idle_reserve", 2))
 
     def _get_rule_gap_plus_fraction_cap(self, kind):
         if kind == "dispatch":
-            return float(getattr(self, "_rule_gap_plus_dispatch_fraction_cap", 0.4))
-        return float(getattr(self, "_rule_gap_plus_service_fraction_cap", 0.9))
+            return float(getattr(self, "_rule_gap_plus_dispatch_fraction_cap", 0.3))
+        return float(getattr(self, "_rule_gap_plus_service_fraction_cap", 0.75))
 
     def _get_rule_gap_plus_soc_factor(self, kind):
         if kind == "dispatch":
-            return float(getattr(self, "_rule_gap_plus_dispatch_soc_factor", 1.1))
-        return float(getattr(self, "_rule_gap_plus_service_soc_factor", 1.0))
+            return float(getattr(self, "_rule_gap_plus_dispatch_soc_factor", 1.25))
+        return float(getattr(self, "_rule_gap_plus_service_soc_factor", 1.1))
 
     def _build_depart_preferences(self, dispatchable_counts, outgoing_demand):
         dispatchable_counts = np.asarray(dispatchable_counts, dtype=float)
@@ -60,7 +60,6 @@ class dclily(_NoOptimDclily):
                 return np.zeros(self.ZONE_NUM, dtype=np.float32)
             return (shortage / total_shortage).astype(np.float32)
 
-        demand_intensity = outgoing_demand / np.maximum(dispatchable_counts, 1.0)
         weighted_shortage = np.zeros(self.ZONE_NUM, dtype=float)
         surplus_origins = np.where(surplus > 0)[0]
         for dest in range(self.ZONE_NUM):
@@ -69,7 +68,7 @@ class dclily(_NoOptimDclily):
             proximity_score = 0.0
             for origin in surplus_origins:
                 proximity_score += surplus[origin] / (1.0 + float(self.dist[origin][dest]))
-            weighted_shortage[dest] = shortage[dest] * (1.0 + demand_intensity[dest]) * proximity_score
+            weighted_shortage[dest] = shortage[dest] * proximity_score
 
         total_weighted_shortage = float(np.sum(weighted_shortage))
         if total_weighted_shortage <= 0:
@@ -107,20 +106,8 @@ class dclily(_NoOptimDclily):
                 continue
 
             demand_pressure = float(outgoing_demand[zone]) / max(float(dispatchable_counts[zone]), 1.0)
-            low_soc_ratio = low_soc_count / len(idle_soc)
-            if demand_pressure >= 1.5:
-                demand_discount = 0.15
-            elif demand_pressure >= 1.0:
-                demand_discount = 0.3
-            elif demand_pressure >= 0.5:
-                demand_discount = 0.6
-            else:
-                demand_discount = 1.0
-            if low_soc_ratio >= 0.8:
-                demand_discount = max(demand_discount, 0.85)
-            elif low_soc_ratio >= 0.6:
-                demand_discount = max(demand_discount, 0.55)
-            zone_score = low_soc_ratio * demand_discount
+            availability_bias = 1.0 / (1.0 + max(demand_pressure, 0.0))
+            zone_score = (low_soc_count / len(idle_soc)) * availability_bias * self._get_rule_gap_plus_soc_factor("service")
 
             if zone in self.charging_stations and len(self.charging_stations[zone]) > 0:
                 charge_pref[zone] += float(zone_score)
@@ -155,18 +142,10 @@ class dclily(_NoOptimDclily):
         charge_pref = self._build_charge_preferences()
         return np.concatenate([depart_pref, dest_pref, charge_pref], axis=0).astype(np.float32)
 
-    def _estimate_order_reward(self, origin, dest, trip_dist, re):
-        mock_trip_reward = getattr(self, "_mock_trip_reward", None)
-        if isinstance(mock_trip_reward, dict):
-            key = (int(origin), int(dest))
-            if key in mock_trip_reward:
-                return float(mock_trip_reward[key])
-        return float(re) * float(trip_dist)
-
     def _greedy_demand_solveproblem(self, dist, avail, demand, car, reward, re,
                                     car_mem, timestep, real_reward, detail,
                                     revise, pre_avail):
-        """Higher-value, feasible-order-first execution for the stronger rule baseline."""
+        """Shorter-trip-first demand execution for the rule-gap-plus baseline."""
         car = np.asarray(car)
         avail = np.asarray(avail)
         demand = np.asarray(demand)
@@ -175,16 +154,11 @@ class dclily(_NoOptimDclily):
         real_reward_back = np.zeros(self.ZONE_NUM, dtype=float)
 
         for origin in range(min(self.ZONE_NUM, demand.shape[0])):
-            incoming_pressure = np.sum(demand[:, origin]) if demand.ndim >= 2 else 0.0
             dest_order = sorted(
                 range(min(self.ZONE_NUM, demand.shape[1])),
                 key=lambda dest: (
-                    -(
-                        self._estimate_order_reward(origin, dest, dist[origin][dest], re)
-                        + 0.5 * float(demand[origin][dest])
-                        + 0.1 * float(incoming_pressure)
-                        - 0.15 * float(dist[origin][dest])
-                    ) if origin != dest and float(dist[origin][dest]) >= 0 and float(demand[origin][dest]) > 0
+                    -float(demand[origin][dest]) / (1.0 + float(dist[origin][dest]))
+                    if origin != dest and float(dist[origin][dest]) >= 0
                     else float("inf"),
                     float(dist[origin][dest]) if origin != dest else float("inf"),
                     dest,
@@ -221,7 +195,7 @@ class dclily(_NoOptimDclily):
                     if chosen_vehicle < 0:
                         break
 
-                    origin_reward = self._estimate_order_reward(origin, dest, trip_dist, re)
+                    origin_reward = re * trip_dist
 
                     if origin < len(avail[0]):
                         avail[0][origin] -= 1
