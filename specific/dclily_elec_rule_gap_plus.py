@@ -9,14 +9,14 @@ from specific.dclily_elec_nooptim import dclily as _NoOptimDclily
 
 class dclily(_NoOptimDclily):
     _rule_gap_plus_local_idle_reserve = 1
-    _rule_gap_plus_dispatch_fraction_cap = 0.5
+    _rule_gap_plus_dispatch_fraction_cap = 0.4
     _rule_gap_plus_service_fraction_cap = 0.9
     _rule_gap_plus_low_soc_threshold = 0.4
     _rule_gap_plus_dispatch_soc_factor = 1.1
     _rule_gap_plus_service_soc_factor = 1.0
 
     _local_idle_reserve = 1
-    _dispatch_fraction_cap = 0.5
+    _dispatch_fraction_cap = 0.4
     _demand_fraction_cap = 0.9
     _dispatch_soc_factor = 1.1
     _demand_soc_factor = 1.0
@@ -26,7 +26,7 @@ class dclily(_NoOptimDclily):
 
     def _get_rule_gap_plus_fraction_cap(self, kind):
         if kind == "dispatch":
-            return float(getattr(self, "_rule_gap_plus_dispatch_fraction_cap", 0.5))
+            return float(getattr(self, "_rule_gap_plus_dispatch_fraction_cap", 0.4))
         return float(getattr(self, "_rule_gap_plus_service_fraction_cap", 0.9))
 
     def _get_rule_gap_plus_soc_factor(self, kind):
@@ -117,7 +117,9 @@ class dclily(_NoOptimDclily):
             else:
                 demand_discount = 1.0
             if low_soc_ratio >= 0.8:
-                demand_discount = max(demand_discount, 0.45)
+                demand_discount = max(demand_discount, 0.85)
+            elif low_soc_ratio >= 0.6:
+                demand_discount = max(demand_discount, 0.55)
             zone_score = low_soc_ratio * demand_discount
 
             if zone in self.charging_stations and len(self.charging_stations[zone]) > 0:
