@@ -14,11 +14,13 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from matplotlib import pyplot as plt
 
+from core.output_naming import build_single_agent_run_dir
 from core.util import get_args, plot_rewards,plot_vehicle_battery_heatmap,plot_vehicle_battery, cp, plot_critic_losses, smooth
 import core.environment as dclilyenv
 import core.training as dclilytrain
 import numpy as np
 import os
+from datetime import datetime
 
 from gym.envs.registration import register
 
@@ -45,8 +47,31 @@ os.chdir(target_dir)
 cp("..\\" + cfg['data_folder'])
 os.chdir('..')
 
+# 为每次运行创建独立输出目录：时间戳 + 算法名 + 训练轮数
+output_root = os.path.join(current_dir, 'output_200car_8sec_0425')
+os.makedirs(output_root, exist_ok=True)
+run_stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+run_dir = build_single_agent_run_dir(output_root, run_stamp, cfg['algo_name'], cfg['train_eps'], scenario_tag='200car')
+os.makedirs(run_dir, exist_ok=True)
+cfg['run_output_dir'] = run_dir
+print(f"运行输出目录: {run_dir}")
+
+
+def out_file(filename):
+    return os.path.join(run_dir, filename)
+
 # 训练
 env, agent = dclilyenv.env_agent_config(cfg)
+
+# =========2026.1.30修改，最优解求解==========
+# 统一时间步配置，避免 max_steps 与环境真实时域不一致导致内存放大
+env_time_num = int(getattr(env, 'TIME_NUM', 26)) if hasattr(env, 'TIME_NUM') else 26
+if env_time_num <= 0:
+    env_time_num = 26
+cfg['log_time_num'] = env_time_num
+if int(cfg.get('max_steps', env_time_num)) > env_time_num:
+    cfg['max_steps'] = env_time_num
+# ======修改结束
 
 
 # ✅ 添加：给环境绑定 ZONE_NUM 属性（用于切片）
@@ -61,34 +86,123 @@ env, agent = dclilyenv.env_agent_config(cfg)
 res_dic = dclilytrain.train(cfg, env, agent)
 
 # 保存loss数据和指标数据  # 修改
-np.save('critic1_losses.npy', res_dic['critic1_losses'])  # 修改
+np.save(out_file('critic1_losses.npy'), res_dic['critic1_losses'])  # 修改
 if res_dic.get('critic2_losses'):  # 修改
-    np.save('critic2_losses.npy', res_dic['critic2_losses'])  # 修改
+    np.save(out_file('critic2_losses.npy'), res_dic['critic2_losses'])  # 修改
 if res_dic.get('actor_losses'):  # 修改
-    np.save('actor_losses.npy', res_dic['actor_losses'])  # 修改
+    np.save(out_file('actor_losses.npy'), res_dic['actor_losses'])  # 修改
 if res_dic.get('q_values'):  # 修改
-    np.save('q_values.npy', res_dic['q_values'])  # 修改
+    np.save(out_file('q_values.npy'), res_dic['q_values'])  # 修改
 if res_dic.get('target_q_values'):  # 修改
-    np.save('target_q_values.npy', res_dic['target_q_values'])  # 修改
-np.save('rewards.npy', res_dic['rewards'])  # 修改：保存 episode rewards
+    np.save(out_file('target_q_values.npy'), res_dic['target_q_values'])  # 修改
+np.save(out_file('rewards.npy'), res_dic['rewards'])  # 修改：保存 episode rewards
 if res_dic.get('raw_rewards'):
-    np.save('raw_rewards.npy', res_dic['raw_rewards'])
-np.save('eval_rewards.npy', res_dic.get('eval_rewards', []))
-np.save('eval_episodes.npy', res_dic.get('eval_episodes', []))
-np.save('rld_history.npy', res_dic['rld_history'])  # 修改
-np.save('svc_history.npy', res_dic['svc_history'])  # 修改
-np.save('srd_history.npy', res_dic['srd_history'])  # 修改
+    np.save(out_file('raw_rewards.npy'), res_dic['raw_rewards'])
+np.save(out_file('eval_rewards.npy'), res_dic.get('eval_rewards', []))
+np.save(out_file('eval_episodes.npy'), res_dic.get('eval_episodes', []))
+np.save(out_file('rld_history.npy'), res_dic['rld_history'])  # 修改
+np.save(out_file('svc_history.npy'), res_dic['svc_history'])  # 修改
+np.save(out_file('srd_history.npy'), res_dic['srd_history'])  # 修改
+
+optional_episode_metric_keys = [
+    'charging_efficiency_history',
+    'charger_queue_delay_history',
+    'energy_not_served_history',
+    'safety_soc_violation_count_history',
+]
+for key in optional_episode_metric_keys:
+    if key in res_dic:
+        np.save(out_file(f'{key}.npy'), res_dic[key])
+
+timestep_keys = [
+    'zone_ids',
+    'timestep_ids',
+    'svc_by_timestep',
+    'rld_by_timestep',
+    'srd_by_timestep',
+    'reward_by_timestep',
+    'total_demand_by_timestep',
+    'served_orders_by_timestep',
+    'charging_efficiency_by_timestep',
+    'charger_queue_delay_by_timestep',
+    'energy_not_served_by_timestep',
+    'soc_violation_by_timestep',
+    'svc_timestep_mean',
+    'rld_timestep_mean',
+    'srd_timestep_mean',
+    'reward_timestep_mean',
+    'total_demand_timestep_mean',
+    'served_orders_timestep_mean',
+    'charging_efficiency_timestep_mean',
+    'charger_queue_delay_timestep_mean',
+    'energy_not_served_timestep_mean',
+    'soc_violation_timestep_mean',
+    'demand_by_timestep_zone',
+    'served_by_timestep_zone',
+    'service_rate_by_timestep_zone',
+    'charging_actions_by_timestep_zone',
+    'dispatch_by_timestep_zone',
+    'demand_timestep_zone_mean',
+    'served_timestep_zone_mean',
+    'service_rate_timestep_zone_mean',
+    'charging_actions_timestep_zone_mean',
+    'dispatch_timestep_zone_mean',
+    'parking_available_by_timestep_zone',
+    'parking_used_by_timestep_zone',
+    'charger_available_by_timestep_zone',
+    'charger_used_by_timestep_zone',
+    'parking_available_timestep_zone_mean',
+    'parking_used_timestep_zone_mean',
+    'charger_available_timestep_zone_mean',
+    'charger_used_timestep_zone_mean',
+]
+for key in timestep_keys:
+    if key in res_dic:
+        np.save(out_file(f'{key}.npy'), res_dic[key])
+
 print(f"Loss数据和指标已保存")  # 修改
 print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
 
+# =========2026.3.6新增，保存训练元数据用于对比分析==========
+import json
+import time
+metadata = {
+    'algo_name': cfg['algo_name'],
+    'seed': cfg['seed'],
+    'train_eps': cfg['train_eps'],
+    'batch_size': cfg['batch_size'],
+    'actor_lr': cfg.get('actor_lr', cfg.get('lr', 'N/A')),
+    'critic_lr': cfg.get('critic_lr', cfg.get('lr', 'N/A')),
+    'gamma': cfg['gamma'],
+    'tau': cfg.get('tau', 'N/A'),
+    'memory_capacity': cfg['memory_capacity'],
+    'n_states': cfg['n_states'],
+    'n_actions': cfg['n_actions'],
+    'timestamp': time.strftime('%Y%m%d-%H%M%S'),
+    'total_episodes': len(res_dic['rewards']),
+    'mean_reward': float(np.mean(res_dic['rewards'])),
+    'max_reward': float(np.max(res_dic['rewards'])),
+    'final_reward': float(res_dic['rewards'][-1]),
+    'std_reward': float(np.std(res_dic['rewards'])),
+}
+with open(out_file('training_metadata.json'), 'w') as f:
+    json.dump(metadata, f, indent=2)
+print(f"训练元数据已保存到: {out_file('training_metadata.json')}")
+# ======修改结束
+
 # =========2026.1.31修改，保存训练好的模型==========
-agent.save_model('trained_model.pth')
-print(f"训练完成，模型已保存到: trained_model.pth")
+agent.save_model(out_file('trained_model.pth'))
+print(f"训练完成，模型已保存到: {out_file('trained_model.pth')}")
 # ======修改结束
 
 plot_rewards(res_dic['rewards'], cfg, tag="train")
 
-plot_critic_losses(res_dic['critic1_losses'], res_dic.get('critic2_losses', None), tag="train", save_path="critic_loss_curve.png")
+plot_critic_losses(
+    res_dic['critic1_losses'],
+    res_dic.get('critic2_losses', None),
+    tag="train",
+    save_path=out_file("critic_loss_curve.png")
+)
 
 # 生成包含7个子图的综合指标图  # 修改
 import matplotlib  # 修改
@@ -180,8 +294,8 @@ axes[7].legend(loc='upper right')  # 修改
 axes[7].grid(True, alpha=0.3)  # 修改
 
 plt.tight_layout()  # 修改
-plt.savefig('final_metrics.png', dpi=300, bbox_inches='tight')  # 修改
-print("综合指标图已保存: final_metrics.png")  # 修改
+plt.savefig(out_file('final_metrics.png'), dpi=300, bbox_inches='tight')  # 修改
+print(f"综合指标图已保存: {out_file('final_metrics.png')}")  # 修改
 plt.close()  # 修改
 
 #plot_vehicle_battery(np.array(res_dic['battery_log'][0]), cfg)
@@ -201,14 +315,15 @@ plt.close()  # 修改
 plot_vehicle_battery_heatmap(
     res_dic['battery_log'],
     title="Battery Heatmap",
-    save_path="battery_heatmap.png" # 明确指定保存路径
+    save_path=out_file("battery_heatmap.png") # 明确指定保存路径
 )
-print("电池热力图已保存: battery_heatmap.png")
+print(f"电池热力图已保存: {out_file('battery_heatmap.png')}")
 
 
 # 测试
 res_dic = dclilytrain.test(cfg, env, agent)
 plot_rewards(res_dic['rewards'], cfg, tag="test")  # 画出结果
+np.save(out_file('test_rewards.npy'), res_dic.get('rewards', []))
 #plot_vehicle_battery(np.array(res_dic['battery_log'][0]), cfg)
 
 # (这一趴貌似是我不小心多加进去的，重复了）
