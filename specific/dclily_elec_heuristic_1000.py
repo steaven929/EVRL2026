@@ -11,7 +11,9 @@ def build_output_path(train_eps, curr_time):
 
 
 class dclily(_base_env.dclily):
-    _heuristic_low_soc_threshold = 0.35
+    _heuristic_low_soc_threshold = 0.40
+    _heuristic_depart_scale = 0.9
+    _heuristic_charge_scale = 1.15
 
     def _get_idle_vehicle_counts(self):
         zone_num = int(getattr(self, "ZONE_NUM", _base_env.ZONE_NUM))
@@ -63,7 +65,9 @@ class dclily(_base_env.dclily):
         idle_counts = np.asarray(idle_counts, dtype=np.float32)
         outgoing_demand = np.asarray(outgoing_demand, dtype=np.float32)
         surplus = np.maximum(idle_counts - outgoing_demand, 0.0)
-        return np.clip(surplus / np.maximum(idle_counts, 1.0), 0.0, 1.0).astype(np.float32)
+        base = np.clip(surplus / np.maximum(idle_counts, 1.0), 0.0, 1.0)
+        scale = float(getattr(self, "_heuristic_depart_scale", 1.0))
+        return np.clip(base * scale, 0.0, 1.0).astype(np.float32)
 
     def _build_destination_preferences(self, idle_counts, outgoing_demand):
         zone_num = int(getattr(self, "ZONE_NUM", _base_env.ZONE_NUM))
@@ -100,7 +104,12 @@ class dclily(_base_env.dclily):
         low_soc_ratio = np.asarray(low_soc_ratio, dtype=np.float32)
 
         demand_pressure = outgoing_demand / np.maximum(idle_counts, 1.0)
-        local_charge_need = np.clip(low_soc_ratio * np.clip(0.5 + 0.5 * demand_pressure, 0.0, 1.0), 0.0, 1.0)
+        charge_scale = float(getattr(self, "_heuristic_charge_scale", 1.0))
+        local_charge_need = np.clip(
+            low_soc_ratio * np.clip(0.5 + 0.5 * demand_pressure, 0.0, 1.0) * charge_scale,
+            0.0,
+            1.0,
+        )
         charge_pref = np.zeros(zone_num, dtype=np.float32)
 
         charging_stations = getattr(self, "charging_stations", {})
