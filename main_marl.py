@@ -24,6 +24,7 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from core.util import get_args, plot_rewards, plot_critic_losses, cp
+from core.output_naming import build_outputs_dir
 from core.environment import env_agent_config
 from core.marl_training import marl_train, marl_test
 
@@ -31,7 +32,7 @@ from gym.envs.registration import register
 register(id='dclily', entry_point='specific.dclily_elec:dclily')
 
 # =========2026.2.19修改，MARL Phase-1：主程序==========
-def main():
+def main(output_prefix='marl'):
     # 获取配置参数
     cfg = get_args()
 
@@ -74,7 +75,7 @@ def main():
     # 设置保存路径（包含训练轮数）
     curr_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_eps = cfg.get('train_eps', 0)
-    path = f"./outputs/marl_{train_eps}ep_{curr_time}/"
+    path = build_outputs_dir(output_prefix, train_eps, curr_time)
     os.makedirs(path, exist_ok=True)
 
     # =========2026.3.3修改，注释掉训练开始标题==========

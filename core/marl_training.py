@@ -22,6 +22,57 @@ def _aggregate_episode_metric(values):
     return float(np.mean(finite)), float(finite[-1])
 
 
+def _compute_marl_noise_scale(cfg, episode_idx, train_eps, latest_svc=None):
+    noise_start = float(cfg.get("marl_noise_start", 0.3))
+    noise_min = float(cfg.get("marl_noise_min", 0.1))
+    noise_min = min(noise_start, max(0.0, noise_min))
+    warmup_eps = max(0, int(cfg.get("marl_noise_warmup_eps", 0)))
+    decay_power = float(cfg.get("marl_noise_decay_power", 1.0))
+    if decay_power <= 0:
+        decay_power = 1.0
+
+    if episode_idx < warmup_eps:
+        noise_scale = noise_start
+    else:
+        decay_span = max(1, int(train_eps) - warmup_eps - 1)
+        progress = min(1.0, max(0.0, (episode_idx - warmup_eps) / decay_span))
+        noise_scale = noise_start - (noise_start - noise_min) * (progress ** decay_power)
+
+    service_target = float(cfg.get("marl_service_target", 0.85))
+    service_boost = float(cfg.get("marl_noise_service_boost", 0.0))
+    if latest_svc is not None and np.isfinite(latest_svc) and latest_svc < service_target:
+        noise_scale += service_boost
+
+    return float(np.clip(noise_scale, noise_min, noise_start))
+
+
+def _evaluate_marl_policy(cfg, env, agent, num_episodes):
+    rewards = []
+    reward_scale = float(cfg.get("reward_scale", 1.0))
+    if reward_scale <= 0:
+        reward_scale = 1.0
+
+    if hasattr(env, "set_training_mode"):
+        env.set_training_mode(0)
+
+    for _ in range(num_episodes):
+        ep_reward = 0.0
+        ep_step = 0
+        global_state = env.reset()
+        obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
+        done = False
+        max_steps = int(cfg.get("max_steps", 0))
+        while (not done) and (max_steps <= 0 or ep_step < max_steps):
+            actions = agent.sample_action(obs_n, global_state=global_state, add_noise=False)
+            next_global_state, reward, done, _ = env.step(actions)
+            obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
+            global_state = next_global_state
+            ep_reward += reward / reward_scale
+            ep_step += 1
+        rewards.append(float(ep_reward))
+    return float(np.mean(rewards)) if rewards else 0.0
+
+
 def marl_train(env, agent, cfg, path=None):
     rewards = []
     raw_rewards = []
@@ -78,10 +129,16 @@ def marl_train(env, agent, cfg, path=None):
     parking_used_by_timestep_zone = []
     charger_available_by_timestep_zone = []
     charger_used_by_timestep_zone = []
+    eval_rewards = []
+    eval_episodes = []
 
     reward_scale = float(cfg.get("reward_scale", 1.0))
     if reward_scale <= 0:
         reward_scale = 1.0
+    eval_every = int(cfg.get("eval_every", 0))
+    eval_eps = max(1, int(cfg.get("eval_eps", 1)))
+    marl_learning_starts = max(0, int(cfg.get("marl_learning_starts", cfg.get("batch_size", 1))))
+    marl_updates_per_step = max(1, int(cfg.get("marl_updates_per_step", 1)))
 
     if hasattr(env, "set_experiment_variant"):
         env.set_experiment_variant(cfg.get("exp_variant", "a1"))
@@ -93,6 +150,8 @@ def marl_train(env, agent, cfg, path=None):
         ep_reward_raw = 0.0
         ep_step = 0
 
+        if hasattr(env, "set_training_mode"):
+            env.set_training_mode(1)
         if hasattr(env, "set_epoch"):
             env.set_epoch(i_ep)
 
@@ -147,7 +206,8 @@ def marl_train(env, agent, cfg, path=None):
         max_steps = int(cfg.get("max_steps", 0))
         while (not done) and (max_steps <= 0 or ep_step < max_steps):
             step_idx = min(ep_step, time_num - 1)
-            noise_scale = max(0.1, 0.3 * (1 - i_ep / cfg["train_eps"]))
+            latest_svc = svc_history[-1] if svc_history else None
+            noise_scale = _compute_marl_noise_scale(cfg, i_ep, cfg["train_eps"], latest_svc=latest_svc)
             actions = agent.sample_action(
                 obs_n,
                 global_state=global_state,
@@ -256,12 +316,13 @@ def marl_train(env, agent, cfg, path=None):
                 done=done,
             )
 
-            if len(agent.memory) >= cfg["batch_size"]:
-                critic_loss, actor_loss = agent.update()
-                if critic_loss is not None:
-                    critic_losses.append(critic_loss)
-                if actor_loss is not None and np.isfinite(actor_loss):
-                    actor_losses.append(actor_loss)
+            if len(agent.memory) >= max(int(cfg["batch_size"]), marl_learning_starts):
+                for _ in range(marl_updates_per_step):
+                    critic_loss, actor_loss = agent.update()
+                    if critic_loss is not None:
+                        critic_losses.append(critic_loss)
+                    if actor_loss is not None and np.isfinite(actor_loss):
+                        actor_losses.append(actor_loss)
 
             obs_n = next_obs_n
             global_state = next_global_state
@@ -362,6 +423,11 @@ def marl_train(env, agent, cfg, path=None):
         if (i_ep + 1) % 50 == 0 or i_ep == 0:
             print(f"Episode: {i_ep + 1}/{cfg['train_eps']}")
 
+        if eval_every > 0 and (i_ep + 1) % eval_every == 0:
+            eval_reward = _evaluate_marl_policy(cfg, env, agent, eval_eps)
+            eval_rewards.append(eval_reward)
+            eval_episodes.append(i_ep + 1)
+
         if (i_ep + 1) % 100 == 0 and path is not None:
             agent.save_model(path + f"marl_model_ep{i_ep + 1}.pth")
 
@@ -454,6 +520,8 @@ def marl_train(env, agent, cfg, path=None):
         "charger_used_timestep_zone_mean": np.nanmean(
             np.asarray(charger_used_by_timestep_zone, dtype=float), axis=0
         ),
+        "eval_rewards": eval_rewards,
+        "eval_episodes": eval_episodes,
     }
     return res_dic
 
@@ -468,6 +536,8 @@ def marl_test(env, agent, cfg, path=None):
         env.set_experiment_variant(cfg.get("exp_variant", "a1"))
     if hasattr(env, "set_reward_mode"):
         env.set_reward_mode(cfg.get("reward_mode", "base"))
+    if hasattr(env, "set_training_mode"):
+        env.set_training_mode(0)
 
     for _ in range(cfg["test_eps"]):
         ep_reward = 0.0

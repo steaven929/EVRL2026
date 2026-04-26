@@ -48,6 +48,16 @@ def _episode_nanmean(arr):
         return float(np.nanmean(arr))
 
 
+def _aggregate_episode_metric(values):
+    if len(values) == 0:
+        return 0.0, 0.0
+    arr = np.asarray(values, dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return 0.0, 0.0
+    return float(np.mean(finite)), float(finite[-1])
+
+
 def _safe_nanmean(arr, axis, fallback_shape):
     arr = np.asarray(arr, dtype=float)
     if arr.size == 0 or not np.any(np.isfinite(arr)):
@@ -133,6 +143,8 @@ def train(cfg, env, agent):
     critic1_losses, critic2_losses, actor_losses = [], [], []
     q_values, target_q_values = [], []  # 修改：记录Q值和目标Q值用于诊断
     rld_history, svc_history, srd_history = [], [], []  # 修改
+    rld_last_history, svc_last_history, srd_last_history = [], [], []
+    service_rate_history, service_rate_last_history = [], []
     eval_rewards, eval_episodes = [], []
     raw_rewards = []
 
@@ -167,7 +179,7 @@ def train(cfg, env, agent):
     energy_not_served_history = []
     safety_soc_violation_count_history = []
 
-    info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
+    info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0, 'service_rate': 0}
 
     battery_log_keep_steps = int(cfg.get('battery_log_keep_steps', 2000))
     if battery_log_keep_steps <= 0:
@@ -219,6 +231,13 @@ def train(cfg, env, agent):
         ep_parking_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
         ep_charger_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
         ep_charger_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_metric_steps = {"rld": [], "svc": [], "srd": [], "service_rate": []}
+        ep_marl_metric_steps = {
+            "charging_efficiency": [],
+            "charger_queue_delay": [],
+            "energy_not_served": [],
+            "safety_soc_violation_count": [],
+        }
 
         for i_step in range(max_steps):
             action = agent.sample_action(state)
@@ -329,19 +348,18 @@ def train(cfg, env, agent):
             ep_ens_by_t[step_idx] = float(step_metrics.get('energy_not_served', np.nan))
             ep_socv_by_t[step_idx] = float(step_metrics.get('safety_soc_violation_count', np.nan))
 
-            # 记录环境指标  # 修改
-            if 'rld' in info:  # 修改
-                rld_history.append(info['rld'])  # 修改
-            else:
-                info_missing_counts['rld'] += 1
-            if 'svc' in info:  # 修改
-                svc_history.append(info['svc'])  # 修改
-            else:
-                info_missing_counts['svc'] += 1
-            if 'srd' in info:  # 修改
-                srd_history.append(info['srd'])  # 修改
-            else:
-                info_missing_counts['srd'] += 1
+            if (i_step % 5 == 0) or done:
+                for metric_key in ep_metric_steps:
+                    if metric_key in info_dict:
+                        ep_metric_steps[metric_key].append(info_dict[metric_key])
+                    else:
+                        info_missing_counts[metric_key] += 1
+                ep_marl_metric_steps["charging_efficiency"].append(step_metrics.get("charging_efficiency", np.nan))
+                ep_marl_metric_steps["charger_queue_delay"].append(step_metrics.get("charger_queue_delay", np.nan))
+                ep_marl_metric_steps["energy_not_served"].append(step_metrics.get("energy_not_served", np.nan))
+                ep_marl_metric_steps["safety_soc_violation_count"].append(
+                    step_metrics.get("safety_soc_violation_count", np.nan)
+                )
 
             if (i_step % battery_log_stride) == 0:
                 battery_snapshot = np.asarray([car[1] for car in env.car], dtype=np.float32)
@@ -387,10 +405,31 @@ def train(cfg, env, agent):
         charger_available_by_timestep_zone.append(ep_charger_available_by_tz)
         charger_used_by_timestep_zone.append(ep_charger_used_by_tz)
 
-        charging_efficiency_history.append(_episode_nanmean(ep_ce_by_t))
-        charger_queue_delay_history.append(_episode_nanmean(ep_qd_by_t))
-        energy_not_served_history.append(_episode_nanmean(ep_ens_by_t))
-        safety_soc_violation_count_history.append(_episode_nanmean(ep_socv_by_t))
+        rld_mean, rld_last = _aggregate_episode_metric(ep_metric_steps["rld"])
+        svc_mean, svc_last = _aggregate_episode_metric(ep_metric_steps["svc"])
+        srd_mean, srd_last = _aggregate_episode_metric(ep_metric_steps["srd"])
+        service_rate_mean, service_rate_last = _aggregate_episode_metric(ep_metric_steps["service_rate"])
+
+        rld_history.append(rld_mean)
+        svc_history.append(svc_mean)
+        srd_history.append(srd_mean)
+        rld_last_history.append(rld_last)
+        svc_last_history.append(svc_last)
+        srd_last_history.append(srd_last)
+        service_rate_history.append(service_rate_mean)
+        service_rate_last_history.append(service_rate_last)
+
+        charging_efficiency_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps["charging_efficiency"])
+        charger_queue_delay_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps["charger_queue_delay"])
+        energy_not_served_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps["energy_not_served"])
+        safety_soc_violation_count_mean, _ = _aggregate_episode_metric(
+            ep_marl_metric_steps["safety_soc_violation_count"]
+        )
+
+        charging_efficiency_history.append(charging_efficiency_mean)
+        charger_queue_delay_history.append(charger_queue_delay_mean)
+        energy_not_served_history.append(energy_not_served_mean)
+        safety_soc_violation_count_history.append(safety_soc_violation_count_mean)
 
         if eval_every > 0 and (i_ep + 1) % eval_every == 0:
             eval_reward = _evaluate_policy(cfg, env, agent, eval_eps)
@@ -463,6 +502,11 @@ def train(cfg, env, agent):
     'rld_history': rld_history,  # 修改
     'svc_history': svc_history,  # 修改
     'srd_history': srd_history,
+    'rld_last_history': rld_last_history,
+    'svc_last_history': svc_last_history,
+    'srd_last_history': srd_last_history,
+    'service_rate_history': service_rate_history,
+    'service_rate_last_history': service_rate_last_history,
     'info_missing_counts': info_missing_counts,
     'charging_efficiency_history': charging_efficiency_history,
     'charger_queue_delay_history': charger_queue_delay_history,

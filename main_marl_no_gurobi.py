@@ -149,7 +149,7 @@ def main():
 
     import main_marl
 
-    main_marl.main()
+    main_marl.main(output_prefix='marl_no_gurobi')
 
 
 if __name__ == "__main__":

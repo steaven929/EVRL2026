@@ -14,6 +14,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from matplotlib import pyplot as plt
 
+from core.output_naming import build_single_agent_run_dir
 from core.util import get_args, plot_rewards,plot_vehicle_battery_heatmap,plot_vehicle_battery, cp, plot_critic_losses, smooth
 import core.environment as dclilyenv
 import core.training as dclilytrain
@@ -47,10 +48,10 @@ cp("..\\" + cfg['data_folder'])
 os.chdir('..')
 
 # 为每次运行创建独立输出目录：时间戳 + 算法名 + 训练轮数
-output_root = os.path.join(current_dir, 'output')
+output_root = os.path.join(current_dir, 'output_1000car')
 os.makedirs(output_root, exist_ok=True)
 run_stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-run_dir = os.path.join(output_root, f"{run_stamp}_{str(cfg['algo_name']).upper()}_{int(cfg['train_eps'])}ep")
+run_dir = build_single_agent_run_dir(output_root, run_stamp, cfg['algo_name'], cfg['train_eps'])
 os.makedirs(run_dir, exist_ok=True)
 cfg['run_output_dir'] = run_dir
 print(f"运行输出目录: {run_dir}")
