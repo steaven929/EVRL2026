@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Created on Tue Sep  3 19:29:48 2024
 
@@ -95,9 +95,21 @@ np.save(out_file('srd_history.npy'), res_dic['srd_history'])  # 修改
 
 optional_episode_metric_keys = [
     'charging_efficiency_history',
+    'vehicle_utilization_history',
+    'fleet_health_history',
+    'zone_coordination_history',
+    'response_readiness_history',
+    'charger_occupancy_rate_history',
     'charger_queue_delay_history',
     'energy_not_served_history',
     'safety_soc_violation_count_history',
+    'charge_shift_success_rate_history',
+    'weighted_service_rate_history',
+    'effective_service_rate_history',
+    'service_quality_index_history',
+    'dispatch_efficiency_history',
+    'effective_dispatch_rate_history',
+    'dispatch_roi_history',
 ]
 for key in optional_episode_metric_keys:
     if key in res_dic:
@@ -318,5 +330,6 @@ np.save(out_file('test_rewards.npy'), res_dic.get('rewards', []))
 # (这一趴貌似是我不小心多加进去的，重复了）
 #res_dic = dclilytrain.test(cfg, env, agent)
 #plot_rewards(res_dic['rewards'], cfg, tag="test")
+
 
 

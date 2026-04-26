@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Created on Tue Sep  3 19:24:55 2024
 
@@ -8,6 +8,7 @@ Created on Tue Sep  3 19:24:55 2024
 import numpy as np
 import random
 from core.marl_metrics import compute_all_metrics
+from core.improved_metrics import compute_all_improved_metrics
 
 
 def _charge_slice_from_action(action):
@@ -152,9 +153,22 @@ def train(cfg, env, agent):
     charger_available_by_timestep_zone, charger_used_by_timestep_zone = [], []
 
     charging_efficiency_history = []
+    vehicle_utilization_history = []
+    fleet_health_history = []
+    zone_coordination_history = []
+    response_readiness_history = []
+    charger_occupancy_rate_history = []
     charger_queue_delay_history = []
     energy_not_served_history = []
     safety_soc_violation_count_history = []
+    charge_shift_success_rate_history = []
+
+    weighted_service_rate_history = []
+    effective_service_rate_history = []
+    service_quality_index_history = []
+    dispatch_efficiency_history = []
+    effective_dispatch_rate_history = []
+    dispatch_roi_history = []
 
     info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
 
@@ -192,6 +206,19 @@ def train(cfg, env, agent):
         ep_qd_by_t = np.full(time_num, np.nan, dtype=float)
         ep_ens_by_t = np.full(time_num, np.nan, dtype=float)
         ep_socv_by_t = np.full(time_num, np.nan, dtype=float)
+
+        ep_vehicle_utilization = []
+        ep_fleet_health = []
+        ep_zone_coordination = []
+        ep_response_readiness = []
+        ep_charger_occupancy = []
+        ep_charge_shift_success = []
+        ep_weighted_service_rate = []
+        ep_effective_service_rate = []
+        ep_service_quality_index = []
+        ep_dispatch_efficiency = []
+        ep_effective_dispatch_rate = []
+        ep_dispatch_roi = []
 
         ep_demand_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
         ep_served_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
@@ -307,10 +334,23 @@ def train(cfg, env, agent):
                 ep_charger_used_by_tz[step_idx, :z] = cu[:z]
 
             step_metrics = compute_all_metrics(env, info_dict)
+            improved_metrics = compute_all_improved_metrics(env, info_dict)
             ep_ce_by_t[step_idx] = float(step_metrics.get('charging_efficiency', np.nan))
             ep_qd_by_t[step_idx] = float(step_metrics.get('charger_queue_delay', np.nan))
             ep_ens_by_t[step_idx] = float(step_metrics.get('energy_not_served', np.nan))
             ep_socv_by_t[step_idx] = float(step_metrics.get('safety_soc_violation_count', np.nan))
+            ep_vehicle_utilization.append(step_metrics.get('vehicle_utilization', np.nan))
+            ep_fleet_health.append(step_metrics.get('fleet_health', np.nan))
+            ep_zone_coordination.append(step_metrics.get('zone_coordination', np.nan))
+            ep_response_readiness.append(step_metrics.get('response_readiness', np.nan))
+            ep_charger_occupancy.append(step_metrics.get('charger_occupancy_rate', np.nan))
+            ep_charge_shift_success.append(step_metrics.get('charge_shift_success_rate', np.nan))
+            ep_weighted_service_rate.append(improved_metrics.get('weighted_service_rate', np.nan))
+            ep_effective_service_rate.append(improved_metrics.get('effective_service_rate', np.nan))
+            ep_service_quality_index.append(improved_metrics.get('service_quality_index', np.nan))
+            ep_dispatch_efficiency.append(improved_metrics.get('dispatch_efficiency', np.nan))
+            ep_effective_dispatch_rate.append(improved_metrics.get('effective_dispatch_rate', np.nan))
+            ep_dispatch_roi.append(improved_metrics.get('dispatch_roi', np.nan))
 
             # 记录环境指标  # 修改
             if 'rld' in info:  # 修改
@@ -370,9 +410,22 @@ def train(cfg, env, agent):
         charger_used_by_timestep_zone.append(ep_charger_used_by_tz)
 
         charging_efficiency_history.append(_episode_nanmean(ep_ce_by_t))
+        vehicle_utilization_history.append(_episode_nanmean(ep_vehicle_utilization))
+        fleet_health_history.append(_episode_nanmean(ep_fleet_health))
+        zone_coordination_history.append(_episode_nanmean(ep_zone_coordination))
+        response_readiness_history.append(_episode_nanmean(ep_response_readiness))
+        charger_occupancy_rate_history.append(_episode_nanmean(ep_charger_occupancy))
         charger_queue_delay_history.append(_episode_nanmean(ep_qd_by_t))
         energy_not_served_history.append(_episode_nanmean(ep_ens_by_t))
         safety_soc_violation_count_history.append(_episode_nanmean(ep_socv_by_t))
+        charge_shift_success_rate_history.append(_episode_nanmean(ep_charge_shift_success))
+
+        weighted_service_rate_history.append(_episode_nanmean(ep_weighted_service_rate))
+        effective_service_rate_history.append(_episode_nanmean(ep_effective_service_rate))
+        service_quality_index_history.append(_episode_nanmean(ep_service_quality_index))
+        dispatch_efficiency_history.append(_episode_nanmean(ep_dispatch_efficiency))
+        effective_dispatch_rate_history.append(_episode_nanmean(ep_effective_dispatch_rate))
+        dispatch_roi_history.append(_episode_nanmean(ep_dispatch_roi))
 
         if eval_every > 0 and (i_ep + 1) % eval_every == 0:
             eval_reward = _evaluate_policy(cfg, env, agent, eval_eps)
@@ -442,9 +495,21 @@ def train(cfg, env, agent):
     'srd_history': srd_history,
     'info_missing_counts': info_missing_counts,
     'charging_efficiency_history': charging_efficiency_history,
+    'vehicle_utilization_history': vehicle_utilization_history,
+    'fleet_health_history': fleet_health_history,
+    'zone_coordination_history': zone_coordination_history,
+    'response_readiness_history': response_readiness_history,
+    'charger_occupancy_rate_history': charger_occupancy_rate_history,
     'charger_queue_delay_history': charger_queue_delay_history,
     'energy_not_served_history': energy_not_served_history,
     'safety_soc_violation_count_history': safety_soc_violation_count_history,
+    'charge_shift_success_rate_history': charge_shift_success_rate_history,
+    'weighted_service_rate_history': weighted_service_rate_history,
+    'effective_service_rate_history': effective_service_rate_history,
+    'service_quality_index_history': service_quality_index_history,
+    'dispatch_efficiency_history': dispatch_efficiency_history,
+    'effective_dispatch_rate_history': effective_dispatch_rate_history,
+    'dispatch_roi_history': dispatch_roi_history,
 
     'svc_by_timestep': svc_by_timestep_arr,
     'rld_by_timestep': rld_by_timestep_arr,
@@ -518,3 +583,4 @@ def test(cfg, env, agent):
         print(f"回合：{i_ep+1}/{cfg['test_eps']}，奖励：{ep_reward:.2f}")
     print("完成测试！")
     return {'rewards':rewards}
+

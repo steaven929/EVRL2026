@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """No-optimizer variant of the existing dclily environment.
 
 The base Gym action space stays flat for compatibility with existing MARL
@@ -15,24 +15,24 @@ import threading
 
 class dclily(_BaseDclily):
     _solveproblem_patch_lock = threading.Lock()
-    _local_idle_reserve = 2
-    _dispatch_soc_factor = 1.5
-    _demand_soc_factor = 1.3
-    _dispatch_fraction_cap = 0.35
-    _demand_fraction_cap = 0.5
+    _local_idle_reserve = 3
+    _dispatch_soc_factor = 1.7
+    _demand_soc_factor = 1.5
+    _dispatch_fraction_cap = 0.25
+    _demand_fraction_cap = 0.35
 
     def _get_local_idle_reserve(self):
-        return int(getattr(self, "_local_idle_reserve", 2))
+        return int(getattr(self, "_local_idle_reserve", 3))
 
     def _get_soc_factor(self, kind):
         if kind == "dispatch":
-            return float(getattr(self, "_dispatch_soc_factor", 1.5))
-        return float(getattr(self, "_demand_soc_factor", 1.3))
+            return float(getattr(self, "_dispatch_soc_factor", 1.7))
+        return float(getattr(self, "_demand_soc_factor", 1.5))
 
     def _get_fraction_cap(self, kind):
         if kind == "dispatch":
-            return float(getattr(self, "_dispatch_fraction_cap", 0.35))
-        return float(getattr(self, "_demand_fraction_cap", 0.5))
+            return float(getattr(self, "_dispatch_fraction_cap", 0.25))
+        return float(getattr(self, "_demand_fraction_cap", 0.35))
 
     def _get_max_executions(self, trip_count, kind):
         if trip_count <= 0:
@@ -221,3 +221,4 @@ class dclily(_BaseDclily):
                 return super().step(action)
             finally:
                 gur.solveproblem = original_solveproblem
+

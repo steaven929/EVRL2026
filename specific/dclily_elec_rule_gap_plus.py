@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Rule-gap-plus environment built on the no-optimizer execution path."""
 
 import numpy as np
@@ -8,18 +8,18 @@ from specific.dclily_elec_nooptim import dclily as _NoOptimDclily
 
 
 class dclily(_NoOptimDclily):
-    _rule_gap_plus_local_idle_reserve = 2
-    _rule_gap_plus_dispatch_fraction_cap = 0.3
-    _rule_gap_plus_service_fraction_cap = 0.75
+    _rule_gap_plus_local_idle_reserve = 1
+    _rule_gap_plus_dispatch_fraction_cap = 0.4
+    _rule_gap_plus_service_fraction_cap = 0.85
     _rule_gap_plus_low_soc_threshold = 0.4
-    _rule_gap_plus_dispatch_soc_factor = 1.25
-    _rule_gap_plus_service_soc_factor = 1.1
+    _rule_gap_plus_dispatch_soc_factor = 1.15
+    _rule_gap_plus_service_soc_factor = 1.0
 
-    _local_idle_reserve = 2
-    _dispatch_fraction_cap = 0.3
-    _demand_fraction_cap = 0.75
-    _dispatch_soc_factor = 1.25
-    _demand_soc_factor = 1.1
+    _local_idle_reserve = 1
+    _dispatch_fraction_cap = 0.4
+    _demand_fraction_cap = 0.85
+    _dispatch_soc_factor = 1.15
+    _demand_soc_factor = 1.0
 
     def _get_rule_gap_plus_local_idle_reserve(self):
         return int(getattr(self, "_rule_gap_plus_local_idle_reserve", 2))
@@ -44,6 +44,17 @@ class dclily(_NoOptimDclily):
         denom = np.maximum(dispatchable_counts, 1.0)
         return np.clip(capped_surplus / denom, 0.0, 1.0).astype(np.float32)
 
+    def _destination_priority_score(self, demand, origin, dest):
+        if origin == dest:
+            return float("inf")
+        trip_dist = float(self.dist[origin][dest])
+        if trip_dist < 0:
+            return float("inf")
+        trip_count = float(demand[origin][dest])
+        # Reward is proportional to trip distance; favor profitable feasible trips.
+        return -(trip_count * trip_dist)
+
+
     def _build_destination_preferences(self, dispatchable_counts, outgoing_demand):
         dispatchable_counts = np.asarray(dispatchable_counts, dtype=float)
         outgoing_demand = np.asarray(outgoing_demand, dtype=float)
@@ -61,6 +72,7 @@ class dclily(_NoOptimDclily):
             return (shortage / total_shortage).astype(np.float32)
 
         weighted_shortage = np.zeros(self.ZONE_NUM, dtype=float)
+        max_demand = max(float(np.max(outgoing_demand)), 1.0)
         surplus_origins = np.where(surplus > 0)[0]
         for dest in range(self.ZONE_NUM):
             if shortage[dest] <= 0:
@@ -68,8 +80,8 @@ class dclily(_NoOptimDclily):
             proximity_score = 0.0
             for origin in surplus_origins:
                 proximity_score += surplus[origin] / (1.0 + float(self.dist[origin][dest]))
-            weighted_shortage[dest] = shortage[dest] * proximity_score
-
+            demand_intensity = float(outgoing_demand[dest]) / max_demand
+            weighted_shortage[dest] = shortage[dest] * (1.0 + demand_intensity) * proximity_score
         total_weighted_shortage = float(np.sum(weighted_shortage))
         if total_weighted_shortage <= 0:
             return np.zeros(self.ZONE_NUM, dtype=np.float32)
@@ -156,13 +168,7 @@ class dclily(_NoOptimDclily):
         for origin in range(min(self.ZONE_NUM, demand.shape[0])):
             dest_order = sorted(
                 range(min(self.ZONE_NUM, demand.shape[1])),
-                key=lambda dest: (
-                    -float(demand[origin][dest]) / (1.0 + float(dist[origin][dest]))
-                    if origin != dest and float(dist[origin][dest]) >= 0
-                    else float("inf"),
-                    float(dist[origin][dest]) if origin != dest else float("inf"),
-                    dest,
-                ),
+                key=lambda dest: self._destination_priority_score(demand, origin, dest),
             )
             for dest in dest_order:
                 if origin == dest:
@@ -231,3 +237,4 @@ class dclily(_NoOptimDclily):
     def step(self, action=None):
         rule_action = self._build_rule_gap_plus_action()
         return super().step(rule_action)
+
