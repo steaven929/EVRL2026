@@ -100,7 +100,7 @@ class IPPOAgent:
         # 损失函数 - 使用Huber Loss对大误差不敏感（P0修复）
         self.critic_criterion = nn.SmoothL1Loss()  # Huber Loss
 
-    def sample_action(self, obs_n, add_noise=False, noise_scale=0.1):
+    def sample_action(self, obs_n, global_state=None, add_noise=False, noise_scale=0.1):
         """
         采样联合动作
 
