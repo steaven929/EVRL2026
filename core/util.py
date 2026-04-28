@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument('--algo_name',default='SAC',type=str,help="name of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=1200,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--train_eps',default=20,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
     parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
@@ -39,7 +39,7 @@ def get_args():
     parser.add_argument('--exp_variant',default='a1',type=str,help="experiment variant key used by env")
     parser.add_argument('--reward_mode',default='shaping',type=str,help="reward mode: base or shaping")  # 2026.2.21: 启用shaping模式以包含充电奖励
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
-    parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法
+    parser.add_argument('--device',default='cuda',type=str,help="cpu or cuda")  #运算方法
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
     # =========2026.2.19修改，MARL Phase-1：添加多智能体参数==========
     parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 单智能体/多智能体模式

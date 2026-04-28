@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 MARL Phase-1: Main Entry Point
 Created on 2026-02-19
 
-多智能体强化学习主程序
+澶氭櫤鑳戒綋寮哄寲瀛︿範涓荤▼搴?
 """
 import sys
 import os
@@ -14,7 +14,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# 添加项目路径
+# 娣诲姞椤圭洰璺緞
 sys.path.append(os.getcwd())
 
 # Fix encoding for Windows
@@ -30,42 +30,42 @@ from core.marl_training import marl_train, marl_test
 from gym.envs.registration import register
 register(id='dclily', entry_point='specific.dclily_elec:dclily')
 
-# =========2026.2.19修改，MARL Phase-1：主程序==========
+# =========2026.2.19淇敼锛孧ARL Phase-1锛氫富绋嬪簭==========
 def main():
-    # 获取配置参数
+    # 鑾峰彇閰嶇疆鍙傛暟
     cfg = get_args()
 
-    # 强制设置为multi模式
+    # 寮哄埗璁剧疆涓簃ulti妯″紡
     cfg['marl_mode'] = 'multi'
-    cfg['n_agents'] = 50  # SIP数据集：50个区域
+    cfg['n_agents'] = 50  # SIP鏁版嵁闆嗭細50涓尯鍩?
 
     print("\n" + "="*80)
-    print("MARL Phase-1: 区域级多智能体强化学习")
+    print("MARL Phase-1: Multi-agent reinforcement learning")
     print("="*80)
-    print(f"模式: {cfg['marl_mode']}")
-    print(f"智能体数量: {cfg['n_agents']}")
-    print(f"参数共享: {cfg.get('share_policy', True)}")
-    print(f"实验分支: {cfg.get('exp_variant', 'a1')}")
-    print(f"奖励模式: {cfg.get('reward_mode', 'base')}")
-    print(f"训练轮数: {cfg['train_eps']}")
-    print(f"测试轮数: {cfg['test_eps']}")
+    print(f"Mode: {cfg['marl_mode']}")
+    print(f"Agents: {cfg['n_agents']}")
+    print(f"Share policy: {cfg.get('share_policy', True)}")
+    print(f"Experiment variant: {cfg.get('exp_variant', 'a1')}")
+    print(f"Reward mode: {cfg.get('reward_mode', 'base')}")
+    print(f"Train episodes: {cfg['train_eps']}")
+    print(f"Test episodes: {cfg['test_eps']}")
     print("="*80 + "\n")
 
-    # 创建环境和智能体
+    # 鍒涘缓鐜鍜屾櫤鑳戒綋
     env, agent = env_agent_config(cfg)
 
-    # 设置保存路径
+    # 璁剧疆淇濆瓨璺緞
     curr_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     path = f"./outputs/marl_{curr_time}/"
     os.makedirs(path, exist_ok=True)
 
-    # 训练
+    # 璁粌
     print("\n" + "="*80)
-    print("开始训练")
+    print("Start training")
     print("="*80)
     res_dic = marl_train(env, agent, cfg, path=path)
 
-    # 保存所有数据（与main.py一致）
+    # 淇濆瓨鎵€鏈夋暟鎹紙涓巑ain.py涓€鑷达級
     np.save(path + 'critic_losses.npy', res_dic['critic_losses'])
     np.save(path + 'actor_losses.npy', res_dic['actor_losses'])
     np.save(path + 'rewards.npy', res_dic['rewards'])
@@ -78,25 +78,38 @@ def main():
         np.save(path + 'svc_history.npy', res_dic['svc_history'])
     if 'srd_history' in res_dic:
         np.save(path + 'srd_history.npy', res_dic['srd_history'])
-    print(f"数据已保存到: {path}")
-    print(f"Info字段缺失计数: {res_dic.get('info_missing_counts', {})}")
+    for key in [
+        'rld_last_history',
+        'svc_last_history',
+        'srd_last_history',
+        'service_rate_history',
+        'service_rate_last_history',
+        'charging_efficiency_history',
+        'charger_queue_delay_history',
+        'energy_not_served_history',
+        'safety_soc_violation_count_history',
+    ]:
+        if key in res_dic:
+            np.save(path + f'{key}.npy', res_dic[key])
+    print(f"Data saved to: {path}")
+    print(f"Info瀛楁缂哄け璁℃暟: {res_dic.get('info_missing_counts', {})}")
 
-    # 保存模型
+    # 淇濆瓨妯″瀷
     agent.save_model(path + 'marl_model_final.pth')
-    print(f"模型已保存: {path}marl_model_final.pth")
+    print(f"Model saved: {path}marl_model_final.pth")
 
-    # 绘制训练曲线
-    print("\n绘制训练曲线...")
+    # 缁樺埗璁粌鏇茬嚎
+    print("\n缁樺埗璁粌鏇茬嚎...")
     plot_rewards(res_dic['rewards'], cfg, path=path + 'train_rewards.png', tag='train')
 
-    # 绘制Critic Loss曲线
+    # 缁樺埗Critic Loss鏇茬嚎
     plot_critic_losses(res_dic['critic_losses'], None, tag="train", save_path=path + "critic_loss_curve.png")
 
-    # 生成综合指标图（与main.py一致的8个子图）
-    print("生成综合指标图...")
+    # 鐢熸垚缁煎悎鎸囨爣鍥撅紙涓巑ain.py涓€鑷寸殑8涓瓙鍥撅級
+    print("鐢熸垚缁煎悎鎸囨爣鍥?..")
     fig, axes = plt.subplots(8, 1, figsize=(10, 20))
 
-    # 子图1: Critic Loss
+    # 瀛愬浘1: Critic Loss
     axes[0].plot(res_dic['critic_losses'], label='Critic Loss', color='blue', linewidth=1.5)
     axes[0].set_xlabel('Update Step')
     axes[0].set_ylabel('Loss')
@@ -104,7 +117,7 @@ def main():
     axes[0].legend()
     axes[0].grid(True, alpha=0.3)
 
-    # 子图2: Actor Loss
+    # 瀛愬浘2: Actor Loss
     axes[1].plot(res_dic['actor_losses'], label='Actor Loss (-Q)', color='red', linewidth=1.5)
     axes[1].set_xlabel('Update Step')
     axes[1].set_ylabel('Loss')
@@ -112,7 +125,7 @@ def main():
     axes[1].legend()
     axes[1].grid(True, alpha=0.3)
 
-    # 子图3-4: 预留（MARL没有单独的Q值记录）
+    # 瀛愬浘3-4: 棰勭暀锛圡ARL娌℃湁鍗曠嫭鐨凲鍊艰褰曪級
     axes[2].text(0.5, 0.5, 'Q Value tracking not available in MARL',
                 ha='center', va='center', transform=axes[2].transAxes)
     axes[2].set_title('Q Value (N/A for MARL)')
@@ -121,7 +134,7 @@ def main():
                 ha='center', va='center', transform=axes[3].transAxes)
     axes[3].set_title('Target Q Value (N/A for MARL)')
 
-    # 子图5: RLD
+    # 瀛愬浘5: RLD
     if 'rld_history' in res_dic and len(res_dic['rld_history']) > 0:
         axes[4].plot(res_dic['rld_history'], label='RLD', color='green', linewidth=1.5)
         axes[4].set_xlabel('Step')
@@ -130,7 +143,7 @@ def main():
         axes[4].legend()
         axes[4].grid(True, alpha=0.3)
 
-    # 子图6: SVC
+    # 瀛愬浘6: SVC
     if 'svc_history' in res_dic and len(res_dic['svc_history']) > 0:
         axes[5].plot(res_dic['svc_history'], label='SVC', color='purple', linewidth=1.5)
         axes[5].set_xlabel('Step')
@@ -139,7 +152,7 @@ def main():
         axes[5].legend()
         axes[5].grid(True, alpha=0.3)
 
-    # 子图7: SRD
+    # 瀛愬浘7: SRD
     if 'srd_history' in res_dic and len(res_dic['srd_history']) > 0:
         axes[6].plot(res_dic['srd_history'], label='SRD', color='orange', linewidth=1.5)
         axes[6].set_xlabel('Step')
@@ -148,7 +161,7 @@ def main():
         axes[6].legend()
         axes[6].grid(True, alpha=0.3)
 
-    # 子图8: Episode Reward
+    # 瀛愬浘8: Episode Reward
     axes[7].plot(res_dic['rewards'], label='Reward', color='gray', alpha=0.3, linewidth=1.0)
     from core.util import smooth
     axes[7].plot(smooth(res_dic['rewards']), label='Smoothed', color='blue', linewidth=2.0)
@@ -161,19 +174,23 @@ def main():
     plt.tight_layout()
     plt.savefig(path + 'final_metrics.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"综合指标图已保存: {path}final_metrics.png")
+    print(f"Final metrics figure saved: {path}final_metrics.png")
 
-    # 测试
+    # 娴嬭瘯
     print("\n" + "="*80)
-    print("开始测试")
+    print("Start testing")
     print("="*80)
     test_rewards = marl_test(env, agent, cfg, path=path)
 
     print("\n" + "="*80)
-    print("训练完成！")
-    print(f"结果保存在: {path}")
+    print("Training complete")
+    print(f"Results saved to: {path}")
     print("="*80)
 
 if __name__ == "__main__":
     main()
-# ======修改结束
+# ======淇敼缁撴潫
+
+
+
+
