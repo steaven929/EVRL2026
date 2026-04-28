@@ -220,6 +220,18 @@ class dclily(gym.Env):
         with open(self.log_file_path, "w") as f:
             f.write("Time,VehicleID,Zone,SOC,Action_ChargePref,Formula_Score,Formula_Prob,Decision_Charge,Final_Behavior\n")
 
+    @staticmethod
+    def _compute_service_metrics(total_demand, real_reward, rel_demand):
+        total_demand = float(total_demand)
+        served_orders = float(np.sum(rel_demand))
+        if total_demand > 0:
+            service_rate = served_orders / total_demand
+            service_reward_density = float(np.sum(real_reward)) / total_demand
+        else:
+            service_rate = 1.0
+            service_reward_density = 0.0
+        return served_orders, service_rate, service_reward_density
+
         #self.vehicle_logs.append(log)
         
         '''
@@ -573,7 +585,7 @@ class dclily(gym.Env):
 
     # =========2026.2.12淇敼锛屾柟妗團5锛氱粺涓€鍙皟搴﹁溅杈嗗彛寰?=========
     def _compute_dispatchable_counts(self):
-        """鎸夎溅杈嗙湡瀹炵姸鎬侀噸绠楀悇鍖哄煙鍙皟搴﹁溅杈嗘暟锛坮emain==0 涓旀湭鍗犲厖鐢垫々锛夈€?""
+        """Recompute dispatchable idle vehicles by zone."""
         counts = np.zeros(self.ZONE_NUM, dtype=int)
         for i in range(len(self.car)):
             if self.car[i][2] == 0 and self.car[i][3] == -1:
@@ -583,17 +595,16 @@ class dclily(gym.Env):
         return counts
 
     def _sync_dispatchable_available(self):
-        """鍚屾 available[0]锛岄槻姝㈠厖鐢典晶閲嶅鎵ｅ噺瀵艰嚧璋冨害棰勭畻婕傜Щ銆?""
+        """Synchronize available[0] with dispatchable counts."""
         self.available[0] = self._compute_dispatchable_counts().astype(self.available[0].dtype, copy=False)
-    # ======淇敼缁撴潫
+    # ======修复结束
 
     def _sigmoid(self, x):
-        """鏍囧噯 Sigmoid 婵€娲?""
+        """Standard sigmoid activation."""
         return 1.0 / (1.0 + math.exp(-x))
 
-    # =========2026.1.30淇敼锛屾渶浼樿В姹傝В==========
     def _cancel_bidirectional_dispatch(self, matrix):
-        """瀵硅皟搴︾煩闃靛仛鍙屽悜鍑€娴佹姷娑堬紝閬垮厤鍚屾椂鍑虹幇 i->j 涓?j->i銆?""
+        """Cancel bidirectional dispatch flows."""
         net_matrix = np.array(matrix, copy=True, dtype=float)
         for i in range(self.ZONE_NUM):
             net_matrix[i][i] = 0
@@ -607,60 +618,15 @@ class dclily(gym.Env):
                     net_matrix[i][j] = 0
                     net_matrix[j][i] = -net
         return net_matrix
-    # ======淇敼缁撴潫
 
-    # =========2026.2.14淇敼锛屽疄楠屾柟妗圔2鍓嶇灮闇€姹?=========
     def _get_future_out_demand(self, step_offset=1):
-        """杩斿洖鏈潵 step_offset 鏃堕棿鐗囩殑鍚勫尯鍩熷嚭鍙戦渶姹傚悜閲忋€?""
+        """Return future outgoing demand vector."""
         idx = int(self.episode_timestep + step_offset)
         if self.od_out.size == 0 or idx < 0 or idx >= self.od_out.shape[1]:
             return np.zeros(self.ZONE_NUM, dtype=float)
         return np.asarray(self.od_out[:, idx], dtype=float)
-    # ======淇敼缁撴潫
 
-    def rl_should_charge(self, vehicle_id, charge_pref):
-        """
-        [宸插簾寮?- 2026.2.6鏂规C] 浣跨敤 RL 杈撳嚭鏉ュ喅瀹氭槸鍚﹀厖鐢碉紙鏇挎崲鍥哄畾闃堝€兼硶锛?
-        鏂规C鏀逛负鍩轰簬鏁伴噺鐨勫厖鐢靛喅绛栵紝涓嶅啀浣跨敤姝ゅ嚱鏁?
-        淇濈暀姝ゅ嚱鏁颁互渚垮洖婊氭垨瀵规瘮瀹為獙
 
-        charge_pref: 鍔ㄤ綔鍚戦噺涓厖鐢靛€惧悜閮ㄥ垎
-        """
-        # =========2026.2.4淇敼锛屾柟妗堜竴锛氱畝鍖栧厖鐢靛喅绛栭€昏緫==========
-        # 闂: 澶嶆潅鏉冮噸鎵撳垎绯荤粺瀵艰嚧3娆′慨澶嶅け璐ワ紝鏋舵瀯鎬х己闄?
-        # 鏂规: 绉婚櫎鎵€鏈夋潈閲嶈绠楋紝鐩存帴浣跨敤RL鐨刾ref鍊间綔涓哄厖鐢垫鐜?
-        # 鐩爣: 璁㏑L瀹屽叏鎺у埗鍏呯數鍐崇瓥锛屾棤涓棿灞傚共鎵?
-
-        cfg = getattr(self, "config", None)
-        zone = self.car[vehicle_id][0]
-        soc = max(0.0, min(1.0, self.car[vehicle_id][1] / BATTERY_CAPACITY))
-        pref = float(charge_pref[zone])
-
-        # 鐩存帴浣跨敤RL杈撳嚭鐨刾ref浣滀负鍏呯數姒傜巼
-        # 浠呭仛鍩烘湰瑁佸壀锛岄槻姝㈡瀬绔€?
-        lo, hi = (cfg.get("RL_CHARGE_DECISION_CLIP", [0.05, 0.95]) if cfg else [0.05, 0.95])
-        p = min(max(pref, lo), hi)
-
-        # 璁粌鏈燂細闅忔満閲囨牱鎺㈢储锛涙帹鐞嗘湡锛氭寜姒傜巼闃堝€煎喅绛?
-        r = random.random()
-        if self.training:
-            decision = (r < p)
-        else:
-            decision = (p >= 0.5)
-
-        # Log the details for this vehicle
-        if vehicle_id not in self.current_step_logs:
-            self.current_step_logs[vehicle_id] = {}
-
-        self.current_step_logs[vehicle_id].update({
-            "soc": soc,
-            "pref": pref,
-            "prob": p,
-            "decision_charge": decision
-        })
-        # ======淇敼缁撴潫
-
-        return decision
     
     def handle_vehicle_charging(self, vehicle_id, target_zone):
         """
@@ -764,243 +730,22 @@ class dclily(gym.Env):
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[0][0]
     
-    def check_idle_vehicles(self, charge_pref, charging_actions=None, epoch=0):
-        """妫€鏌ョ┖闂茶溅杈嗙姸鎬侊紙鐢?RL 鍐冲畾鍏呯數鏁伴噺锛涘啀鍐冲畾鍘诲摢鍎垮厖锛?
 
-        鍙傛暟:
-            charge_pref: RL杈撳嚭鐨勫厖鐢垫瘮渚?[zone0, zone1, zone2, zone3]
-            charging_actions: 鍏呯數鍔ㄤ綔璁板綍瀛楀吀
-            epoch: 褰撳墠璁粌杞暟锛堢敤浜庢柟妗圖2鐨勬帰绱㈣“鍑忥級
-        """
-        # =========2026.2.6淇敼锛屾柟妗圕锛氫粠鍏呯數鍊惧悜鏀逛负鍏呯數鏁伴噺==========
-        # 鍘熼€昏緫锛氶€愯溅鍒ゆ柇锛屽熀浜庢鐜囧喅绛栵紙charge_pref浣滀负姒傜巼锛?
-        # 鏂伴€昏緫锛氭寜鍖哄煙鍒嗛厤鍏呯數鏁伴噺锛岄€夋嫨鏈€闇€瑕佸厖鐢电殑杞﹁締
-        # 浼樺娍锛氭洿鐩存帴鐨勬帶鍒讹紝閬垮厤姒傜巼闅忔満鎬у鑷寸殑涓嶇ǔ瀹?
-
-        if charging_actions is None:
-            charging_actions = {}
-
-        # =========2026.2.7淇敼锛屾柟妗圖2锛毼?greedy鍏呯數鎺㈢储==========
-        # 鍓?0杞紝10%姒傜巼闅忔満閫夋嫨涓€涓尯鍩熻繘琛屽厖鐢?
-        if epoch < 30 and random.random() < 0.1:
-            random_zone = random.randint(0, ZONE_NUM-1)
-            idle_vehicles_in_zone = []
-
-            for i in range(len(self.car)):
-                if self.car[i][2] == 0 and self.car[i][3] == -1:  # 闈欐涓斿彲璋冨害杞﹁締
-                    if self.car[i][0] == random_zone:  # 鍦ㄧ洰鏍囧尯鍩?
-                        idle_vehicles_in_zone.append((i, self.car[i][1]))  # (杞﹁締ID, SOC)
-
-            if idle_vehicles_in_zone:
-                # 闅忔満鍏呯數1-3杈嗚溅
-                charge_count = random.randint(1, min(3, len(idle_vehicles_in_zone)))
-                # 鎸塖OC鍗囧簭鎺掑簭锛屼紭鍏堝厖鐢典綆鐢甸噺杞﹁締
-                idle_vehicles_in_zone.sort(key=lambda x: x[1])
-
-                for vehicle_id, soc in idle_vehicles_in_zone[:charge_count]:
-                    current_zone = self.car[vehicle_id][0]
-
-                    # 鎵惧埌鏈€浼樺厖鐢电珯锛堝鐢ㄥ師鏈夐€昏緫锛?
-                    target_charger = self.find_preferred_charger(current_zone, charge_pref)
-
-                    if target_charger != -1:
-                        # 閲婃斁鏃у厖鐢垫々锛堝鏋滄湁锛?
-                        old_charger_id = self.car[vehicle_id][3]
-                        if old_charger_id != -1:
-                            self.release_charger(current_zone, old_charger_id)
-                            self.car[vehicle_id][3] = -1
-
-                        # 璁剧疆鏂扮殑鐩爣鍖哄煙
-                        self.car[vehicle_id][0] = target_charger
-
-                        # 璁剧疆琛岄┒璺濈
-                        dist_to_charge = self.dist[current_zone][target_charger]
-                        self.car[vehicle_id][2] = dist_to_charge
-
-                        # 瑙勫垝鍋滆溅浣?
-                        self.assign_parking_slot(vehicle_id, is_charging_order=True)
-
-                        # 璁板綍鍏呯數鍔ㄤ綔
-                        if self.car[vehicle_id][3] != -1:
-                            if target_charger not in charging_actions:
-                                charging_actions[target_charger] = 0
-                            charging_actions[target_charger] += 1
-
-                        # 绔嬪嵆鐗╃悊閿佹々
-                        planned_id = self.car[vehicle_id][3]
-                        if planned_id != -1:
-                            if target_charger in self.charging_stations:
-                                for station in self.charging_stations[target_charger]:
-                                    if station['charger_id'] == planned_id:
-                                        station['occupied_by'] = vehicle_id
-                                        break
-
-                        # 濡傛灉鏄湰鍦板厖鐢碉紝浠庤皟搴︽睜绉婚櫎
-                        if dist_to_charge == 0:
-                            self.available[0][current_zone] -= 1
-
-                # 纭繚 available 涓嶄細鍙樻垚璐熸暟
-                for z in range(self.ZONE_NUM):
-                    if self.available[0][z] < 0:
-                        self.available[0][z] = 0
-
-                return  # 鏈浣跨敤闅忔満绛栫暐锛岃烦杩嘡L鍐崇瓥
-        # ======鎺㈢储閫昏緫缁撴潫
-
-        # =========2026.2.12淇敼锛屾柟妗團1锛氬叏灞€鍏呯數棰勭畻 + 璺ㄥ尯鍥炲～==========
-        # 鐩爣锛氬噺灏戝悗鏈熲€滄湁鍔ㄤ綔浣嗘墽琛屼负0鈥濈殑濉岀缉锛屾敼涓哄叏灞€鍒嗛厤鍙厖鐢佃溅杈?
-        pref_arr = np.clip(np.asarray(charge_pref, dtype=float), 0.0, 1.0)
-
-        idle_vehicles_all = []
-        for i in range(len(self.car)):
-            if self.car[i][2] == 0 and self.car[i][3] == -1:
-                zone = int(self.car[i][0])
-                soc = float(self.car[i][1])
-                idle_vehicles_all.append((i, zone, soc))
-                # 涓烘棩蹇楁彁渚涚ǔ瀹氳娴嬶紝閬垮厤 N/A
-                if i not in self.current_step_logs:
-                    self.current_step_logs[i] = {}
-                self.current_step_logs[i].update({
-                    "soc": max(0.0, min(1.0, soc / BATTERY_CAPACITY)),
-                    "pref": float(pref_arr[zone]),
-                    "prob": float(pref_arr[zone]),
-                    "score": float(pref_arr[zone]),
-                    "decision_charge": False
-                })
-
-        total_idle = len(idle_vehicles_all)
-        # =========2026.2.13淇敼锛屾坊鍔犲厖鐢佃瘖鏂緭鍑?=========
-        # if self.episode_timestep <= 2:  # 鍙湪鍓?姝ヨ緭鍑猴紝閬垮厤鍒峰睆
-        #     print(f"\n[Charging Debug t={self.episode_timestep}]")
-        #     print(f"  Idle vehicles: {total_idle}")
-        #     print(f"  Charge prefs: {pref_arr}")
-        #     print(f"  Max pref: {pref_arr.max():.3f}")
-        # ======淇敼缁撴潫
-
-        if total_idle > 0 and float(pref_arr.max()) > 1e-6:
-            global_ratio = float(np.clip(0.6 * pref_arr.max() + 0.4 * pref_arr.mean(), 0.0, 1.0))
-            charge_budget = int(round(global_ratio * total_idle))
-            if pref_arr.max() > 0.8:
-                charge_budget = max(charge_budget, int(round(0.6 * total_idle)))
-            charge_budget = max(0, min(charge_budget, total_idle))
-
-            # =========2026.2.13淇敼锛屾坊鍔犲己鍒跺厖鐢电害鏉燂紙纭害鏉燂級==========
-            # 鐩殑锛氱‘淇濊溅闃烻OC涓嶄細鑰楀敖锛屼繚璇佺瓥鐣ョǔ瀹氭€?
-            # 璁＄畻杞﹂槦骞冲潎SOC
-            total_soc = sum(self.car[i][1] for i in range(self.CAR_NUM))
-            avg_soc = total_soc / self.CAR_NUM
-
-            # 寮哄埗鍏呯數绾︽潫锛氬綋骞冲潎SOC杩囦綆鏃讹紝寮哄埗鏈€浣庡厖鐢垫瘮渚?
-            if avg_soc < 1000:
-                # 骞冲潎SOC < 1000 (50%)锛屽己鍒惰嚦灏?0%鐨刬dle杞﹁締鍏呯數
-                min_charge_vehicles = max(3, int(total_idle * 0.3))
-                charge_budget = max(charge_budget, min_charge_vehicles)
-            elif avg_soc < 1200:
-                # 骞冲潎SOC < 1200 (60%)锛屽己鍒惰嚦灏?0%鐨刬dle杞﹁締鍏呯數
-                min_charge_vehicles = max(2, int(total_idle * 0.2))
-                charge_budget = max(charge_budget, min_charge_vehicles)
-
-            # 纭繚涓嶈秴杩囨€籭dle杞﹁締鏁?
-            charge_budget = min(charge_budget, total_idle)
-            # ======淇敼缁撴潫
-
-            # =========2026.2.13淇敼锛屾坊鍔犲厖鐢甸绠楄瘖鏂?=========
-            # if self.episode_timestep <= 2:
-            #     print(f"  Global ratio: {global_ratio:.3f}")
-            #     print(f"  Charge budget: {charge_budget}")
-            # ======淇敼缁撴潫
-
-            # 浼樺厛鍏呯數浣嶴OC杞﹁締
-            idle_vehicles_all.sort(key=lambda x: x[2])
-
-            charged_count = 0
-            for vehicle_id, current_zone, _soc in idle_vehicles_all:
-                if charged_count >= charge_budget:
-                    break
-
-                target_charger = self.find_preferred_charger(current_zone, pref_arr)
-                if target_charger == -1:
-                    # 鍥炲～绛栫暐锛氶閫夋渶杩戝彲鐢ㄥ厖鐢垫々锛岄伩鍏嶅亸濂藉尯鏃犺溅/鏃犳々鏃剁洿鎺ュ綊闆?
-                    target_charger, _nearest_charger_id = self.find_nearest_charger(current_zone)
-                if target_charger == -1:
-                    continue
-
-                old_charger_id = self.car[vehicle_id][3]
-                if old_charger_id != -1:
-                    self.release_charger(current_zone, old_charger_id)
-                    self.car[vehicle_id][3] = -1
-
-                self.car[vehicle_id][0] = target_charger
-                dist_to_charge = self.dist[current_zone][target_charger]
-                self.car[vehicle_id][2] = dist_to_charge
-
-                # Debug: 妫€鏌ュ厖鐢垫々鍙敤鎬?
-                # if self.episode_timestep <= 2:
-                #     chargers_in_zone = self.charging_stations.get(target_charger, [])
-                #     occupied_count = sum(1 for ch in chargers_in_zone if ch["occupied_by"] is not None)
-                #     print(f"    Vehicle {vehicle_id} -> Zone {target_charger}: {len(chargers_in_zone)} chargers, {occupied_count} occupied")
-
-                self.assign_parking_slot(vehicle_id, is_charging_order=True)
-
-                # Debug: 妫€鏌ュ垎閰嶇粨鏋?
-                # if self.episode_timestep <= 2:
-                #     assigned_charger_id = self.car[vehicle_id][3]
-                #     print(f"      -> Assigned charger_id: {assigned_charger_id}")
-
-                if self.car[vehicle_id][3] != -1:
-                    charging_actions[target_charger] = charging_actions.get(target_charger, 0) + 1
-
-                planned_id = self.car[vehicle_id][3]
-                if planned_id != -1 and target_charger in self.charging_stations:
-                    for station in self.charging_stations[target_charger]:
-                        if station['charger_id'] == planned_id:
-                            station['occupied_by'] = vehicle_id
-                            break
-
-                if dist_to_charge == 0:
-                    self.available[0][current_zone] -= 1
-
-                # 璁板綍宸叉墽琛屽厖鐢靛喅绛?
-                self.current_step_logs[vehicle_id].update({
-                    "decision_charge": True,
-                    "prob": global_ratio,
-                    "score": float(charge_budget)
-                })
-                charged_count += 1
-        # ======淇敼缁撴潫
-
-        # =========2026.2.13淇敼锛岃緭鍑哄厖鐢垫墽琛岀粨鏋?=========
-        # if self.episode_timestep <= 2:
-        #     print(f"  Charged count: {charged_count if 'charged_count' in locals() else 0}")
-        #     print(f"  Charging actions: {charging_actions}")
-        # ======淇敼缁撴潫
-
-        # 纭繚 available 涓嶄細鍙樻垚璐熸暟
-        for z in range(self.ZONE_NUM):
-            if self.available[0][z] < 0:
-                self.available[0][z] = 0
-        # ======淇敼缁撴潫
-    
     def release_charger(self, zone_id, charger_id):
-        """閲婃斁鎸囧畾鍖哄煙鐨勬寚瀹氬厖鐢垫々,娓呴櫎杞﹁締绂诲紑鏃剁殑鍗犵敤璁板綍銆?""
+        """Release charger occupancy record for a vehicle leaving the charger."""
         if zone_id in self.charging_stations:
             for station in self.charging_stations[zone_id]:
-                if station['charger_id'] == charger_id:
-                    # 鍙湁褰撶‘瀹炶鍗犵敤鏃舵墠鎵撳嵃锛岄伩鍏嶅埛灞?
-                    if station['occupied_by'] is not None:
-                        # print(f"[System] 閲婃斁 鍖哄煙{zone_id} 鍏呯數妗﹞charger_id} (鍘熷崰鐢? 杞﹁締{station['occupied_by']})")
-                        station['occupied_by'] = None
+                if station["charger_id"] == charger_id:
+                    if station["occupied_by"] is not None:
+                        station["occupied_by"] = None
                     break
-    def print_charging_stations(self):
-        """
-        鎵撳嵃褰撳墠鎵€鏈夊厖鐢垫々鐨勭姸鎬侊紝鐢ㄤ簬璋冭瘯涓庣姸鎬佹牎楠屻€?
 
-        浣滅敤锛?
-        - 楠岃瘉 charging_stations 鏄惁姝ｇ‘鍒濆鍖?
-        - 妫€鏌ユ瘡涓?zone 涓嬫湁鍝簺鍏呯數妗?
-        - 妫€鏌ユ瘡涓厖鐢垫々褰撳墠鏄惁琚溅杈嗗崰鐢紙occupied_by锛?
-        - 鏂逛究璋冭瘯 assign_charger / release_charger 閫昏緫
-        """
+    def print_charging_stations(self):
+        """Debug helper kept for reset() compatibility."""
+        return None
+
+    def check_idle_vehicles(self, charge_pref, charging_actions=None, epoch=0):
+        """Patched docstring."""
         
         # 鎵撳嵃鏁翠綋鏍囬锛屾柟渚垮湪鎺у埗鍙颁腑鍖哄垎涓嶅悓鏃堕棿鐐圭殑杈撳嚭
         #print("\n===== Charging Stations Status =====")
@@ -1038,6 +783,10 @@ class dclily(gym.Env):
         # 鎵撳嵃缁撳熬鍒嗛殧绗︼紝鎻愬崌鍙鎬?
         # print("===================================\n")
     
+    def print_charging_stations(self):
+        """Debug helper kept for reset() compatibility."""
+        return None
+
     def assign_parking_slot(self, car_id, is_charging_order):
         """
         涓鸿溅杈嗚鍒掔洰鏍囧尯鍩熷唴鐨勫仠杞︿綅绫诲瀷锛堜粎瑙勫垝锛屼笉鍙戠敓鐗╃悊鍗犵敤锛?
@@ -1458,12 +1207,14 @@ class dclily(gym.Env):
                 # ======淇敼缁撴潫
         
         total_demand = np.sum(demand)##0729 璁＄畻trb璁烘枃鎸囨爣鍔犲叆
-        self._last_svc = np.sum(rel_demand) / total_demand if total_demand > 0 else 0
-        self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0  # 淇敼
+        served_orders, service_rate, service_reward_density = self._compute_service_metrics(
+            total_demand, real_reward, rel_demand
+        )
+        self._last_svc = service_rate
+        self._last_srd = service_reward_density
 
-        # =========2026.2.14淇敼锛屾坊鍔犳湇鍔＄巼鎯╃綒==========
-        # 璁＄畻鏈嶅姟鐜囷細瀹為檯鏈嶅姟鐨勮鍗曟暟 / 鎬婚渶姹傛暟
-        served_orders = np.sum(rel_demand)  # 瀹為檯鏈嶅姟鐨勮鍗曟暟
+        # =========2026.2.14??????????==========
+        # ?????????????? / ????
         service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
         # 鏈嶅姟鐜囨儵缃氾細濡傛灉鏈嶅姟鐜囦綆浜庨槇鍊硷紝缁欎簣閫傚害鎯╃綒
@@ -1635,16 +1386,46 @@ class dclily(gym.Env):
         # ======淇敼缁撴潫
 
         # =========2026.2.4淇敼锛屾坊鍔犲厖鐢靛姩浣滃拰璋冨害鐭╅樀鍒癷nfo==========
+        parking_available_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        parking_used_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        charger_available_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        charger_used_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+
+        for zi in range(self.ZONE_NUM):
+            if self.available is not None and len(self.available) > 1 and len(self.available[1]) > zi:
+                free_parking = float(self.available[1][zi])
+            else:
+                free_parking = 0.0
+
+            total_parking = float(ZONES[zi].get("num_parking_slots", 0)) if zi < len(ZONES) else 0.0
+            used_parking = max(0.0, total_parking - free_parking)
+            parking_available_by_zone[zi] = max(0.0, free_parking)
+            parking_used_by_zone[zi] = used_parking
+
+            chargers = self.charging_stations.get(zi, []) if hasattr(self, 'charging_stations') else []
+            total_chargers = float(len(chargers))
+            used_chargers = float(sum(1 for ch in chargers if ch.get("occupied_by") is not None))
+            free_chargers = max(0.0, total_chargers - used_chargers)
+            charger_available_by_zone[zi] = free_chargers
+            charger_used_by_zone[zi] = used_chargers
+
         info = {            ##0729 璁＄畻trb璁烘枃鎸囨爣鍔犲叆
             "rld": self._last_rld,          ##0729 璁＄畻trb璁烘枃鎸囨爣鍔犲叆
             "svc": self._last_svc,
             "srd": self._last_srd,  # 淇敼
             "dispatch_orders": rel_dispatch,  # 璋冨害璁㈠崟鐭╅樀
             "demand_orders": rel_demand,  # 闇€姹傝鍗曠煩闃?
+            "demand_matrix": demand,  # ??????
+            "served_orders": float(served_orders),
+            "total_demand": float(total_demand),
             "charging_actions": charging_actions,  # 鍏呯數鍔ㄤ綔璁板綍
             "action_table_true": action_table_true,  # RL璋冨害鍊惧悜鐭╅樀
             "service_rate": float(service_rate),
             "reward_mode": self.reward_mode,
+            "parking_available_by_zone": parking_available_by_zone,
+            "parking_used_by_zone": parking_used_by_zone,
+            "charger_available_by_zone": charger_available_by_zone,
+            "charger_used_by_zone": charger_used_by_zone,
         }           ##0729 璁＄畻trb璁烘枃鎸囨爣鍔犲叆
         # ======淇敼缁撴潫
 
@@ -1775,23 +1556,17 @@ class dclily(gym.Env):
         """
         self.training = training
 
-    # =========2026.2.7淇敼锛屾柟妗圖2锛氭坊鍔爏et_epoch鏂规硶==========
+    # =========2026.2.7 修复：set_epoch==========
     def set_epoch(self, epoch):
-        """璁剧疆褰撳墠璁粌杞暟锛堢敤浜庢帰绱㈢瓥鐣ヨ“鍑忥級"""
+        """Set current training epoch."""
         self.current_epoch = epoch
-    # ======淇敼缁撴潫
+    # ======修复结束
 
-    # =========2026.2.14淇敼锛屽疄楠屾柟妗堝紑鍏?=========
     def set_experiment_variant(self, variant):
-        """璁剧疆瀹為獙鏂规锛歜aseline/a1/a2/b1/b2/c1銆?""
+        """Set experiment variant key."""
         self.exp_variant = str(variant).lower()
-    # ======淇敼缁撴潫
 
     # =========2026.2.20淇敼锛屽鍔辨ā寮忚缃帴鍙?=========
-    def set_reward_mode(self, reward_mode):
-        mode = str(reward_mode).lower()
-        if mode in ('base', 'shaping'):
-            self.reward_mode = mode
     # ======淇敼缁撴潫
 
     def reset(self, *, seed=None, options=None):
@@ -1831,5 +1606,4 @@ class dclily(gym.Env):
         random.seed(seed)
         np.random.seed(seed)
         return [seed]
-
 
