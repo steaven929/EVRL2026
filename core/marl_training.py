@@ -22,6 +22,14 @@ def _aggregate_episode_metric(values):
     return float(np.mean(finite)), float(finite[-1])
 
 
+def _aggregate_episode_series(values):
+    arr = np.asarray(values, dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return 0.0, 0.0
+    return float(np.mean(finite)), float(finite[-1])
+
+
 def _compute_marl_noise_scale(cfg, episode_idx, train_eps, latest_svc=None):
     noise_start = float(cfg.get("marl_noise_start", 0.3))
     noise_min = float(cfg.get("marl_noise_min", 0.1))

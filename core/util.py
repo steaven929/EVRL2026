@@ -14,11 +14,11 @@ def get_args():
     """ 超参数
     """
     parser = argparse.ArgumentParser(description="hyperparameters")      
-    parser.add_argument('--algo_name',default='DDPG',type=str,help="name of algorithm")#算法名称
+    parser.add_argument('--algo_name',default='DDPG',type=str,help="nhdame of algorithm")#算法名称
     parser.add_argument('--env_name',default='dclily',type=str,help="name of environment") # Pendulum-v1 #环境ID
     parser.add_argument('--data_folder',default='data\\toy_network\\',type=str,help="name of environment") #数据位置
-    parser.add_argument('--train_eps',default=5,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
-    parser.add_argument('--test_eps',default=10,type=int,help="episodes of testing")  #测试轮数
+    parser.add_argument('--train_eps',default=30,type=int,help="episodes of training") #训练轮数  # 2026.2.13：默认1000轮
+    parser.add_argument('--test_eps',default=4,type=int,help="episodes of testing")  #测试轮数
     parser.add_argument('--max_steps',default=100000,type=int,help="steps per episode, much larger value can simulate infinite steps") #最大步数（这个弃用了，不需要设置）
     parser.add_argument('--gamma',default=0.95,type=float,help="discounted factor")  #折扣因子  # 实验12：回到0.95
     parser.add_argument('--critic_lr',default=1e-4,type=float,help="learning rate of critic")  #critic学习率  # 2026.2.20：提高学习率加速学习（1e-5->1e-4）
