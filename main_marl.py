@@ -79,6 +79,10 @@ def main():
     np.save(path + 'ma_rewards.npy', res_dic['ma_rewards'])
     if 'rld_history' in res_dic:
         np.save(path + 'rld_history.npy', res_dic['rld_history'])
+    if 'ri_history' in res_dic:
+        np.save(path + 'ri_history.npy', res_dic['ri_history'])
+    if 'ri_last_history' in res_dic:
+        np.save(path + 'ri_last_history.npy', res_dic['ri_last_history'])
     if 'svc_history' in res_dic:
         np.save(path + 'svc_history.npy', res_dic['svc_history'])
     if 'srd_history' in res_dic:
@@ -223,6 +227,7 @@ def main():
         'timestep_ids',
         'svc_by_timestep',
         'rld_by_timestep',
+        'ri_by_timestep',
         'srd_by_timestep',
         'reward_by_timestep',
         'total_demand_by_timestep',
@@ -233,6 +238,7 @@ def main():
         'soc_violation_by_timestep',
         'svc_timestep_mean',
         'rld_timestep_mean',
+        'ri_timestep_mean',
         'srd_timestep_mean',
         'reward_timestep_mean',
         'total_demand_timestep_mean',

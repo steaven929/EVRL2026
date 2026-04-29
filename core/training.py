@@ -6,6 +6,7 @@ Created on Tue Sep  3 19:24:55 2024
 """
 
 import numpy as np
+from ri_metrics import build_ri_exports
 import random
 from core.marl_metrics import compute_all_metrics
 
@@ -157,6 +158,7 @@ def train(cfg, env, agent):
     safety_soc_violation_count_history = []
 
     info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0}
+    ri_episode_steps = []
 
     battery_log = []  # 修改：在所有episode之前初始化，用于存储所有episode的电池数据  # 修改
 
@@ -188,6 +190,8 @@ def train(cfg, env, agent):
         ep_reward_by_t = np.full(time_num, np.nan, dtype=float)
         ep_total_demand_by_t = np.full(time_num, np.nan, dtype=float)
         ep_served_orders_by_t = np.full(time_num, np.nan, dtype=float)
+        ep_ri_steps = []
+
         ep_ce_by_t = np.full(time_num, np.nan, dtype=float)
         ep_qd_by_t = np.full(time_num, np.nan, dtype=float)
         ep_ens_by_t = np.full(time_num, np.nan, dtype=float)
@@ -347,6 +351,7 @@ def train(cfg, env, agent):
             print(f"回合：{i_ep+1}/{cfg['train_eps']}，奖励(raw/scaled)：{ep_reward_raw:.2f}/{ep_reward:.2f}")
         rewards.append(ep_reward)
         raw_rewards.append(ep_reward_raw)
+        ri_episode_steps.append(ep_ri_steps)
 
         svc_by_timestep.append(ep_svc_by_t)
         rld_by_timestep.append(ep_rld_by_t)
@@ -427,6 +432,12 @@ def train(cfg, env, agent):
         charger_available_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
         charger_used_by_timestep_zone_arr = np.empty((0, time_num, zone_num), dtype=float)
 
+    ri_exports = build_ri_exports(
+        episode_step_metrics=ri_episode_steps,
+        by_timestep=rld_by_timestep_arr,
+        timestep_mean=_safe_nanmean(rld_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    )
+
     return {'rewards': rewards,
     'raw_rewards': raw_rewards,
     'eval_rewards': eval_rewards,
@@ -438,8 +449,10 @@ def train(cfg, env, agent):
     'q_values': q_values,  # 修改
     'target_q_values': target_q_values,  # 修改
     'rld_history': rld_history,  # 修改
+    'ri_history': ri_exports['ri_history'],
     'svc_history': svc_history,  # 修改
     'srd_history': srd_history,
+    'ri_last_history': ri_exports['ri_last_history'],
     'info_missing_counts': info_missing_counts,
     'charging_efficiency_history': charging_efficiency_history,
     'charger_queue_delay_history': charger_queue_delay_history,
@@ -448,6 +461,7 @@ def train(cfg, env, agent):
 
     'svc_by_timestep': svc_by_timestep_arr,
     'rld_by_timestep': rld_by_timestep_arr,
+    'ri_by_timestep': ri_exports['ri_by_timestep'],
     'srd_by_timestep': srd_by_timestep_arr,
     'reward_by_timestep': reward_by_timestep_arr,
     'total_demand_by_timestep': total_demand_by_timestep_arr,
@@ -459,6 +473,7 @@ def train(cfg, env, agent):
 
     'svc_timestep_mean': _safe_nanmean(svc_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
     'rld_timestep_mean': _safe_nanmean(rld_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
+    'ri_timestep_mean': ri_exports['ri_timestep_mean'],
     'srd_timestep_mean': _safe_nanmean(srd_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
     'reward_timestep_mean': _safe_nanmean(reward_by_timestep_arr, axis=0, fallback_shape=(time_num,)),
     'total_demand_timestep_mean': _safe_nanmean(total_demand_by_timestep_arr, axis=0, fallback_shape=(time_num,)),

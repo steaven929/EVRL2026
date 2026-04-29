@@ -4,6 +4,8 @@ MARL Phase-1: Multi-Agent Training Loop
 """
 import numpy as np
 
+from ri_metrics import build_ri_exports
+
 from core.marl_metrics import compute_all_metrics
 from core.improved_metrics import compute_all_improved_metrics
 
@@ -376,6 +378,13 @@ def marl_train(env, agent, cfg, path=None):
             # print(f"模型已保存: {path}marl_model_ep{i_ep+1}.pth")
             # ======修改结束
 
+    ri_exports = build_ri_exports(
+        rld_history=rld_history,
+        rld_last_history=rld_last_history,
+        by_timestep=np.asarray(rld_by_timestep, dtype=float),
+        timestep_mean=np.nanmean(np.asarray(rld_by_timestep, dtype=float), axis=0),
+    )
+
     res_dic = {
         'rewards': rewards,
         'raw_rewards': raw_rewards,
@@ -383,9 +392,11 @@ def marl_train(env, agent, cfg, path=None):
         'critic_losses': critic_losses,
         'actor_losses': actor_losses,
         'rld_history': rld_history,
+        'ri_history': ri_exports['ri_history'],
         'svc_history': svc_history,
         'srd_history': srd_history,
         'rld_last_history': rld_last_history,
+        'ri_last_history': ri_exports['ri_last_history'],
         'svc_last_history': svc_last_history,
         'srd_last_history': srd_last_history,
         'service_rate_history': service_rate_history,
@@ -410,6 +421,7 @@ def marl_train(env, agent, cfg, path=None):
         # 时间片级原始序列（shape: [train_eps, time_num]）
         'svc_by_timestep': np.asarray(svc_by_timestep, dtype=float),
         'rld_by_timestep': np.asarray(rld_by_timestep, dtype=float),
+        'ri_by_timestep': ri_exports['ri_by_timestep'],
         'srd_by_timestep': np.asarray(srd_by_timestep, dtype=float),
         'reward_by_timestep': np.asarray(reward_by_timestep, dtype=float),
         'total_demand_by_timestep': np.asarray(total_demand_by_timestep, dtype=float),
@@ -421,6 +433,7 @@ def marl_train(env, agent, cfg, path=None):
         # 时间片均值曲线（跨episode）
         'svc_timestep_mean': np.nanmean(np.asarray(svc_by_timestep, dtype=float), axis=0),
         'rld_timestep_mean': np.nanmean(np.asarray(rld_by_timestep, dtype=float), axis=0),
+        'ri_timestep_mean': ri_exports['ri_timestep_mean'],
         'srd_timestep_mean': np.nanmean(np.asarray(srd_by_timestep, dtype=float), axis=0),
         'reward_timestep_mean': np.nanmean(np.asarray(reward_by_timestep, dtype=float), axis=0),
         'total_demand_timestep_mean': np.nanmean(np.asarray(total_demand_by_timestep, dtype=float), axis=0),

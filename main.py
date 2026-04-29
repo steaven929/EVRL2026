@@ -95,6 +95,10 @@ if res_dic.get('raw_rewards'):
 np.save(out_file('eval_rewards.npy'), res_dic.get('eval_rewards', []))
 np.save(out_file('eval_episodes.npy'), res_dic.get('eval_episodes', []))
 np.save(out_file('rld_history.npy'), res_dic['rld_history'])  # 修改
+if 'ri_history' in res_dic:
+    np.save(out_file('ri_history.npy'), res_dic['ri_history'])
+if 'ri_last_history' in res_dic:
+    np.save(out_file('ri_last_history.npy'), res_dic['ri_last_history'])
 np.save(out_file('svc_history.npy'), res_dic['svc_history'])  # 修改
 np.save(out_file('srd_history.npy'), res_dic['srd_history'])  # 修改
 
@@ -113,6 +117,7 @@ timestep_keys = [
     'timestep_ids',
     'svc_by_timestep',
     'rld_by_timestep',
+    'ri_by_timestep',
     'srd_by_timestep',
     'reward_by_timestep',
     'total_demand_by_timestep',
@@ -123,6 +128,7 @@ timestep_keys = [
     'soc_violation_by_timestep',
     'svc_timestep_mean',
     'rld_timestep_mean',
+    'ri_timestep_mean',
     'srd_timestep_mean',
     'reward_timestep_mean',
     'total_demand_timestep_mean',
