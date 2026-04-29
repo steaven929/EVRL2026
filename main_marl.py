@@ -26,6 +26,7 @@ if sys.platform == 'win32':
 from core.util import get_args, plot_rewards, plot_critic_losses
 from core.environment import env_agent_config
 from core.marl_training import marl_train, marl_test
+from output_paths import build_marl_run_dir
 
 from gym.envs.registration import register
 register(id='dclily', entry_point='specific.dclily_elec:dclily')
@@ -59,7 +60,7 @@ def main():
     # 设置保存路径（包含训练轮数）
     curr_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_eps = cfg.get('train_eps', 0)
-    path = f"./outputs/marl_{train_eps}ep_{curr_time}/"
+    path = build_marl_run_dir(train_eps=train_eps, curr_time=curr_time)
     os.makedirs(path, exist_ok=True)
 
     # =========2026.3.3修改，注释掉训练开始标题==========

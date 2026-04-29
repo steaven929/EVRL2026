@@ -21,6 +21,8 @@ import numpy as np
 import os
 from datetime import datetime
 
+from output_paths import build_main_run_dir
+
 from gym.envs.registration import register
 
 # 建立环境
@@ -47,10 +49,13 @@ cp("..\\" + cfg['data_folder'])
 os.chdir('..')
 
 # 为每次运行创建独立输出目录：时间戳 + 算法名 + 训练轮数
-output_root = os.path.join(current_dir, 'output')
-os.makedirs(output_root, exist_ok=True)
 run_stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-run_dir = os.path.join(output_root, f"{run_stamp}_{str(cfg['algo_name']).upper()}_{int(cfg['train_eps'])}ep")
+run_dir = build_main_run_dir(
+    current_dir=current_dir,
+    algo_name=cfg['algo_name'],
+    train_eps=cfg['train_eps'],
+    run_stamp=run_stamp,
+)
 os.makedirs(run_dir, exist_ok=True)
 cfg['run_output_dir'] = run_dir
 print(f"运行输出目录: {run_dir}")
