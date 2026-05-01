@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 
 def build_main_run_dir(current_dir, algo_name, train_eps, run_stamp):
@@ -12,3 +12,7 @@ def build_main_run_dir(current_dir, algo_name, train_eps, run_stamp):
 
 def build_marl_run_dir(train_eps, curr_time):
     return f"./outputs/marl_200car_{int(train_eps)}ep_{curr_time}/"
+
+
+def build_sa_run_dir(train_eps, curr_time):
+    return f"./outputs/sa_200car_{int(train_eps)}ep_{curr_time}/"

@@ -41,6 +41,11 @@ def get_args():
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法  # 2026.3.3修改：启用GPU加速
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
+    parser.add_argument('--sa_init_temp',default=1.0,type=float,help="initial temperature for simulated annealing")
+    parser.add_argument('--sa_final_temp',default=0.05,type=float,help="final temperature for simulated annealing")
+    parser.add_argument('--sa_cooling_rate',default=0.97,type=float,help="multiplicative cooling rate for simulated annealing")
+    parser.add_argument('--sa_iters_per_step',default=80,type=int,help="annealing iterations per environment timestep")
+    parser.add_argument('--sa_seed_action',default='demand_charge',type=str,help="seed action strategy for simulated annealing")
     # =========2026.2.19修改，MARL Phase-1：添加多智能体参数==========
     parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 单智能体/多智能体模式
     parser.add_argument('--n_agents',default=50,type=int,help="number of agents (zones)")  # 智能体数量（区域数）
