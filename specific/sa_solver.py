@@ -11,20 +11,54 @@ def _normalize(vec):
     return (arr / total).astype(np.float32)
 
 
-def build_seed_action(demand_out, available, charger_free):
+def build_seed_action(demand_out, available, charger_free, strategy="demand_charge"):
+    demand_out = np.asarray(demand_out, dtype=np.float32)
+    available = np.asarray(available, dtype=np.float32)
+    charger_free = np.asarray(charger_free, dtype=np.float32)
+
     dispatch_from = _normalize(available)
     dispatch_to = _normalize(demand_out)
-    charge_pref = _normalize(np.asarray(charger_free, dtype=np.float32) + 1e-6)
+
+    if strategy == "demand_only":
+        charge_pref = _normalize(demand_out + 1e-6)
+    elif strategy == "charge_balanced":
+        charge_pref = _normalize(0.35 * demand_out + 0.65 * charger_free + 1e-6)
+    elif strategy == "demand_charge":
+        charge_pref = _normalize(charger_free + 1e-6)
+    else:
+        raise ValueError(f"unsupported seed_action strategy: {strategy}")
+
     return np.concatenate([dispatch_from, dispatch_to, charge_pref]).astype(np.float32)
 
 
 class SimulatedAnnealingSolver:
-    def __init__(self, zone_num, init_temp, final_temp, cooling_rate, iterations, seed=None, rng=None):
+    def __init__(
+        self,
+        zone_num,
+        init_temp,
+        final_temp,
+        cooling_rate,
+        iterations,
+        seed=None,
+        rng=None,
+        seed_action="demand_charge",
+        weight_dispatch_support=0.4,
+        weight_charging_bonus=0.7,
+        weight_dispatch_cost=0.15,
+        weight_low_soc_penalty=3.0,
+        weight_unmet_penalty=0.1,
+    ):
         self.zone_num = int(zone_num)
         self.init_temp = float(init_temp)
         self.final_temp = float(final_temp)
         self.cooling_rate = float(cooling_rate)
         self.iterations = int(iterations)
+        self.seed_action = str(seed_action)
+        self.weight_dispatch_support = float(weight_dispatch_support)
+        self.weight_charging_bonus = float(weight_charging_bonus)
+        self.weight_dispatch_cost = float(weight_dispatch_cost)
+        self.weight_low_soc_penalty = float(weight_low_soc_penalty)
+        self.weight_unmet_penalty = float(weight_unmet_penalty)
 
         if self.zone_num <= 0:
             raise ValueError("zone_num must be positive")
@@ -77,11 +111,11 @@ class SimulatedAnnealingSolver:
 
         return (
             service_gain
-            + 0.4 * dispatch_support
-            + 0.7 * charging_bonus
-            - 0.15 * dispatch_cost
-            - 3.0 * low_soc_penalty
-            - 0.1 * unmet_penalty
+            + self.weight_dispatch_support * dispatch_support
+            + self.weight_charging_bonus * charging_bonus
+            - self.weight_dispatch_cost * dispatch_cost
+            - self.weight_low_soc_penalty * low_soc_penalty
+            - self.weight_unmet_penalty * unmet_penalty
         )
 
     def solve(self, snapshot):
@@ -89,6 +123,7 @@ class SimulatedAnnealingSolver:
             demand_out=snapshot["demand_out"],
             available=snapshot["available"],
             charger_free=snapshot["charger_free"],
+            strategy=self.seed_action,
         )
         current_score = self.score_action(current, snapshot)
         best = current.copy()

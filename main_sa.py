@@ -228,6 +228,12 @@ def main():
         cooling_rate=cfg['sa_cooling_rate'],
         iterations=cfg['sa_iters_per_step'],
         seed=cfg.get('seed', None),
+        seed_action=cfg.get('sa_seed_action', 'demand_charge'),
+        weight_dispatch_support=cfg.get('sa_weight_dispatch_support', 0.4),
+        weight_charging_bonus=cfg.get('sa_weight_charging_bonus', 0.7),
+        weight_dispatch_cost=cfg.get('sa_weight_dispatch_cost', 0.15),
+        weight_low_soc_penalty=cfg.get('sa_weight_low_soc_penalty', 3.0),
+        weight_unmet_penalty=cfg.get('sa_weight_unmet_penalty', 0.1),
     )
 
     reward_scale = float(cfg.get('reward_scale', 1.0)) or 1.0

@@ -41,11 +41,16 @@ def get_args():
     parser.add_argument('--use_dual_head',default=False,type=bool,help="Use dual-head architecture for SAC")  #是否使用双头架构  # 实验19：禁用双头
     parser.add_argument('--device',default='cpu',type=str,help="cpu or cuda")  #运算方法  # 2026.3.3修改：启用GPU加速
     parser.add_argument('--seed',default=2,type=int,help="random seed")  #随机种子
-    parser.add_argument('--sa_init_temp',default=1.0,type=float,help="initial temperature for simulated annealing")
-    parser.add_argument('--sa_final_temp',default=0.05,type=float,help="final temperature for simulated annealing")
-    parser.add_argument('--sa_cooling_rate',default=0.97,type=float,help="multiplicative cooling rate for simulated annealing")
-    parser.add_argument('--sa_iters_per_step',default=80,type=int,help="annealing iterations per environment timestep")
+    parser.add_argument('--sa_init_temp',default=1.5,type=float,help="initial temperature for simulated annealing")
+    parser.add_argument('--sa_final_temp',default=0.02,type=float,help="final temperature for simulated annealing")
+    parser.add_argument('--sa_cooling_rate',default=0.985,type=float,help="multiplicative cooling rate for simulated annealing")
+    parser.add_argument('--sa_iters_per_step',default=120,type=int,help="annealing iterations per environment timestep")
     parser.add_argument('--sa_seed_action',default='demand_charge',type=str,help="seed action strategy for simulated annealing")
+    parser.add_argument('--sa_weight_dispatch_support',default=0.4,type=float,help="dispatch support weight for simulated annealing scoring")
+    parser.add_argument('--sa_weight_charging_bonus',default=0.9,type=float,help="charging bonus weight for simulated annealing scoring")
+    parser.add_argument('--sa_weight_dispatch_cost',default=0.15,type=float,help="dispatch cost weight for simulated annealing scoring")
+    parser.add_argument('--sa_weight_low_soc_penalty',default=2.5,type=float,help="low-SOC penalty weight for simulated annealing scoring")
+    parser.add_argument('--sa_weight_unmet_penalty',default=0.1,type=float,help="unmet-demand penalty weight for simulated annealing scoring")
     # =========2026.2.19修改，MARL Phase-1：添加多智能体参数==========
     parser.add_argument('--marl_mode',default='single',type=str,help="single or multi agent mode")  # 单智能体/多智能体模式
     parser.add_argument('--n_agents',default=50,type=int,help="number of agents (zones)")  # 智能体数量（区域数）
