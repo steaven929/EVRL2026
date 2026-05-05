@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """MARL no-optim entrypoint with MARL-compatible artifact output."""
 
 import datetime
@@ -39,6 +39,7 @@ def build_cfg():
     cfg["env_name"] = NOOPTIM_ENV_ID
     cfg["marl_mode"] = "multi"
     cfg["n_agents"] = 50
+    cfg.setdefault("reward_mode", "shaping")
     return cfg
 
 
@@ -522,3 +523,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
