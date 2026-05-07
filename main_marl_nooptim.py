@@ -39,7 +39,7 @@ def build_cfg():
     cfg["env_name"] = NOOPTIM_ENV_ID
     cfg["marl_mode"] = "multi"
     cfg["n_agents"] = 50
-    cfg.setdefault("reward_mode", "shaping")
+    cfg["reward_mode"] = "shaping"
     return cfg
 
 
@@ -523,4 +523,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
