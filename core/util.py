@@ -20,7 +20,7 @@ def get_args():
     parser.add_argument('--data_folder', default='data\\toy_network\\', type=str, help="name of environment")  # 数据路径
 
     # ========= 2026.3.27 修改：调整训练轮数 =========
-    parser.add_argument('--train_eps', default=400, type=int, help="episodes of training")  # 训练轮数
+    parser.add_argument('--train_eps', default=10, type=int, help="episodes of training")  # 训练轮数
     # ====== 修改结束
 
     parser.add_argument('--test_eps', default=10, type=int, help="episodes of testing")  # 测试轮数

@@ -15,6 +15,7 @@ import numpy as np
 matplotlib.use("Agg")
 
 REPO_ROOT = Path(__file__).resolve().parent
+MAIN_REPO_ROOT = REPO_ROOT.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -44,7 +45,30 @@ def build_cfg():
 
 
 def build_output_path(train_eps, timestamp):
-    return f"./outputs/marl_nooptim_{train_eps}ep_{timestamp}/"
+    return MAIN_REPO_ROOT / "outputs" / f"marl_nooptim_{train_eps}ep_{timestamp}"
+
+
+def prepare_output_path(train_eps, timestamp):
+    path = build_output_path(train_eps, timestamp)
+    os.makedirs(path, exist_ok=True)
+    print(f"Output directory: {path}")
+    return path
+
+
+def build_training_path(path):
+    path_str = os.fspath(path)
+    if not path_str.endswith((os.sep, "/")):
+        path_str += os.sep
+    return path_str
+
+
+def apply_nooptim_reward_weights(env):
+    base_env = getattr(env, "unwrapped", env)
+    reward_weights = getattr(base_env, "reward_weights", None)
+    if not isinstance(reward_weights, dict):
+        return
+    reward_weights["charging_bonus"] = 0.5
+    reward_weights["charging_maintenance"] = 0.5
 
 
 EPISODE_HISTORY_KEYS = [
@@ -503,25 +527,27 @@ def main():
     register_nooptim_env()
     cfg = build_cfg()
     env, agent = env_agent_config(cfg)
+    apply_nooptim_reward_weights(env)
 
     curr_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_eps = cfg.get("train_eps", 0)
-    path = build_output_path(train_eps, curr_time)
-    os.makedirs(path, exist_ok=True)
+    path = prepare_output_path(train_eps, curr_time)
+    train_path = build_training_path(path)
 
     if cfg.get("run_mode") == "test":
-        return marl_test(env, agent, cfg, path=path)
+        return marl_test(env, agent, cfg, path=train_path)
 
     cfg["curr_time"] = curr_time
     cfg.setdefault("algo_name", "MARL_NOOPTIM")
-    res_dic = marl_train(env, agent, cfg, path=path)
+    res_dic = marl_train(env, agent, cfg, path=train_path)
     save_training_artifacts(path, res_dic, cfg)
     agent.save_model(os.path.join(path, "marl_model_final.pth"))
-    marl_test(env, agent, cfg, path=path)
+    marl_test(env, agent, cfg, path=train_path)
     return res_dic
 
 
 if __name__ == "__main__":
     main()
+
 
 
