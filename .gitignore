@@ -10,8 +10,10 @@ __pycache__/
 *.py[cod]
 
 # 屏蔽 PyCharm 自己的配置 (可选，团队开发建议屏蔽)
-.idea/.venv/
+.idea/
+.venv/
 output/
 outputs/
 resluts2610/
 vehicle_action_log.csv
+
