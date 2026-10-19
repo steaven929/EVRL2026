@@ -112,6 +112,20 @@ def all_seed(env,seed = 1):
     
 def env_agent_config(cfg):
     env = NormalizedActions(gym.make(cfg['env_name'])) # 装饰action噪声
+    base_env = env.unwrapped
+    if hasattr(base_env, 'set_day_split'):
+        base_env.set_day_split(cfg.get('train_day_indices', range(1, 26)),
+                               cfg.get('test_day_indices', range(26, 31)))
+    if hasattr(base_env, 'set_fleet_size'):
+        base_env.set_fleet_size(cfg.get('fleet_size', 200))
+    if hasattr(base_env, 'set_charger_ratio'):
+        base_env.set_charger_ratio(cfg.get('charger_ratio', 0.576))
+    if hasattr(base_env, 'set_charging_assignment_mode'):
+        base_env.set_charging_assignment_mode(cfg.get('charging_assignment_mode', 'p1'))
+    if hasattr(base_env, 'set_experiment_variant'):
+        base_env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
+    if hasattr(base_env, 'set_reward_mode'):
+        base_env.set_reward_mode(cfg.get('reward_mode', 'shaping'))
     if cfg['seed'] !=0:
         all_seed(env,seed=cfg['seed'])
     n_states = env.observation_space.shape[0]
@@ -147,7 +161,10 @@ def env_agent_config(cfg):
             tau=cfg['tau'],
             batch_size=cfg['batch_size'],
             memory_capacity=cfg['memory_capacity'],
-            device=cfg['device']
+            device=cfg['device'],
+            use_zone_embedding=cfg.get('use_zone_embedding', True),
+            use_global_context=cfg.get('use_global_context', True),
+            share_policy=cfg.get('share_policy', True),
         )
         return env, agent
     # ======修改结束

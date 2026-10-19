@@ -16,6 +16,20 @@ import specific.optim as gur
 import os
 # from collections import Dict
 import json
+from core.reward_components import build_reward_components
+from specific.charging_physics import (
+    ChargingConfig,
+    charge_for_duration,
+    distance_to_energy_kwh,
+    energy_kwh_to_internal,
+    rounded_charger_count,
+    allocate_chargers_by_demand,
+)
+from specific.charging_optimizer import (
+    ChargingCandidate,
+    ChargingOptimizerConfig,
+    solve_charging_assignment,
+)
 
 
 # 相对路径写法    当前文件所在目录：specific/
@@ -80,8 +94,22 @@ import json as json_module
 sip_config_path = os.path.join(current_dir, '..', 'data', 'SIP', 'config_sip.json')
 with open(sip_config_path, 'r', encoding='utf-8') as f:
     sip_config = json_module.load(f)
+config.update(sip_config)
 ZONES = sip_config['ZONES']
 CHARGER_ZONES = sip_config['CHARGER_ZONES']
+PL_NUM = int(sip_config['PL_NUM'])
+ZONE_NUM = int(sip_config['ZONE_NUM'])
+CAR_NUM = int(sip_config['CAR_NUM'])
+TIME_NUM = int(sip_config['TIME_NUM'])
+TIME_LENGTH = int(sip_config['TIME_LENGTH'])
+TIME_SLICE = int(sip_config['TIME_SLICE'])
+OD_MAX = int(sip_config['OD_MAX'])
+DIST_MAX = float(sip_config['DIST_MAX'])
+BATTERY_CAPACITY = float(sip_config.get('BATTERY_CAPACITY_INTERNAL', sip_config['BATTERY_CAPACITY']))
+TRAIN_DAY_INDICES = tuple(int(day) for day in sip_config.get('TRAIN_DAY_INDICES', range(1, 26)))
+TEST_DAY_INDICES = tuple(int(day) for day in sip_config.get('TEST_DAY_INDICES', range(26, 31)))
+training_set_number = len(TRAIN_DAY_INDICES)
+path = os.path.abspath(os.path.join(current_dir, '..', 'data', 'SIP')) + os.sep
 # ======修改结束
 
 
@@ -104,6 +132,27 @@ else:
     CHARGER_ZONES = config.get('CHARGER_ZONES', [])
 #    NO_CHARGER_ZONES = config.get('NO_CHARGER_ZONES', [])
 
+BASE_FLEET_SIZE = int(CAR_NUM)
+BASE_PARKING_CAPACITIES = tuple(int(zone["num_parking_slots"]) for zone in ZONES)
+
+
+def _proportional_integer_allocation(total, weights):
+    """Allocate an integer total proportionally with deterministic remainders."""
+    total = int(total)
+    weights = np.asarray(weights, dtype=float)
+    if total < 0 or weights.ndim != 1 or weights.size == 0 or np.any(weights < 0):
+        raise ValueError("invalid proportional allocation input")
+    weight_sum = float(np.sum(weights))
+    if weight_sum <= 0:
+        raise ValueError("allocation weights must contain a positive value")
+    raw = weights / weight_sum * total
+    result = np.floor(raw).astype(int)
+    remainder = total - int(np.sum(result))
+    order = sorted(range(len(weights)), key=lambda idx: (-(raw[idx] - result[idx]), idx))
+    for idx in order[:remainder]:
+        result[idx] += 1
+    return result
+
 # 定义动作、状态
 
 ACTION_SPACE = spaces.Box(low=0, high=1, shape=(3 * ZONE_NUM,))
@@ -114,11 +163,12 @@ def _expected_state_dim():
     return 3 * TIME_SLICE * ZONE_NUM + 2 * ZONE_NUM + 1
 
 
-def _build_observation_space():
+def _build_observation_space(fleet_size=CAR_NUM):
+    vehicle_count_states = max(2, int(fleet_size) + 1)
     nvec = (
         (TIME_SLICE * ZONE_NUM) * [OD_MAX, OD_MAX, CHARGER_STATES]
         + ZONE_NUM * [10]
-        + ZONE_NUM * [20]
+        + ZONE_NUM * [vehicle_count_states]
         + [TIME_NUM]
     )
     return spaces.MultiDiscrete(nvec)
@@ -156,6 +206,30 @@ class dclily(gym.Env):
 
         # =========2026.2.7修改，方案D2：添加epoch追踪==========
         self.current_epoch = 0  # 当前训练轮数（用于探索策略衰减）
+        self.test_day_index = None
+        self.current_demand_day = None
+        self.train_day_indices = tuple(TRAIN_DAY_INDICES)
+        self.test_day_indices = tuple(TEST_DAY_INDICES)
+        self.charging_assignment_mode = str(
+            self.config.get("CHARGING_ASSIGNMENT_MODE", "p1")
+        ).lower()
+        self.charger_ratio = float(self.config.get("CHARGER_TO_PARKING_RATIO", 0.576))
+        self.charging_physics = ChargingConfig(
+            distance_unit_km=float(self.config["DISTANCE_UNIT_KM"]),
+            battery_capacity_kwh=float(self.config["BATTERY_CAPACITY_KWH"]),
+            battery_capacity_internal=float(self.config["BATTERY_CAPACITY_INTERNAL"]),
+            energy_consumption_kwh_per_km=float(self.config["ENERGY_CONSUMPTION_KWH_PER_KM"]),
+            charging_power_kw=float(self.config["CHARGING_POWER_KW"]),
+            charging_efficiency=float(self.config["CHARGING_EFFICIENCY"]),
+            soc_min_ratio=float(self.config["SOC_MIN_RATIO"]),
+            soc_target_ratio=float(self.config["SOC_TARGET_RATIO"]),
+            electricity_price_rmb_per_kwh=float(self.config["ELECTRICITY_PRICE_RMB_PER_KWH"]),
+        )
+        self.p1_config = ChargingOptimizerConfig(
+            time_limit_seconds=float(self.config.get("P1_TIME_LIMIT_SECONDS", 5.0)),
+            mip_gap=float(self.config.get("P1_MIP_GAP", 0.01)),
+            charging_minutes=float(TIME_LENGTH),
+        )
         # ======修改结束
 
         # =========2026.2.20修改，实验与奖励开关可配置==========
@@ -206,7 +280,7 @@ class dclily(gym.Env):
         #self.charging_usage = [0] * ZONE_NUM  #只对各区域使用的充电桩计数
         self.charging_stations = {
             zone_id: [
-                {"charger_id": charger_id, "type": "fast", "occupied_by": None, "power": 60}
+                {"charger_id": charger_id, "type": "fast", "occupied_by": None, "reserved_by": None, "power": self.charging_physics.charging_power_kw}
                 for charger_id in zone_cfg["charging_slots"]
             ]
             for zone_id, zone_cfg in enumerate(ZONES)
@@ -215,10 +289,23 @@ class dclily(gym.Env):
         # Log extraction initialization
         self.log_data = []
         self.current_step_logs = {}
+        self.charging_event_log = []
+        self.current_step_charging_events = []
+        self.last_p1_stats = {}
+        self.current_step_charging_metrics = {
+            'charging_grid_energy_kwh': 0.0,
+            'charging_battery_energy_kwh': 0.0,
+            'charging_energy_cost': 0.0,
+            'charging_travel_distance_km': 0.0,
+            'charging_travel_cost': 0.0,
+            'charging_completion_count': 0,
+        }
+        self.current_step_charging_events = []
         self.log_file_path = "vehicle_action_log.csv"
-        # Initialize CSV with header
-        with open(self.log_file_path, "w") as f:
-            f.write("Time,VehicleID,Zone,SOC,Action_ChargePref,Formula_Score,Formula_Prob,Decision_Charge,Final_Behavior\n")
+        # Preserve previous experiment logs; create the header only for a new file.
+        if not os.path.exists(self.log_file_path):
+            with open(self.log_file_path, "x", encoding="utf-8") as f:
+                f.write("Time,VehicleID,Zone,SOC,Action_ChargePref,Formula_Score,Formula_Prob,Decision_Charge,Final_Behavior\n")
 
         #self.vehicle_logs.append(log)
         
@@ -263,8 +350,8 @@ class dclily(gym.Env):
     def write_od_left(self, new):
         if self.training:  # 根据 self.training 的标志判断当前模式是训练模式还是测试模式，然后选择不同的文件来加载 OD（Origin-Destination）需求数据，并计算每个区域的 OD 流量（流入和流出量）
             if new:
-                for tr in range(training_set_number):
-                    OD_demand = pd.read_csv(path + 'od_demand_' + str(tr + 1) + '.csv')
+                for day_index in self.train_day_indices:
+                    OD_demand = pd.read_csv(path + 'od_demand_' + str(day_index) + '.csv')
                     df_od = np.array([[[0] * ZONE_NUM] * ZONE_NUM] * (OD_demand.shape[1] - 2))
                     if np.any(df_od > OD_MAX):
                         print("Warning: OD demand exceeded the maximum value.")
@@ -272,7 +359,7 @@ class dclily(gym.Env):
                     for i in range(OD_demand.shape[0]):
                         for j in range(2, OD_demand.shape[1]):
                             df_od[j - 2][int(OD_demand.iloc[i]['O'])][int(OD_demand.iloc[i]['D'])] = int(
-                                OD_demand.iloc[i][j])
+                                OD_demand.iloc[i, j])
                     df_od = np.array(df_od)
                     self.mem_od_demand.append(copy.deepcopy(df_od))
                     od_in = []
@@ -283,18 +370,32 @@ class dclily(gym.Env):
                     self.mem_od_in.append(od_in)
                     self.mem_od_out.append(od_out)
 
-            a = random.randint(0, training_set_number - 1)
+            a = random.randint(0, len(self.train_day_indices) - 1)
+            self.current_demand_day = int(self.train_day_indices[a])
             OD_demand = self.mem_od_demand[a]
             df_od = np.array(OD_demand)
             od_in = self.mem_od_in[a]
             od_out = self.mem_od_out[a]
         else:
             # 目前默认只有一个测试场景
-            OD_demand = pd.read_csv(path + 'od_demand_test.csv')
+            selected_day = self.test_day_index
+            if selected_day is None:
+                demand_filename = 'od_demand_test.csv'
+                self.current_demand_day = 'legacy_test'
+            else:
+                if int(selected_day) not in self.test_day_indices:
+                    raise ValueError(
+                        f"test day {selected_day} is not in {list(self.test_day_indices)}"
+                    )
+                demand_filename = 'od_demand_' + str(int(selected_day)) + '.csv'
+                self.current_demand_day = int(selected_day)
+            OD_demand = pd.read_csv(path + demand_filename)
             df_od = np.array([[[0] * ZONE_NUM] * ZONE_NUM] * (OD_demand.shape[1] - 2))
             for i in range(OD_demand.shape[0]):
                 for j in range(2, OD_demand.shape[1]):
-                    df_od[j - 2][OD_demand.iloc[i]['O']][OD_demand.iloc[i]['D']] = OD_demand.iloc[i][j]
+                    origin = int(OD_demand.iloc[i]['O'])
+                    destination = int(OD_demand.iloc[i]['D'])
+                    df_od[j - 2][origin][destination] = OD_demand.iloc[i, j]
             df_od = np.array(df_od)
             od_in = []
             od_out = []
@@ -325,7 +426,18 @@ class dclily(gym.Env):
         # ======================
         if new:
             available = pd.read_csv(path + 'capacity.csv')
-            
+            base_initial = available.iloc[0].to_numpy(dtype=float)
+            base_parking = available.iloc[1].to_numpy(dtype=float)
+            base_fleet = int(np.sum(base_initial))
+            if self.CAR_NUM != base_fleet:
+                initial = _proportional_integer_allocation(self.CAR_NUM, base_initial)
+                parking_total = int(round(self.CAR_NUM * np.sum(base_parking) / base_fleet))
+                parking = _proportional_integer_allocation(parking_total, base_parking)
+                if np.any(parking < initial):
+                    raise ValueError("scaled parking capacity is smaller than initial fleet allocation")
+                available.iloc[0] = initial
+                available.iloc[1] = parking
+
             # available.iloc[0] = 每个区域初始车辆数量
             # available.iloc[1] = 每个区域可用停车位数量（总车位 - 初始车辆）
             for i in range(ZONE_NUM):
@@ -357,7 +469,9 @@ class dclily(gym.Env):
                 self.car.append([zone_id, BAT, 0, -1])  # 初始无 charger_id
         
         # 转成 numpy 数组（便于你后续使用）
-        self.car = np.array(self.car, dtype=int)
+        # Vehicle records mix integer IDs with continuous SOC/distance values.
+        # Object dtype preserves integer zone/charger IDs without truncating energy.
+        self.car = np.array(self.car, dtype=object)
         
         # ======================
         # 3) 初始化 charging_stations（构建充电桩结构）
@@ -367,8 +481,9 @@ class dclily(gym.Env):
                 {
                     "charger_id": cid,
                     "occupied_by": None,
+                    "reserved_by": None,
                     "type": "fast",
-                    "power": 60
+                    "power": self.charging_physics.charging_power_kw
                 }
                 for cid in ZONES[zone_id]["charging_slots"]
             ]
@@ -706,6 +821,12 @@ class dclily(gym.Env):
                     return alt_zone
         
         return target_zone
+
+    def _handle_arrived_vehicle_charging(self, vehicle_id, target_zone):
+        """Keep legacy arrival charging out of the P1 and no-charging modes."""
+        if self.charging_assignment_mode == 'legacy':
+            return self.handle_vehicle_charging(vehicle_id, target_zone)
+        return target_zone
     
     def find_nearest_charger(self, current_zone):
         """
@@ -734,7 +855,7 @@ class dclily(gym.Env):
             # 遍历该区域的每一个充电桩
             for ch in chargers:
                 # 只考虑空闲的充电桩
-                if ch["occupied_by"] is not None:
+                if ch["occupied_by"] is not None or ch.get("reserved_by") is not None:
                     continue
                 
                 dist = self.dist[current_zone][zone_id]
@@ -764,7 +885,7 @@ class dclily(gym.Env):
         candidates.sort(key=lambda x: x[1], reverse=True)
         return candidates[0][0]
     
-    def check_idle_vehicles(self, charge_pref, charging_actions=None, epoch=0):
+    def _legacy_check_idle_vehicles(self, charge_pref, charging_actions=None, epoch=0):
         """检查空闲车辆状态（由 RL 决定充电数量；再决定去哪儿充）
 
         参数:
@@ -961,10 +1082,13 @@ class dclily(gym.Env):
                     self.available[0][current_zone] -= 1
 
                 # 记录已执行充电决策
-                self.current_step_logs[vehicle_id].update({
+                self.current_step_logs.setdefault(vehicle_id, {}).update({
                     "decision_charge": True,
                     "prob": global_ratio,
-                    "score": float(charge_budget)
+                    "score": float(charge_budget),
+                    "from_zone": int(current_zone),
+                    "to_zone": int(target_charger),
+                    "shifted": bool(target_charger != current_zone),
                 })
                 charged_count += 1
         # ======修改结束
@@ -981,6 +1105,235 @@ class dclily(gym.Env):
                 self.available[0][z] = 0
         # ======修改结束
     
+    def _legacy_assignment_proposal(self, charge_pref):
+        pref = np.clip(np.asarray(charge_pref, dtype=float), 0.0, 1.0)
+        idle = [
+            (vehicle_id, int(vehicle[0]), float(vehicle[1]))
+            for vehicle_id, vehicle in enumerate(self.car)
+            if vehicle[2] <= 0 and vehicle[3] == -1
+            and vehicle[1] < self.charging_physics.target_soc_internal
+        ]
+        if not idle or float(pref.max()) <= 1e-6:
+            return {}, 0
+        global_ratio = float(np.clip(0.6 * pref.max() + 0.4 * pref.mean(), 0.0, 1.0))
+        budget = int(round(global_ratio * len(idle)))
+        if pref.max() > 0.8:
+            budget = max(budget, int(round(0.6 * len(idle))))
+        average_soc = float(np.mean(self.car[:, 1]))
+        if average_soc < BATTERY_CAPACITY / 3.0:
+            budget = max(budget, max(3, int(len(idle) * 0.3)))
+        elif average_soc < BATTERY_CAPACITY * 0.4:
+            budget = max(budget, max(2, int(len(idle) * 0.2)))
+        budget = min(max(0, budget), len(idle))
+
+        free = self._available_charger_capacity()
+        proposal = {}
+        for vehicle_id, origin, soc in sorted(idle, key=lambda item: (item[2], item[0]))[:budget]:
+            candidates = []
+            for zone, capacity in enumerate(free):
+                if capacity <= 0:
+                    continue
+                travel_internal = energy_kwh_to_internal(
+                    distance_to_energy_kwh(self.dist[origin][zone], self.charging_physics),
+                    self.charging_physics,
+                )
+                if soc - travel_internal < self.charging_physics.minimum_soc_internal:
+                    continue
+                score = 0.7 * pref[zone] - 0.3 * float(self.dist[origin][zone])
+                candidates.append((score, -zone, zone))
+            if candidates:
+                zone = max(candidates)[2]
+                proposal[vehicle_id] = zone
+                free[zone] -= 1
+        return proposal, budget
+
+    def _available_charger_capacity(self):
+        return [
+            sum(
+                1 for station in self.charging_stations.get(zone, [])
+                if station.get('occupied_by') is None and station.get('reserved_by') is None
+            )
+            for zone in range(self.ZONE_NUM)
+        ]
+
+    def _apply_charging_assignments(self, assignments, charging_actions):
+        applied = {}
+        for vehicle_id, target_zone in sorted(assignments.items()):
+            vehicle_id = int(vehicle_id)
+            target_zone = int(target_zone)
+            if self.car[vehicle_id][2] > 0 or self.car[vehicle_id][3] != -1:
+                continue
+            station = next(
+                (
+                    item for item in self.charging_stations.get(target_zone, [])
+                    if item.get('occupied_by') is None and item.get('reserved_by') is None
+                ),
+                None,
+            )
+            if station is None:
+                continue
+            origin = int(self.car[vehicle_id][0])
+            travel_distance = float(self.dist[origin][target_zone])
+            station['reserved_by'] = vehicle_id
+            self.car[vehicle_id][0] = target_zone
+            self.car[vehicle_id][2] = travel_distance
+            self.car[vehicle_id][3] = int(station['charger_id'])
+            charging_actions[target_zone] = charging_actions.get(target_zone, 0) + 1
+            if travel_distance == 0:
+                self.available[0][origin] = max(0, self.available[0][origin] - 1)
+            self.current_step_logs.setdefault(vehicle_id, {}).update({
+                'decision_charge': True,
+                'from_zone': origin,
+                'to_zone': target_zone,
+                'shifted': bool(target_zone != origin),
+            })
+            event = {
+                'timestep': int(self.episode_timestep),
+                'vehicle_id': vehicle_id,
+                'event': 'reserved',
+                'origin_zone': origin,
+                'target_zone': target_zone,
+                'charger_id': int(station['charger_id']),
+                'travel_distance_internal': travel_distance,
+            }
+            self.charging_event_log.append(event)
+            self.current_step_charging_events.append(event)
+            applied[vehicle_id] = target_zone
+        return applied
+
+    def check_idle_vehicles(self, charge_pref, charging_actions=None, epoch=0):
+        if charging_actions is None:
+            charging_actions = {}
+        if self.charging_assignment_mode == 'none':
+            self.last_p1_stats = {
+                'optimizer': 'P1', 'status_name': 'NO_CHARGING', 'status_code': None,
+                'used_fallback': False, 'fallback_reason': 'disabled_by_experiment',
+                'build_time_seconds': 0.0, 'solve_time_seconds': 0.0,
+                'total_time_seconds': 0.0, 'objective_value': 0.0,
+                'heuristic_objective': 0.0, 'best_bound': None,
+                'mip_gap': None, 'node_count': None, 'time_limit_reached': False,
+                'idle_unassigned_count': 0, 'below_target_count': 0,
+                'candidate_count': 0, 'feasible_pair_count': 0,
+                'free_charger_count': 0, 'assignment_budget': 0,
+                'assigned_count': 0,
+            }
+            return {}
+        if self.charging_assignment_mode == 'legacy':
+            self.last_p1_stats = {
+                'optimizer': 'P1', 'status_name': 'DISABLED', 'status_code': None,
+                'used_fallback': True, 'fallback_reason': 'disabled',
+                'build_time_seconds': 0.0, 'solve_time_seconds': 0.0,
+                'total_time_seconds': 0.0, 'objective_value': 0.0,
+                'heuristic_objective': 0.0, 'best_bound': None,
+                'mip_gap': None, 'node_count': None, 'time_limit_reached': False,
+                'idle_unassigned_count': 0, 'below_target_count': 0,
+                'candidate_count': 0, 'feasible_pair_count': 0,
+                'free_charger_count': 0, 'assignment_budget': 0,
+                'assigned_count': 0,
+            }
+            return self._legacy_check_idle_vehicles(charge_pref, charging_actions, epoch)
+
+        heuristic, budget = self._legacy_assignment_proposal(charge_pref)
+        idle_unassigned = [
+            (vehicle_id, vehicle)
+            for vehicle_id, vehicle in enumerate(self.car)
+            if vehicle[2] <= 0 and vehicle[3] == -1
+        ]
+        below_target = [
+            (vehicle_id, vehicle)
+            for vehicle_id, vehicle in idle_unassigned
+            if vehicle[1] < self.charging_physics.target_soc_internal
+        ]
+        candidates = [
+            ChargingCandidate(
+                vehicle_id=vehicle_id,
+                origin_zone=int(vehicle[0]),
+                soc_internal=float(vehicle[1]),
+                actor_preference=float(np.clip(charge_pref[int(vehicle[0])], 0.0, 1.0)),
+            )
+            for vehicle_id, vehicle in below_target
+        ]
+        free_chargers = self._available_charger_capacity()
+        free_parking = [max(0, int(value)) for value in self.available[1]]
+        result = solve_charging_assignment(
+            candidates=candidates,
+            distance_matrix=self.dist,
+            charger_capacity=free_chargers,
+            parking_capacity=free_parking,
+            physics=self.charging_physics,
+            config=self.p1_config,
+            heuristic_assignment=heuristic,
+            solver_enabled=True,
+            max_assignments=budget,
+        )
+        self.last_p1_stats = {
+            'optimizer': 'P1',
+            'status_code': result.status_code,
+            'status_name': result.status_name,
+            'used_fallback': result.used_fallback,
+            'fallback_reason': result.fallback_reason,
+            'build_time_seconds': result.build_time_seconds,
+            'solve_time_seconds': result.solve_time_seconds,
+            'total_time_seconds': result.total_time_seconds,
+            'objective_value': result.objective_value,
+            'heuristic_objective': result.heuristic_objective,
+            'best_bound': result.best_bound,
+            'mip_gap': result.mip_gap,
+            'node_count': result.node_count,
+            'time_limit_reached': result.time_limit_reached,
+            'idle_unassigned_count': len(idle_unassigned),
+            'below_target_count': len(below_target),
+            'candidate_count': result.candidate_count,
+            'feasible_pair_count': result.feasible_pair_count,
+            'free_charger_count': int(sum(free_chargers)),
+            'assignment_budget': int(budget),
+            'assigned_count': len(result.assignments),
+        }
+        return self._apply_charging_assignments(result.assignments, charging_actions)
+
+    def _charge_vehicle_for_step(self, vehicle_id):
+        zone = int(self.car[vehicle_id][0])
+        charger_id = int(self.car[vehicle_id][3])
+        station = next(
+            (
+                item for item in self.charging_stations.get(zone, [])
+                if int(item['charger_id']) == charger_id
+            ),
+            None,
+        )
+        if station is None:
+            raise RuntimeError(f"charger {charger_id} not found in zone {zone}")
+        if station.get('reserved_by') == vehicle_id:
+            station['reserved_by'] = None
+            station['occupied_by'] = vehicle_id
+        update = charge_for_duration(
+            float(self.car[vehicle_id][1]), float(TIME_LENGTH), self.charging_physics
+        )
+        self.car[vehicle_id][1] = update.soc_after_internal
+        metrics = self.current_step_charging_metrics
+        metrics['charging_grid_energy_kwh'] += update.grid_energy_kwh
+        metrics['charging_battery_energy_kwh'] += update.battery_energy_kwh
+        metrics['charging_energy_cost'] += update.charging_cost_rmb
+        event = {
+            'timestep': int(self.episode_timestep),
+            'vehicle_id': int(vehicle_id),
+            'event': 'charging',
+            'zone': zone,
+            'charger_id': charger_id,
+            'soc_before_internal': update.soc_before_internal,
+            'soc_after_internal': update.soc_after_internal,
+            'grid_energy_kwh': update.grid_energy_kwh,
+            'battery_energy_kwh': update.battery_energy_kwh,
+            'charging_cost_rmb': update.charging_cost_rmb,
+        }
+        self.charging_event_log.append(event)
+        self.current_step_charging_events.append(event)
+        if update.reached_target:
+            self.release_charger(zone, charger_id)
+            self.car[vehicle_id][3] = -1
+            metrics['charging_completion_count'] += 1
+        return update
+
     def release_charger(self, zone_id, charger_id):
         """释放指定区域的指定充电桩,清除车辆离开时的占用记录。"""
         if zone_id in self.charging_stations:
@@ -990,6 +1343,7 @@ class dclily(gym.Env):
                     if station['occupied_by'] is not None:
                         # print(f"[System] 释放 区域{zone_id} 充电桩{charger_id} (原占用: 车辆{station['occupied_by']})")
                         station['occupied_by'] = None
+                    station['reserved_by'] = None
                     break
     def print_charging_stations(self):
         """
@@ -1083,7 +1437,7 @@ class dclily(gym.Env):
             
             # 优先找空闲桩
             for ch in chargers:
-                if ch["occupied_by"] is None:
+                if ch["occupied_by"] is None and ch.get("reserved_by") is None:
                     self.car[car_id][3] = ch["charger_id"]
                     return
             
@@ -1097,10 +1451,19 @@ class dclily(gym.Env):
         else:
             # 1. 先默认给普通位
             self.car[car_id][3] = -1
+
+            # P1/no-charging 模式中，charger_id 只表示真实的充电任务。
+            # 普通服务或重定位车辆不能借用该字段表示停车，否则会被下一步
+            # 误判为正在充电，并绕过 P1 的候选车辆筛选。
+            if self.charging_assignment_mode != 'legacy':
+                return
             
             # 2. 检查隐患：是否普通位已满，必须占用充电桩？
             # 计算该区域目前已经被占用的充电桩数量
-            occupied_chargers_count = sum(1 for ch in chargers if ch["occupied_by"] is not None)
+            occupied_chargers_count = sum(
+                1 for ch in chargers
+                if ch["occupied_by"] is not None or ch.get("reserved_by") is not None
+            )
             
             # 获取该区域当前总车数 (available[0] 是区域当前车数)
             current_total_cars = self.available[0][target_zone]
@@ -1115,14 +1478,17 @@ class dclily(gym.Env):
             # 这意味着剩余的空位全都是充电桩！
             
             free_spots_total = self.available[1][target_zone]  # 剩余总空位
-            free_chargers = sum(1 for ch in chargers if ch["occupied_by"] is None)
+            free_chargers = sum(
+                1 for ch in chargers
+                if ch["occupied_by"] is None and ch.get("reserved_by") is None
+            )
             
             # 如果 剩余总空位 <= 剩余充电桩数,也就是剩余普通停车位 ≤ 0，说明普通车位已经没了！
             # 这辆车必须去占一个充电桩，否则它就变成了“幽灵车”
             if free_spots_total <= free_chargers and free_chargers > 0:
                 # 必须占用一个充电桩（即燃油车占位）
                 for ch in chargers:
-                    if ch["occupied_by"] is None:
+                    if ch["occupied_by"] is None and ch.get("reserved_by") is None:
                         self.car[car_id][3] = ch["charger_id"]
                         # print(f"警告：区域{target_zone}普通车位已满，车辆{car_id}被迫占用充电桩{ch['charger_id']}")
                         return
@@ -1143,6 +1509,15 @@ class dclily(gym.Env):
 
         # Reset logs for current step
         self.current_step_logs = {}
+        self.current_step_charging_events = []
+        self.current_step_charging_metrics = {
+            'charging_grid_energy_kwh': 0.0,
+            'charging_battery_energy_kwh': 0.0,
+            'charging_energy_cost': 0.0,
+            'charging_travel_distance_km': 0.0,
+            'charging_travel_cost': 0.0,
+            'charging_completion_count': 0,
+        }
 
         # =========2026.2.4修改，记录充电动作==========
         # 记录本时间步的充电动作（zone_id: count）
@@ -1172,37 +1547,26 @@ class dclily(gym.Env):
             # === 新增代码开始：处理实际充电 ===
             # 判断条件：车辆不在路上 (remain <= 0) 且 车辆分配了充电桩 (charger_id != -1)
             if self.car[i][2] <= 0 and self.car[i][3] != -1:
-                # 调用你的 charging 函数或者简单的线性充电公式
-                # 注意：这里需要确保 charging 函数返回的是增量，或者你直接在这里计算
-                # 假设简单的线性充电：
-                charge_speed = 1800  # 假设 60kW 功率，或者根据 charging_stations[zone][id]['power'] 获取
-                added_energy = charge_speed * (TIME_LENGTH / 60)  # 转换为 kWh
-                
-                # 更新电量
-                self.car[i][1] = min(BATTERY_CAPACITY, self.car[i][1] + added_energy)
+                self._charge_vehicle_for_step(i)
 
-                # =========2026.2.13修改，优化充电释放策略==========
-                # 原策略：充满才释放（需要7步）
-                # 新策略：充到80%就释放（约5步），提高充电桩利用率
-                release_threshold = BATTERY_CAPACITY * 0.8  # 1600 SOC
-                if self.car[i][1] >= release_threshold:
-                    self.car[i][1] = min(BATTERY_CAPACITY, self.car[i][1])  # 确保不超过上限
-                    # 释放充电桩
-                    current_zone = self.car[i][0]
-                    charger_id = self.car[i][3]
-                    self.release_charger(current_zone, charger_id)
-                    self.car[i][3] = -1  # 释放充电桩状态
-                # ======修改结束
-
-            # =========2026.2.13修改，添加SOC消耗逻辑==========
-            # 车辆移动时消耗电量
             if self.car[i][2] > 0:
                 # 计算本时间步实际移动的距离
                 max_distance = car_speed_min * TIME_LENGTH * con
                 actual_distance = min(self.car[i][2], max_distance)
 
                 # SOC消耗：1 SOC per unit distance（与最优解一致）
-                soc_consumed = actual_distance * 1.0
+                driving_energy_kwh = distance_to_energy_kwh(
+                    actual_distance, self.charging_physics
+                )
+                soc_consumed = energy_kwh_to_internal(
+                    driving_energy_kwh, self.charging_physics
+                )
+                if self.car[i][3] != -1:
+                    travel_km = actual_distance * self.charging_physics.distance_unit_km
+                    self.current_step_charging_metrics['charging_travel_distance_km'] += travel_km
+                    self.current_step_charging_metrics['charging_travel_cost'] += (
+                        diaodu_min * actual_distance
+                    )
                 self.car[i][1] = max(0, self.car[i][1] - soc_consumed)
                 self.car[i][2] -= actual_distance
                 # ======修改结束
@@ -1215,7 +1579,7 @@ class dclily(gym.Env):
                     
                     # 处理充电逻辑，这一part有什么用？？？bug
                     target_zone1 = self.car[i][0]
-                    target_zone = self.handle_vehicle_charging(i, target_zone1)
+                    target_zone = self._handle_arrived_vehicle_charging(i, target_zone1)
                     
                     # =================================================
                     # 【新增代码】物理占用同步：人车合一
@@ -1406,6 +1770,8 @@ class dclily(gym.Env):
                                                                                             self.episode_timestep,
                                                                                             real_reward, 0, 0,
                                                                                             pre_avail)
+        p0_relocation_stats = gur.get_last_solve_stats()
+        p0_relocation_stats['phase'] = 'relocation'
 
         # 满足需求（满足需求按理来说应该顺序满足，我这边简化一下也给优化做了）
         demand = self.od_demand_now[0]
@@ -1431,6 +1797,11 @@ class dclily(gym.Env):
                                                                                             self.episode_timestep,
                                                                                             real_reward, 0, 0,
                                                                                             pre_avail)
+        p0_service_stats = gur.get_last_solve_stats()
+        p0_service_stats['phase'] = 'service'
+
+        service_revenue_component = float(manzu_min * np.sum(self.dist * rel_demand))
+        relocation_cost_component = float(diaodu_min * np.sum(self.dist * rel_dispatch))
 
         # =========2026.2.6修改，方案4B：在调度完成后执行充电决策==========
         # 移到这里：两次 solveproblem 之后，让调度后剩余的空闲车辆去充电
@@ -1458,13 +1829,13 @@ class dclily(gym.Env):
                 # ======修改结束
         
         total_demand = np.sum(demand)##0729 计算trb论文指标加入
-        self._last_svc = np.sum(real_reward) / total_demand if total_demand > 0 else 0#0729 计算trb论文指标加入
-        self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0  # 修改
+        served_orders = np.sum(rel_demand)  # 实际服务的订单数
+        service_rate = served_orders / total_demand if total_demand > 0 else 1.0
+        self._last_svc = service_rate
+        self._last_srd = np.sum(real_reward) / total_demand if total_demand > 0 else 0
 
         # =========2026.2.14修改，添加服务率惩罚==========
         # 计算服务率：实际服务的订单数 / 总需求数
-        served_orders = np.sum(rel_demand)  # 实际服务的订单数
-        service_rate = served_orders / total_demand if total_demand > 0 else 1.0
 
         # 服务率惩罚：如果服务率低于阈值，给予适度惩罚
         service_rate_penalty = 0
@@ -1631,20 +2002,86 @@ class dclily(gym.Env):
             )
         else:
             reward_value = base_reward
+        reward_components = build_reward_components(
+            service_revenue=service_revenue_component,
+            relocation_cost=relocation_cost_component,
+            p_soc=soc_penalty,
+            p_svr=weighted_service_rate_penalty,
+            b_chg=(self.reward_weights['charging_bonus'] * charging_bonus
+                   + self.reward_weights['charging_maintenance'] * charging_maintenance_bonus),
+            b_soc=self.reward_weights['soc_maintain'] * soc_maintain_bonus,
+            environment_reward=reward_value,
+            reward_scale=1.0,
+        )
+        reward_components['scaled_training_reward'] = np.nan
         # ======修改结束
         # ======修改结束
 
+        # =========2026.3.12新增，按区域统计停车与充电占用==========
+        parking_available_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        parking_used_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        charger_available_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+        charger_used_by_zone = np.zeros(self.ZONE_NUM, dtype=float)
+
+        for zi in range(self.ZONE_NUM):
+            # 可用停车位：环境中维护的剩余总车位
+            if self.available is not None and len(self.available) > 1 and len(self.available[1]) > zi:
+                free_parking = float(self.available[1][zi])
+            else:
+                free_parking = 0.0
+
+            total_parking = float(ZONES[zi].get("num_parking_slots", 0)) if zi < len(ZONES) else 0.0
+            used_parking = max(0.0, total_parking - free_parking)
+
+            parking_available_by_zone[zi] = max(0.0, free_parking)
+            parking_used_by_zone[zi] = used_parking
+
+            chargers = self.charging_stations.get(zi, []) if hasattr(self, 'charging_stations') else []
+            total_chargers = float(len(chargers))
+            used_chargers = float(sum(
+                1 for ch in chargers
+                if ch.get("occupied_by") is not None or ch.get("reserved_by") is not None
+            ))
+            free_chargers = max(0.0, total_chargers - used_chargers)
+
+            charger_available_by_zone[zi] = free_chargers
+            charger_used_by_zone[zi] = used_chargers
+        # ======新增结束
+
         # =========2026.2.4修改，添加充电动作和调度矩阵到info==========
+        charging_metrics = dict(self.current_step_charging_metrics)
+        operating_profit = (
+            service_revenue_component
+            - relocation_cost_component
+            - charging_metrics['charging_travel_cost']
+            - charging_metrics['charging_energy_cost']
+        )
         info = {            ##0729 计算trb论文指标加入
             "rld": self._last_rld,          ##0729 计算trb论文指标加入
             "svc": self._last_svc,
             "srd": self._last_srd,  # 修改
             "dispatch_orders": rel_dispatch,  # 调度订单矩阵
             "demand_orders": rel_demand,  # 需求订单矩阵
+            "demand_matrix": demand,  # 原始需求矩阵
+            "served_orders": float(served_orders),
+            "total_demand": float(total_demand),
             "charging_actions": charging_actions,  # 充电动作记录
             "action_table_true": action_table_true,  # RL调度倾向矩阵
             "service_rate": float(service_rate),
             "reward_mode": self.reward_mode,
+            "demand_day": self.current_demand_day,
+            "legacy_NOR": reward_components['NOR'],
+            "operating_profit": float(operating_profit),
+            **charging_metrics,
+            "p1_solver": dict(self.last_p1_stats),
+            "solver_stats": [p0_relocation_stats, p0_service_stats, dict(self.last_p1_stats)],
+            "charging_events": list(self.current_step_charging_events),
+            **reward_components,
+            # 区域级停车/充电占用信息（用于时间片-区域分析）
+            "parking_available_by_zone": parking_available_by_zone,
+            "parking_used_by_zone": parking_used_by_zone,
+            "charger_available_by_zone": charger_available_by_zone,
+            "charger_used_by_zone": charger_used_by_zone,
         }           ##0729 计算trb论文指标加入
         # ======修改结束
 
@@ -1717,6 +2154,19 @@ class dclily(gym.Env):
                 final_reward = base_reward + self.reward_weights['charging_bonus'] * charging_bonus
             else:
                 final_reward = base_reward
+            terminal_components = build_reward_components(
+                service_revenue=service_revenue_component,
+                relocation_cost=relocation_cost_component,
+                p_soc=soc_penalty,
+                p_svr=weighted_service_rate_penalty,
+                b_chg=(self.reward_weights['charging_bonus'] * charging_bonus
+                       if self.reward_mode == 'shaping' else 0.0),
+                b_soc=0.0,
+                environment_reward=final_reward,
+                reward_scale=1.0,
+            )
+            terminal_components['scaled_training_reward'] = np.nan
+            info.update(terminal_components)
             # ======修改结束
             # ======修改结束
             return self.state, float(final_reward), bool(self.terminal), info
@@ -1775,6 +2225,91 @@ class dclily(gym.Env):
         """
         self.training = training
 
+    def set_charging_assignment_mode(self, mode):
+        """Switch among P1, the preserved legacy rule, and no charging."""
+        normalized = str(mode).strip().lower()
+        if normalized not in {"p1", "legacy", "none"}:
+            raise ValueError("charging assignment mode must be 'p1', 'legacy', or 'none'")
+        self.charging_assignment_mode = normalized
+
+    def set_day_split(self, train_days, test_days):
+        """Set a validated, disjoint demand-day split before an experiment."""
+        train_days = tuple(int(day) for day in train_days)
+        test_days = tuple(int(day) for day in test_days)
+        if not train_days or not test_days:
+            raise ValueError("training and test day lists cannot be empty")
+        if len(train_days) != len(set(train_days)) or len(test_days) != len(set(test_days)):
+            raise ValueError("training and test day lists must not contain duplicates")
+        overlap = sorted(set(train_days).intersection(test_days))
+        if overlap:
+            raise ValueError(f"training and test days overlap: {overlap}")
+        missing = [
+            day for day in (*train_days, *test_days)
+            if not os.path.exists(path + f'od_demand_{day}.csv')
+        ]
+        if missing:
+            raise ValueError(f"missing demand files for days: {sorted(set(missing))}")
+        self.train_day_indices = train_days
+        self.test_day_indices = test_days
+        self.test_day_index = None
+        self.mem_od_demand = []
+        self.mem_od_in = []
+        self.mem_od_out = []
+        self.new = 1
+
+    def set_fleet_size(self, fleet_size):
+        """Scale fleet, parking capacity and later charger allocation coherently."""
+        fleet_size = int(fleet_size)
+        if fleet_size not in {200, 1000, 2000}:
+            raise ValueError("fleet_size must be one of 200, 1000, or 2000")
+        parking_total = int(round(
+            fleet_size * sum(BASE_PARKING_CAPACITIES) / BASE_FLEET_SIZE
+        ))
+        capacities = _proportional_integer_allocation(
+            parking_total, BASE_PARKING_CAPACITIES
+        )
+        for zone_id, capacity in enumerate(capacities):
+            ZONES[zone_id]["num_parking_slots"] = int(capacity)
+        self.CAR_NUM = fleet_size
+        self.config["CAR_NUM"] = fleet_size
+        self.observation_space = _build_observation_space(fleet_size)
+        self.new = 1
+        self.set_charger_ratio(self.charger_ratio)
+
+    def set_charger_ratio(self, ratio):
+        """Rebuild deterministic charger capacity for a sensitivity run."""
+        global NUM_CHARGERS
+        ratio = float(ratio)
+        if not 0.0 <= ratio <= 1.0:
+            raise ValueError("charger ratio must be between 0 and 1")
+        capacities = [int(zone["num_parking_slots"]) for zone in ZONES]
+        demand_score = self.config.get("CHARGER_DEMAND_SCORE", [0.0] * ZONE_NUM)
+        if len(demand_score) != ZONE_NUM:
+            raise ValueError("CHARGER_DEMAND_SCORE must have one value per zone")
+        total = rounded_charger_count(sum(capacities), ratio)
+        allocation = allocate_chargers_by_demand(
+            total,
+            capacities,
+            demand_score,
+            ensure_zone_coverage=total >= ZONE_NUM,
+        )
+        for zone_id, count in enumerate(allocation):
+            slots = list(range(int(count)))
+            ZONES[zone_id]["charging_slots"] = slots
+            CHARGER_PER_ZONE[zone_id] = slots
+        CHARGER_ZONES[:] = [zone for zone, count in enumerate(allocation) if count]
+        NUM_CHARGERS = int(total)
+        self.charger_ratio = ratio
+        self.config["CHARGER_TO_PARKING_RATIO"] = ratio
+        return allocation
+
+    def set_test_day(self, day_index):
+        """Select one held-out SIP day for the next evaluation reset."""
+        day_index = int(day_index)
+        if day_index not in self.test_day_indices:
+            raise ValueError(f"test day {day_index} is not in {list(self.test_day_indices)}")
+        self.test_day_index = day_index
+
     # =========2026.2.7修改，方案D2：添加set_epoch方法==========
     def set_epoch(self, epoch):
         """设置当前训练轮数（用于探索策略衰减）"""
@@ -1805,6 +2340,8 @@ class dclily(gym.Env):
         self.write_od_left(new)
         self.write_od_now()
         self.debug_log = []
+        self.charging_event_log = []
+        self.current_step_charging_events = []
         
         self.write_ini_cap(new)
         # 🔹 2. 立刻打印充电桩状态（确认初始化是否成功）

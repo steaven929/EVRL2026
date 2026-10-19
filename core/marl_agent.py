@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from specific.marl_model import SharedActor, CentralizedCritic
+from specific.marl_model import SharedActor, IndependentActorEnsemble, CentralizedCritic
 from core.buffer import MARLReplayBuffer
 
 # =========2026.2.19修改，MARL Phase-1：IPPO Agent==========
@@ -36,7 +36,10 @@ class IPPOAgent:
                  tau=0.0005,
                  batch_size=128,
                  memory_capacity=64000,
-                 device='cpu'):
+                 device='cpu',
+                 use_zone_embedding=True,
+                 use_global_context=True,
+                 share_policy=True):
         """
         Args:
             obs_dim: 局部观测维度（不含agent_id），默认6
@@ -58,25 +61,32 @@ class IPPOAgent:
         self.n_agents = n_agents
         self.action_dim = action_dim
         self.global_state_dim = global_state_dim
+        self.agent_embed_dim = agent_embed_dim
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
         self.device = torch.device(device)
+        self.use_zone_embedding = bool(use_zone_embedding)
+        self.use_global_context = bool(use_global_context)
+        self.share_policy = bool(share_policy)
 
         # 创建网络
-        self.actor = SharedActor(
+        actor_class = SharedActor if self.share_policy else IndependentActorEnsemble
+        self.actor = actor_class(
             obs_dim=obs_dim,
             n_agents=n_agents,
             agent_embed_dim=agent_embed_dim,
             hidden_dim=actor_hidden_dim,
-            action_dim=action_dim
+            action_dim=action_dim,
+            use_zone_embedding=self.use_zone_embedding,
         ).to(self.device)
 
         self.critic = CentralizedCritic(
             global_state_dim=global_state_dim,
             n_agents=n_agents,
             action_dim=action_dim,
-            hidden_dim=critic_hidden_dim
+            hidden_dim=critic_hidden_dim,
+            use_global_context=self.use_global_context,
         ).to(self.device)
 
         # Target networks
@@ -84,7 +94,8 @@ class IPPOAgent:
             global_state_dim=global_state_dim,
             n_agents=n_agents,
             action_dim=action_dim,
-            hidden_dim=critic_hidden_dim
+            hidden_dim=critic_hidden_dim,
+            use_global_context=self.use_global_context,
         ).to(self.device)
 
         # 初始化target网络
@@ -100,7 +111,7 @@ class IPPOAgent:
         # 损失函数 - 使用Huber Loss对大误差不敏感（P0修复）
         self.critic_criterion = nn.SmoothL1Loss()  # Huber Loss
 
-    def sample_action(self, obs_n, add_noise=False, noise_scale=0.1):
+    def sample_action(self, obs_n, global_state=None, add_noise=False, noise_scale=0.1):
         """
         采样联合动作
 
@@ -231,12 +242,30 @@ class IPPOAgent:
             'critic': self.critic.state_dict(),
             'target_critic': self.target_critic.state_dict(),
             'actor_optimizer': self.actor_optimizer.state_dict(),
-            'critic_optimizer': self.critic_optimizer.state_dict()
+            'critic_optimizer': self.critic_optimizer.state_dict(),
+            'architecture': {
+                'use_zone_embedding': self.use_zone_embedding,
+                'use_global_context': self.use_global_context,
+                'share_policy': self.share_policy,
+                'actor_input_dim': self.obs_dim + self.agent_embed_dim,
+                'action_dim': self.action_dim,
+            },
         }, path)
 
     def load_model(self, path):
         """加载模型"""
         checkpoint = torch.load(path, map_location=self.device)
+        saved = checkpoint.get('architecture')
+        if saved is not None:
+            current = {
+                'use_zone_embedding': self.use_zone_embedding,
+                'use_global_context': self.use_global_context,
+                'share_policy': self.share_policy,
+                'actor_input_dim': self.obs_dim + self.agent_embed_dim,
+                'action_dim': self.action_dim,
+            }
+            if saved != current:
+                raise ValueError(f"checkpoint architecture {saved} does not match {current}")
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])
         self.target_critic.load_state_dict(checkpoint['target_critic'])

@@ -19,7 +19,8 @@ class SharedActor(nn.Module):
     输出：3维连续动作 [depart_pref, dest_pref, charge_pref]
     """
     def __init__(self, obs_dim=6, n_agents=50, agent_embed_dim=16,
-                 hidden_dim=128, action_dim=3, init_w=3e-3):
+                 hidden_dim=128, action_dim=3, init_w=3e-3,
+                 use_zone_embedding=True):
         """
         Args:
             obs_dim: 局部观测维度（不含agent_id），默认6
@@ -33,6 +34,7 @@ class SharedActor(nn.Module):
         self.obs_dim = obs_dim
         self.n_agents = n_agents
         self.agent_embed_dim = agent_embed_dim
+        self.use_zone_embedding = bool(use_zone_embedding)
 
         # Agent ID embedding
         self.agent_embedding = nn.Embedding(n_agents, agent_embed_dim)
@@ -58,6 +60,9 @@ class SharedActor(nn.Module):
         """
         # Agent ID embedding
         agent_embed = self.agent_embedding(agent_ids)  # (batch_size, agent_embed_dim)
+        if not self.use_zone_embedding:
+            # 消融时只屏蔽区域身份，仍保留历史 6+16=22 维输入。
+            agent_embed = torch.zeros_like(agent_embed)
 
         # 拼接观测和embedding
         x = torch.cat([obs, agent_embed], dim=-1)  # (batch_size, obs_dim + agent_embed_dim)
@@ -70,6 +75,35 @@ class SharedActor(nn.Module):
         return action
 # ======修改结束
 
+
+class IndependentActorEnsemble(nn.Module):
+    """每个区域一个独立 Actor；各 Actor 的输入和输出维数与 V4.7 相同。"""
+
+    def __init__(self, obs_dim=6, n_agents=50, agent_embed_dim=16,
+                 hidden_dim=128, action_dim=3, init_w=3e-3,
+                 use_zone_embedding=True):
+        super().__init__()
+        self.n_agents = int(n_agents)
+        self.actors = nn.ModuleList([
+            SharedActor(
+                obs_dim=obs_dim,
+                n_agents=n_agents,
+                agent_embed_dim=agent_embed_dim,
+                hidden_dim=hidden_dim,
+                action_dim=action_dim,
+                init_w=init_w,
+                use_zone_embedding=use_zone_embedding,
+            )
+            for _ in range(self.n_agents)
+        ])
+
+    def forward(self, obs, agent_ids):
+        outputs = []
+        for row, agent_id in zip(obs, agent_ids):
+            idx = int(agent_id.detach().item())
+            outputs.append(self.actors[idx](row.unsqueeze(0), agent_id.reshape(1)).squeeze(0))
+        return torch.stack(outputs, dim=0)
+
 # =========2026.2.19修改，MARL Phase-1：Centralized Critic==========
 class CentralizedCritic(nn.Module):
     """
@@ -79,7 +113,7 @@ class CentralizedCritic(nn.Module):
     输出：Q值（标量）
     """
     def __init__(self, global_state_dim=251, n_agents=50, action_dim=3,
-                 hidden_dim=256, init_w=3e-3):
+                 hidden_dim=256, init_w=3e-3, use_global_context=True):
         """
         Args:
             global_state_dim: 全局状态维度，默认251（SIP数据集）
@@ -92,6 +126,7 @@ class CentralizedCritic(nn.Module):
         self.global_state_dim = global_state_dim
         self.n_agents = n_agents
         self.action_dim = action_dim
+        self.use_global_context = bool(use_global_context)
 
         # 输入：global_state + joint_action (n_agents * action_dim)
         input_dim = global_state_dim + n_agents * action_dim
@@ -114,6 +149,9 @@ class CentralizedCritic(nn.Module):
         Returns:
             q_value: tensor, shape (batch_size, 1)
         """
+        if not self.use_global_context:
+            # 消融时屏蔽全局状态，Critic 输入层形状保持不变。
+            global_state = torch.zeros_like(global_state)
         # 拼接全局状态和联合动作
         x = torch.cat([global_state, joint_action], dim=-1)
 
