@@ -53,7 +53,8 @@ class SharedActor(nn.Module):
     """
     def __init__(self, obs_dim=6, n_agents=50, agent_embed_dim=16,
                  hidden_dim=128, action_dim=3, global_state_dim=251,
-                 context_dim=32, init_w=3e-3):
+                 context_dim=32, init_w=3e-3,
+                 use_zone_embedding=True, use_global_context=True):
         """
         Args:
             obs_dim: 局部观测维度（不含agent_id），默认6
@@ -70,6 +71,8 @@ class SharedActor(nn.Module):
         self.n_agents = n_agents
         self.agent_embed_dim = agent_embed_dim
         self.context_dim = context_dim
+        self.use_zone_embedding = bool(use_zone_embedding)
+        self.use_global_context = bool(use_global_context)
 
         # =========2026.3.5修改，方案2：添加全局上下文编码器==========
         # 全局上下文编码器
@@ -102,10 +105,15 @@ class SharedActor(nn.Module):
             action: tensor, shape (batch_size, action_dim) - 动作输出 [0,1]
         """
         # Agent ID embedding
-        agent_embed = self.agent_embedding(agent_ids)  # (batch_size, agent_embed_dim)
+        if self.use_zone_embedding:
+            agent_embed = self.agent_embedding(agent_ids)
+        else:
+            agent_embed = torch.zeros(
+                obs.shape[0], self.agent_embed_dim, device=obs.device, dtype=obs.dtype
+            )
 
         # =========2026.3.5修改，方案2：添加全局上下文==========
-        if global_state is not None:
+        if self.use_global_context and global_state is not None:
             # 提取全局上下文
             global_context = self.global_encoder(global_state)  # (batch_size, context_dim)
             # 拼接观测、全局上下文和embedding
@@ -123,6 +131,51 @@ class SharedActor(nn.Module):
         action = torch.sigmoid(self.fc3(x))  # 输出到[0,1]
 
         return action
+
+
+class IndependentActorEnsemble(nn.Module):
+    """One Actor network per zone with the same forward interface."""
+
+    def __init__(self, obs_dim=6, n_agents=50, agent_embed_dim=16,
+                 hidden_dim=128, action_dim=3, global_state_dim=251,
+                 context_dim=32, init_w=3e-3,
+                 use_zone_embedding=True, use_global_context=True):
+        super().__init__()
+        self.n_agents = int(n_agents)
+        self.action_dim = int(action_dim)
+        self.actors = nn.ModuleList([
+            SharedActor(
+                obs_dim=obs_dim,
+                n_agents=n_agents,
+                agent_embed_dim=agent_embed_dim,
+                hidden_dim=hidden_dim,
+                action_dim=action_dim,
+                global_state_dim=global_state_dim,
+                context_dim=context_dim,
+                init_w=init_w,
+                use_zone_embedding=use_zone_embedding,
+                use_global_context=use_global_context,
+            )
+            for _ in range(n_agents)
+        ])
+
+    def forward(self, obs, agent_ids, global_state=None):
+        if obs.shape[0] != agent_ids.shape[0]:
+            raise ValueError("obs and agent_ids batch dimensions must match")
+        outputs = []
+        for row in range(obs.shape[0]):
+            agent_id = int(agent_ids[row].item())
+            if agent_id < 0 or agent_id >= self.n_agents:
+                raise ValueError(f"agent_id {agent_id} outside [0, {self.n_agents})")
+            state_row = None if global_state is None else global_state[row:row + 1]
+            outputs.append(
+                self.actors[agent_id](
+                    obs[row:row + 1], agent_ids[row:row + 1], state_row
+                )
+            )
+        if not outputs:
+            return obs.new_empty((0, self.action_dim))
+        return torch.cat(outputs, dim=0)
 # ======修改结束
 
 # =========2026.2.19修改，MARL Phase-1：Centralized Critic==========

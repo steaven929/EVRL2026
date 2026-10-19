@@ -3,9 +3,69 @@
 MARL Phase-1: Multi-Agent Training Loop
 """
 import numpy as np
+from dataclasses import dataclass
+from pathlib import Path
+from time import perf_counter
 
 from core.marl_metrics import compute_all_metrics
 from core.improved_metrics import compute_all_improved_metrics
+from core.reward_components import REWARD_COMPONENT_KEYS
+from core.evaluation_logging import EvaluationIdentity, EvaluationWriter
+
+
+@dataclass(frozen=True)
+class ExplorationNoise:
+    schedule: str
+    base_sigma: float
+    service_rate_ema: float
+    service_gap: float
+    service_boost: float
+    final_sigma: float
+
+
+def compute_exploration_noise(
+    episode,
+    train_episodes,
+    schedule,
+    noise_start,
+    noise_min,
+    decay_power=1.0,
+    service_rate_ema=None,
+    service_target=0.85,
+    service_boost=0.05,
+    warmup_episodes=0,
+):
+    schedule = str(schedule).lower()
+    if schedule not in {"adaptive", "fixed", "linear", "exponential"}:
+        raise ValueError(f"unsupported exploration schedule: {schedule}")
+    start = float(noise_start)
+    minimum = float(noise_min)
+    if minimum < 0 or start < minimum:
+        raise ValueError("noise bounds must satisfy 0 <= noise_min <= noise_start")
+    denominator = max(1, int(train_episodes) - int(warmup_episodes))
+    progress = np.clip((int(episode) - int(warmup_episodes)) / denominator, 0.0, 1.0)
+    if schedule == "fixed":
+        base = start
+    elif schedule == "linear":
+        base = start - (start - minimum) * progress
+    elif schedule == "exponential":
+        power = max(float(decay_power), 1e-9)
+        end = np.exp(-power)
+        normalized = (np.exp(-power * progress) - end) / max(1.0 - end, 1e-12)
+        base = minimum + (start - minimum) * normalized
+    else:
+        base = minimum + (start - minimum) * ((1.0 - progress) ** max(float(decay_power), 1e-9))
+
+    ema_value = float("nan") if service_rate_ema is None else float(service_rate_ema)
+    gap = 0.0
+    boost = 0.0
+    if schedule == "adaptive" and service_rate_ema is not None:
+        target = max(float(service_target), 1e-12)
+        gap = max(0.0, target - float(service_rate_ema))
+        boost = float(service_boost) * gap / target
+    upper = start + (float(service_boost) if schedule == "adaptive" else 0.0)
+    final = float(np.clip(base + boost, minimum, upper))
+    return ExplorationNoise(schedule, float(base), ema_value, float(gap), float(boost), final)
 
 
 def _aggregate_episode_metric(values):
@@ -41,6 +101,12 @@ def marl_train(env, agent, cfg, path=None):
     srd_last_history = []
     service_rate_history = []
     service_rate_last_history = []
+    exploration_base_sigma_history = []
+    exploration_service_ema_history = []
+    exploration_service_gap_history = []
+    exploration_boost_history = []
+    exploration_sigma_history = []
+    service_rate_ema = None
     info_missing_counts = {'rld': 0, 'svc': 0, 'srd': 0, 'service_rate': 0}
 
     charging_efficiency_history = []
@@ -60,6 +126,10 @@ def marl_train(env, agent, cfg, path=None):
     dispatch_efficiency_history = []
     effective_dispatch_rate_history = []
     dispatch_roi_history = []
+    reward_component_history = {key: [] for key in REWARD_COMPONENT_KEYS}
+    reward_component_by_timestep = {key: [] for key in REWARD_COMPONENT_KEYS}
+    training_solver_rows = []
+    training_charging_event_rows = []
 
     # 时间片级(0~TIME_NUM-1)指标：用于后续按26时间片分析
     time_num = int(getattr(env, 'TIME_NUM', cfg.get('TIME_NUM', 26)))
@@ -94,6 +164,10 @@ def marl_train(env, agent, cfg, path=None):
         env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
     if hasattr(env, 'set_reward_mode'):
         env.set_reward_mode(cfg.get('reward_mode', 'base'))
+    if hasattr(env, 'set_charging_assignment_mode'):
+        env.set_charging_assignment_mode(cfg.get('charging_assignment_mode', 'p1'))
+    if hasattr(env, 'set_charger_ratio'):
+        env.set_charger_ratio(float(cfg.get('charger_ratio', 0.30)))
 
     for i_ep in range(cfg['train_eps']):
         ep_reward = 0.0
@@ -153,17 +227,54 @@ def marl_train(env, agent, cfg, path=None):
         ep_parking_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
         ep_charger_available_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
         ep_charger_used_by_tz = np.full((time_num, zone_num), np.nan, dtype=float)
+        ep_reward_components = {
+            key: np.full(time_num, np.nan, dtype=float) for key in REWARD_COMPONENT_KEYS
+        }
+
+        noise_state = compute_exploration_noise(
+            episode=i_ep,
+            train_episodes=cfg['train_eps'],
+            schedule=cfg.get('exploration_schedule', 'adaptive'),
+            noise_start=cfg.get('marl_noise_start', 0.12),
+            noise_min=cfg.get('marl_noise_min', 0.02),
+            decay_power=cfg.get('marl_noise_decay_power', 2.0),
+            service_rate_ema=service_rate_ema,
+            service_target=cfg.get('marl_service_target', 0.85),
+            service_boost=cfg.get('marl_noise_service_boost', 0.05),
+            warmup_episodes=cfg.get('marl_noise_warmup_eps', 30),
+        )
+        exploration_base_sigma_history.append(noise_state.base_sigma)
+        exploration_service_ema_history.append(noise_state.service_rate_ema)
+        exploration_service_gap_history.append(noise_state.service_gap)
+        exploration_boost_history.append(noise_state.service_boost)
+        exploration_sigma_history.append(noise_state.final_sigma)
 
         while not done:
             step_idx = min(ep_step, time_num - 1)
             add_noise = True
-            noise_scale = max(0.1, 0.3 * (1 - i_ep / cfg['train_eps']))
+            noise_scale = noise_state.final_sigma
             # =========2026.3.5修改，方案2：传递全局状态给sample_action==========
             actions = agent.sample_action(obs_n, global_state=global_state, add_noise=add_noise, noise_scale=noise_scale)
             # ======修改结束
 
             next_global_state, reward, done, info = env.step(actions)
             scaled_reward = reward / reward_scale
+            if isinstance(info, dict):
+                info['environment_reward'] = float(reward)
+                info['scaled_training_reward'] = float(scaled_reward)
+                for component_key in REWARD_COMPONENT_KEYS:
+                    if component_key in info:
+                        ep_reward_components[component_key][step_idx] = float(info[component_key])
+                for solver in info.get('solver_stats', []):
+                    training_solver_rows.append({
+                        'episode': i_ep + 1, 'timestep': ep_step,
+                        'demand_day': info.get('demand_day'), **dict(solver),
+                    })
+                for event in info.get('charging_events', []):
+                    training_charging_event_rows.append({
+                        'episode': i_ep + 1, 'timestep': ep_step,
+                        'demand_day': info.get('demand_day'), **dict(event),
+                    })
 
             # 时间片级原始记录（每一步都记，后续可直接做26时间片分析）
             ep_reward_by_t[step_idx] = float(scaled_reward)
@@ -298,6 +409,12 @@ def marl_train(env, agent, cfg, path=None):
         srd_last_history.append(srd_last)
         service_rate_history.append(service_rate_mean)
         service_rate_last_history.append(service_rate_last)
+        ema_alpha = float(cfg.get('marl_service_ema_alpha', 0.2))
+        ema_alpha = float(np.clip(ema_alpha, 0.0, 1.0))
+        if service_rate_ema is None:
+            service_rate_ema = service_rate_mean
+        else:
+            service_rate_ema = ema_alpha * service_rate_mean + (1.0 - ema_alpha) * service_rate_ema
 
         charging_efficiency_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['charging_efficiency'])
         vehicle_utilization_mean, _ = _aggregate_episode_metric(ep_marl_metric_steps['vehicle_utilization'])
@@ -357,6 +474,13 @@ def marl_train(env, agent, cfg, path=None):
         parking_used_by_timestep_zone.append(ep_parking_used_by_tz)
         charger_available_by_timestep_zone.append(ep_charger_available_by_tz)
         charger_used_by_timestep_zone.append(ep_charger_used_by_tz)
+        for component_key in REWARD_COMPONENT_KEYS:
+            component_values = ep_reward_components[component_key]
+            reward_component_by_timestep[component_key].append(component_values)
+            finite_values = component_values[np.isfinite(component_values)]
+            reward_component_history[component_key].append(
+                float(np.sum(finite_values)) if finite_values.size else np.nan
+            )
 
         rewards.append(ep_reward)
         raw_rewards.append(ep_reward_raw)
@@ -366,8 +490,13 @@ def marl_train(env, agent, cfg, path=None):
             ma_rewards.append(ep_reward)
 
         # =========2026.3.3修改，简化日志输出，只保留训练轮数==========
-        if (i_ep + 1) % 50 == 0 or i_ep == 0:  # 每50轮打印一次
-            print(f"Episode: {i_ep+1}/{cfg['train_eps']}")
+        progress_every = max(1, int(cfg.get('progress_every', 50)))
+        if (i_ep + 1) % progress_every == 0 or i_ep == 0:
+            print(
+                f"Episode: {i_ep+1}/{cfg['train_eps']} | "
+                f"reward={ep_reward:.6f} | raw_reward={ep_reward_raw:.2f}",
+                flush=True,
+            )
         # ======修改结束
 
         if (i_ep + 1) % 100 == 0 and path is not None:
@@ -390,7 +519,14 @@ def marl_train(env, agent, cfg, path=None):
         'srd_last_history': srd_last_history,
         'service_rate_history': service_rate_history,
         'service_rate_last_history': service_rate_last_history,
+        'exploration_base_sigma_history': exploration_base_sigma_history,
+        'exploration_service_ema_history': exploration_service_ema_history,
+        'exploration_service_gap_history': exploration_service_gap_history,
+        'exploration_boost_history': exploration_boost_history,
+        'exploration_sigma_history': exploration_sigma_history,
         'info_missing_counts': info_missing_counts,
+        'training_solver_rows': training_solver_rows,
+        'training_charging_event_rows': training_charging_event_rows,
         'charging_efficiency_history': charging_efficiency_history,
         'vehicle_utilization_history': vehicle_utilization_history,
         'fleet_health_history': fleet_health_history,
@@ -407,6 +543,10 @@ def marl_train(env, agent, cfg, path=None):
         'dispatch_efficiency_history': dispatch_efficiency_history,
         'effective_dispatch_rate_history': effective_dispatch_rate_history,
         'dispatch_roi_history': dispatch_roi_history,
+        **{f'{key}_history': np.asarray(reward_component_history[key], dtype=float)
+           for key in REWARD_COMPONENT_KEYS},
+        **{f'{key}_by_timestep': np.asarray(reward_component_by_timestep[key], dtype=float)
+           for key in REWARD_COMPONENT_KEYS},
         # 时间片级原始序列（shape: [train_eps, time_num]）
         'svc_by_timestep': np.asarray(svc_by_timestep, dtype=float),
         'rld_by_timestep': np.asarray(rld_by_timestep, dtype=float),
@@ -502,3 +642,215 @@ def marl_test(env, agent, cfg, path=None):
     # print(f"测试完成，平均奖励：{np.mean(rewards):.2f}")
     # ======修改结束
     return rewards
+
+
+def _plain_scalar(value):
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return None
+
+
+def marl_test_days(env, agent, cfg, output_root, experiment="review-evaluation"):
+    """Evaluate five explicit held-out days and persist every raw day separately."""
+    test_days = [int(day) for day in cfg.get('test_day_indices', [26, 27, 28, 29, 30])]
+    if len(test_days) != len(set(test_days)):
+        raise ValueError("test_day_indices must contain distinct days")
+    writer = EvaluationWriter(Path(output_root), experiment=experiment)
+    reward_scale = max(float(cfg.get('reward_scale', 1.0)), 1e-12)
+    results = {}
+    if hasattr(env, 'set_training_mode'):
+        env.set_training_mode(0)
+    if hasattr(env, 'set_experiment_variant'):
+        env.set_experiment_variant(cfg.get('exp_variant', 'a1'))
+    if hasattr(env, 'set_reward_mode'):
+        env.set_reward_mode(cfg.get('reward_mode', 'base'))
+    if hasattr(env, 'set_charging_assignment_mode'):
+        env.set_charging_assignment_mode(cfg.get('charging_assignment_mode', 'p1'))
+    if hasattr(env, 'set_charger_ratio'):
+        env.set_charger_ratio(float(cfg.get('charger_ratio', 0.30)))
+
+    for day in test_days:
+        if not hasattr(env, 'set_test_day'):
+            raise AttributeError("environment does not support set_test_day")
+        env.set_test_day(day)
+        reset_value = env.reset()
+        global_state = reset_value[0] if isinstance(reset_value, tuple) else reset_value
+        obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
+        timestep_rows = []
+        zone_rows = []
+        charging_events = []
+        reward_rows = []
+        solver_rows = []
+        daily_reward = 0.0
+        daily_scaled_reward = 0.0
+        daily_served = 0.0
+        daily_demand = 0.0
+        daily_operating_profit = 0.0
+        actor_times = []
+        environment_times = []
+        decision_times = []
+        daily_marl_metrics = {
+            key: [] for key in (
+                'charging_efficiency',
+                'vehicle_utilization',
+                'fleet_health',
+                'zone_coordination',
+                'response_readiness',
+                'charger_occupancy_rate',
+                'charger_queue_delay',
+                'energy_not_served',
+                'safety_soc_violation_count',
+                'charge_shift_success_rate',
+            )
+        }
+        done = False
+        timestep = 0
+        while not done:
+            decision_started = perf_counter()
+            actor_started = perf_counter()
+            actions = agent.sample_action(obs_n, global_state=global_state, add_noise=False)
+            actor_elapsed = perf_counter() - actor_started
+            environment_started = perf_counter()
+            next_state, reward, done, info = env.step(actions)
+            environment_elapsed = perf_counter() - environment_started
+            decision_elapsed = perf_counter() - decision_started
+            info = dict(info)
+            info['environment_reward'] = float(reward)
+            info['scaled_training_reward'] = float(reward) / reward_scale
+            step_marl_metrics = compute_all_metrics(env, info)
+            info.update(step_marl_metrics)
+            for key in daily_marl_metrics:
+                daily_marl_metrics[key].append(float(step_marl_metrics.get(key, np.nan)))
+            actor_times.append(actor_elapsed)
+            environment_times.append(environment_elapsed)
+            decision_times.append(decision_elapsed)
+            obs_n = np.array([env.get_agent_obs(agent_id) for agent_id in range(env.n_agents)])
+            global_state = next_state
+            daily_reward += float(reward)
+            daily_scaled_reward += float(reward) / reward_scale
+            daily_served += float(info.get('served_orders', 0.0))
+            daily_demand += float(info.get('total_demand', 0.0))
+            daily_operating_profit += float(info.get('operating_profit', 0.0))
+
+            step_row = {
+                'test_day': day,
+                'timestep': timestep,
+                'reward': float(reward),
+                'actor_inference_time_seconds': actor_elapsed,
+                'environment_step_time_seconds': environment_elapsed,
+                'total_decision_time_seconds': decision_elapsed,
+            }
+            for key, value in info.items():
+                scalar = _plain_scalar(value)
+                if scalar is not None:
+                    step_row[key] = scalar
+            timestep_rows.append(step_row)
+
+            demand = np.asarray(info.get('demand_matrix', []), dtype=float)
+            served = np.asarray(info.get('demand_orders', []), dtype=float)
+            charging_by_zone = info.get('charging_actions', {})
+            parking_available = np.asarray(info.get('parking_available_by_zone', []), dtype=float)
+            parking_used = np.asarray(info.get('parking_used_by_zone', []), dtype=float)
+            charger_available = np.asarray(info.get('charger_available_by_zone', []), dtype=float)
+            charger_used = np.asarray(info.get('charger_used_by_zone', []), dtype=float)
+            zone_count = int(getattr(env, 'n_agents', demand.shape[0] if demand.ndim else 0))
+            for zone in range(zone_count):
+                zone_demand = float(np.sum(demand[zone])) if demand.ndim == 2 and zone < demand.shape[0] else 0.0
+                zone_served = float(np.sum(served[zone])) if served.ndim == 2 and zone < served.shape[0] else 0.0
+                zone_rows.append({
+                    'test_day': day,
+                    'timestep': timestep,
+                    'zone': zone,
+                    'demand': zone_demand,
+                    'served': zone_served,
+                    'service_rate': zone_served / zone_demand if zone_demand > 0 else 1.0,
+                    'charging_assignments': int(charging_by_zone.get(zone, 0)),
+                    'parking_available': float(parking_available[zone]) if zone < parking_available.size else np.nan,
+                    'parking_used': float(parking_used[zone]) if zone < parking_used.size else np.nan,
+                    'charger_available': float(charger_available[zone]) if zone < charger_available.size else np.nan,
+                    'charger_used': float(charger_used[zone]) if zone < charger_used.size else np.nan,
+                })
+            for event in info.get('charging_events', []):
+                charging_events.append({'test_day': day, 'timestep': timestep, **dict(event)})
+            reward_rows.append({
+                'test_day': day,
+                'timestep': timestep,
+                **{key: info.get(key, np.nan) for key in REWARD_COMPONENT_KEYS},
+                'legacy_NOR': info.get('legacy_NOR', info.get('NOR', np.nan)),
+                'operating_profit': info.get('operating_profit', np.nan),
+            })
+            for solver in info.get('solver_stats', []):
+                solver_rows.append({'test_day': day, 'timestep': timestep, **dict(solver)})
+            timestep += 1
+
+        summary = {
+            'environment_reward': daily_reward,
+            'scaled_training_reward': daily_scaled_reward,
+            'served_orders': daily_served,
+            'total_demand': daily_demand,
+            'service_rate': daily_served / daily_demand if daily_demand > 0 else 1.0,
+            'operating_profit': daily_operating_profit,
+            'timesteps': timestep,
+            'actor_inference_time_mean_seconds': float(np.mean(actor_times)),
+            'actor_inference_time_p95_seconds': float(np.percentile(actor_times, 95)),
+            'total_decision_time_mean_seconds': float(np.mean(decision_times)),
+            'total_decision_time_p50_seconds': float(np.percentile(decision_times, 50)),
+            'total_decision_time_p95_seconds': float(np.percentile(decision_times, 95)),
+            'total_decision_time_max_seconds': float(np.max(decision_times)),
+            'environment_step_time_mean_seconds': float(np.mean(environment_times)),
+        }
+        for key, values in daily_marl_metrics.items():
+            array = np.asarray(values, dtype=float)
+            finite = array[np.isfinite(array)]
+            summary[key] = float(np.mean(finite)) if finite.size else np.nan
+        energy_not_served_values = np.asarray(
+            daily_marl_metrics['energy_not_served'], dtype=float
+        )
+        soc_violation_values = np.asarray(
+            daily_marl_metrics['safety_soc_violation_count'], dtype=float
+        )
+        summary['energy_not_served_total'] = float(np.nansum(energy_not_served_values))
+        summary['safety_soc_violation_count_total'] = float(np.nansum(soc_violation_values))
+        daily_component_totals = {}
+        for key in REWARD_COMPONENT_KEYS:
+            values = np.asarray([row.get(key, np.nan) for row in reward_rows], dtype=float)
+            finite = values[np.isfinite(values)]
+            daily_component_totals[key] = float(np.sum(finite)) if finite.size else np.nan
+        summary.update(daily_component_totals)
+        expected_pft = (
+            daily_component_totals['NOR']
+            - daily_component_totals['P_soc']
+            - daily_component_totals['P_svr']
+            + daily_component_totals['B_chg']
+            + daily_component_totals['B_soc']
+        )
+        summary['reward_minus_PFT'] = (
+            daily_component_totals['environment_reward'] - daily_component_totals['PFT']
+        )
+        summary['pft_identity_error'] = daily_component_totals['PFT'] - expected_pft
+        summary['reward_scaling_error'] = (
+            daily_component_totals['scaled_training_reward']
+            - daily_component_totals['environment_reward'] / reward_scale
+        )
+        identity = EvaluationIdentity(
+            method=str(cfg.get('method', 'hmarl-rc')),
+            fleet_size=int(getattr(env, 'CAR_NUM', cfg.get('fleet_size', 200))),
+            seed=int(cfg.get('seed', 0)),
+            charger_ratio=float(cfg.get('charger_ratio', 0.30)),
+            test_day=day,
+        )
+        writer.write_day(
+            identity=identity,
+            config=dict(cfg),
+            summary=summary,
+            timestep_rows=timestep_rows,
+            zone_timestep_rows=zone_rows,
+            charging_event_rows=charging_events,
+            reward_rows=reward_rows,
+            solver_rows=solver_rows,
+        )
+        results[day] = summary
+    return results
+

@@ -6,10 +6,12 @@ Created on Tue Sep  3 19:29:48 2024
 """
 # =========2026.2.5修改，修复Windows中文编码问题==========
 import sys
-import io
-# 设置标准输出为 UTF-8 编码
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+from core.console import configure_utf8_console
+from core.output_paths import RESULTS_ROOT
+from core.run_provenance import write_run_provenance
+# UTF-8 plus immediate writes for PyCharm/terminal progress output.
+configure_utf8_console(sys.stdout)
+configure_utf8_console(sys.stderr)
 # ======修改结束
 
 from matplotlib import pyplot as plt
@@ -47,13 +49,15 @@ cp("..\\" + cfg['data_folder'])
 os.chdir('..')
 
 # 为每次运行创建独立输出目录：时间戳 + 算法名 + 训练轮数
-output_root = os.path.join(current_dir, 'output')
+output_root = os.fspath(RESULTS_ROOT)
 os.makedirs(output_root, exist_ok=True)
 run_stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
 run_dir = os.path.join(output_root, f"{run_stamp}_{str(cfg['algo_name']).upper()}_{int(cfg['train_eps'])}ep")
 os.makedirs(run_dir, exist_ok=True)
 cfg['run_output_dir'] = run_dir
 print(f"运行输出目录: {run_dir}")
+write_run_provenance(run_dir, cfg)
+print(f"完整参数与Git版本已保存到: {run_dir}")
 
 
 def out_file(filename):

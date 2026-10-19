@@ -13,17 +13,67 @@
   "elec_min": 0.1,
   "BATTERY_CAPACITY": 3000,
   "path": "./data/SIP/",
-  "training_set_number": 30,
+  "training_set_number": 25,
   "CHARGER_STATES": 4,
-  "CHARGER_ZONES": 48,
+  "CHARGER_ZONES": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49
+  ],
   "ZONES": [
     {
       "zone_id": 0,
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -31,8 +81,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -40,8 +89,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -49,8 +97,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -58,8 +105,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -67,8 +113,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -76,8 +121,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -85,8 +129,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -94,8 +137,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -103,8 +145,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -112,8 +153,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -121,8 +161,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -130,8 +169,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -139,8 +177,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -148,8 +185,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -157,8 +193,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -166,8 +201,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -175,8 +209,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -184,8 +217,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -193,8 +225,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -202,8 +233,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -211,8 +241,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -220,8 +249,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -229,8 +257,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -238,226 +265,235 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
       "zone_id": 25,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 26,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 27,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 28,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 29,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 30,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 31,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 32,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 33,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 34,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 35,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 36,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 37,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 38,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 39,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 40,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 41,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 42,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 43,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 44,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 45,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 46,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 47,
       "num_parking_slots": 5,
       "charging_slots": [
-        0,
-        1,
-        2
+        0
       ]
     },
     {
       "zone_id": 48,
       "num_parking_slots": 5,
-      "charging_slots": []
+      "charging_slots": [
+        0
+      ]
     },
     {
       "zone_id": 49,
       "num_parking_slots": 5,
-      "charging_slots": []
+      "charging_slots": [
+        0
+      ]
     }
-  ]
+  ],
+  "TRAIN_DAY_INDICES": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25
+  ],
+  "TEST_DAY_INDICES": [
+    26,
+    27,
+    28,
+    29,
+    30
+  ],
+  "DISTANCE_UNIT_KM": 0.1,
+  "BATTERY_CAPACITY_KWH": 58.0,
+  "BATTERY_CAPACITY_INTERNAL": 3000.0,
+  "ENERGY_CONSUMPTION_KWH_PER_KM": 0.196,
+  "CHARGING_POWER_KW": 50.0,
+  "CHARGING_EFFICIENCY": 0.85,
+  "SOC_MIN_RATIO": 0.2,
+  "SOC_TARGET_RATIO": 0.8,
+  "ELECTRICITY_PRICE_RMB_PER_KWH": 1.2,
+  "CHARGER_TO_PARKING_RATIO": 0.3,
+  "CHARGER_RATIO_SENSITIVITY": [
+    0.15,
+    0.3,
+    0.45
+  ],
+  "CHARGING_ASSIGNMENT_MODE": "p1",
+  "P1_TIME_LIMIT_SECONDS": 5.0,
+  "P1_MIP_GAP": 0.01
 }

@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from specific.marl_model import SharedActor, CentralizedCritic
+from specific.marl_model import SharedActor, IndependentActorEnsemble, CentralizedCritic
 from core.buffer import MARLReplayBuffer
 
 # =========2026.2.19修改，MARL Phase-1：IPPO Agent==========
@@ -36,7 +36,10 @@ class IPPOAgent:
                  tau=0.0005,
                  batch_size=128,
                  memory_capacity=64000,
-                 device='cpu'):
+                 device='cpu',
+                 use_zone_embedding=True,
+                 use_global_context=True,
+                 share_policy=True):
         """
         Args:
             obs_dim: 局部观测维度（不含agent_id），默认6
@@ -62,17 +65,23 @@ class IPPOAgent:
         self.tau = tau
         self.batch_size = batch_size
         self.device = torch.device(device)
+        self.use_zone_embedding = bool(use_zone_embedding)
+        self.use_global_context = bool(use_global_context)
+        self.share_policy = bool(share_policy)
 
         # =========2026.3.5修改，方案2：Actor添加全局状态参数==========
         # 创建网络
-        self.actor = SharedActor(
+        actor_class = SharedActor if self.share_policy else IndependentActorEnsemble
+        self.actor = actor_class(
             obs_dim=obs_dim,
             n_agents=n_agents,
             agent_embed_dim=agent_embed_dim,
             hidden_dim=actor_hidden_dim,
             action_dim=action_dim,
             global_state_dim=global_state_dim,  # 新增
-            context_dim=32  # 新增：全局上下文维度
+            context_dim=32,  # 新增：全局上下文维度
+            use_zone_embedding=self.use_zone_embedding,
+            use_global_context=self.use_global_context,
         ).to(self.device)
         # ======修改结束
 
@@ -247,12 +256,27 @@ class IPPOAgent:
             'critic': self.critic.state_dict(),
             'target_critic': self.target_critic.state_dict(),
             'actor_optimizer': self.actor_optimizer.state_dict(),
-            'critic_optimizer': self.critic_optimizer.state_dict()
+            'critic_optimizer': self.critic_optimizer.state_dict(),
+            'architecture': {
+                'use_zone_embedding': self.use_zone_embedding,
+                'use_global_context': self.use_global_context,
+                'share_policy': self.share_policy,
+            },
         }, path)
 
     def load_model(self, path):
         """加载模型"""
         checkpoint = torch.load(path, map_location=self.device)
+        saved_architecture = checkpoint.get('architecture')
+        current_architecture = {
+            'use_zone_embedding': self.use_zone_embedding,
+            'use_global_context': self.use_global_context,
+            'share_policy': self.share_policy,
+        }
+        if saved_architecture is not None and saved_architecture != current_architecture:
+            raise ValueError(
+                f"checkpoint architecture {saved_architecture} does not match {current_architecture}"
+            )
         self.actor.load_state_dict(checkpoint['actor'])
         self.critic.load_state_dict(checkpoint['critic'])
         self.target_critic.load_state_dict(checkpoint['target_critic'])

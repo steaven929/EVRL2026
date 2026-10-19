@@ -18,17 +18,45 @@ import matplotlib.pyplot as plt
 sys.path.append(os.getcwd())
 
 # Fix encoding for Windows
-if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+from core.console import configure_utf8_console
+configure_utf8_console(sys.stdout)
+configure_utf8_console(sys.stderr)
 
 from core.util import get_args, plot_rewards, plot_critic_losses
+from core.output_paths import result_run_directory
+from core.run_provenance import write_run_provenance
 from core.environment import env_agent_config
-from core.marl_training import marl_train, marl_test
+from core.marl_training import marl_train, marl_test_days
+from core.reward_components import (
+    REWARD_COMPONENT_KEYS,
+    write_reward_components_csv,
+    write_reward_formula_summary,
+)
+from core.evaluation_logging import write_exploration_history, write_records_csv
 
 from gym.envs.registration import register
 register(id='dclily', entry_point='specific.dclily_elec:dclily')
+
+
+def _folder_token(value):
+    """Return a Windows-safe, readable token for an experiment folder."""
+    value = str(value).strip()
+    return ''.join(char if char.isalnum() or char in {'-', '_'} else '-' for char in value)
+
+
+def build_output_directory_name(cfg, timestamp):
+    """Build a run folder containing experiment and original run identity."""
+    experiment_id = _folder_token(cfg.get('experiment_id', 'E0'))
+    experiment_variant = _folder_token(cfg.get('experiment_variant', 'default'))
+    seed = int(cfg.get('seed', 0))
+    fleet_size = int(cfg.get('fleet_size', 200))
+    train_eps = int(cfg.get('train_eps', 0))
+    timestamp = _folder_token(timestamp)
+    return (
+        f"{experiment_id}_{experiment_variant}_seed{seed}_"
+        f"{fleet_size}car_marl_{train_eps}ep_{timestamp}"
+    )
+
 
 # =========2026.2.19修改，MARL Phase-1：主程序==========
 def main():
@@ -55,12 +83,22 @@ def main():
 
     # 创建环境和智能体
     env, agent = env_agent_config(cfg)
+    if hasattr(env, 'set_charging_assignment_mode'):
+        env.set_charging_assignment_mode(cfg.get('charging_assignment_mode', 'p1'))
+    if hasattr(env, 'set_charger_ratio'):
+        env.set_charger_ratio(cfg.get('charger_ratio', 0.30))
 
-    # 设置保存路径（包含训练轮数）
+    # 保存目录同时包含：实验编号、子配置、seed、车队规模、算法名、
+    # 训练轮数和启动时间。例如：
+    # E2_full_seed1_200car_marl_500ep_20261017-140500
     curr_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_eps = cfg.get('train_eps', 0)
-    path = f"./outputs/marl_{train_eps}ep_{curr_time}/"
+    run_directory_name = build_output_directory_name(cfg, curr_time)
+    path = os.fspath(result_run_directory(run_directory_name)) + os.sep
     os.makedirs(path, exist_ok=True)
+    cfg['run_output_dir'] = os.path.abspath(path)
+    print(f"运行输出目录: {cfg['run_output_dir']}")
+    write_run_provenance(path, cfg)
+    print(f"完整参数与Git版本已保存到: {path}")
 
     # =========2026.3.3修改，注释掉训练开始标题==========
     # print("\n" + "="*80)
@@ -75,6 +113,8 @@ def main():
     np.save(path + 'rewards.npy', res_dic['rewards'])
     if 'raw_rewards' in res_dic:
         np.save(path + 'raw_rewards.npy', res_dic['raw_rewards'])
+    write_records_csv(path + 'training_solver_stats.csv', res_dic.get('training_solver_rows', []))
+    write_records_csv(path + 'training_charging_events.csv', res_dic.get('training_charging_event_rows', []))
     np.save(path + 'ma_rewards.npy', res_dic['ma_rewards'])
     if 'rld_history' in res_dic:
         np.save(path + 'rld_history.npy', res_dic['rld_history'])
@@ -82,6 +122,7 @@ def main():
         np.save(path + 'svc_history.npy', res_dic['svc_history'])
     if 'srd_history' in res_dic:
         np.save(path + 'srd_history.npy', res_dic['srd_history'])
+    write_exploration_history(path, res_dic)
     # =========2026.3.3修改，恢复数据保存日志==========
     print(f"数据已保存到: {path}")
     # ======修改结束
@@ -262,6 +303,28 @@ def main():
     for key in timestep_keys:
         if key in res_dic:
             np.save(path + f'{key}.npy', res_dic[key])
+    for key in REWARD_COMPONENT_KEYS:
+        history_key = f'{key}_history'
+        timestep_key = f'{key}_by_timestep'
+        np.save(path + f'{history_key}.npy', res_dic[history_key])
+        np.save(path + f'{timestep_key}.npy', res_dic[timestep_key])
+    write_reward_components_csv(
+        path + 'reward_components_by_timestep.csv',
+        {key: res_dic[f'{key}_by_timestep'] for key in REWARD_COMPONENT_KEYS},
+    )
+    write_reward_formula_summary(
+        path + 'reward_formula_breakdown_by_episode.csv',
+        {key: res_dic[f'{key}_by_timestep'] for key in REWARD_COMPONENT_KEYS},
+        reward_scale=cfg.get('reward_scale', 1.0),
+    )
+    with open(path + 'reward_formula_definitions.txt', 'w', encoding='utf-8') as handle:
+        handle.write(
+            'NOR = service_revenue - relocation_cost\n'
+            'PFT = NOR - P_soc - P_svr + B_chg + B_soc\n'
+            'scaled_training_reward = environment_reward / reward_scale\n'
+            'reward_minus_PFT = environment_reward - PFT\n'
+            'pft_identity_error and reward_scaling_error should be approximately zero.\n'
+        )
     # ======新增结束
 
     # =========2026.3.6新增，保存训练元数据用于对比分析==========
@@ -269,8 +332,22 @@ def main():
     import time
     metadata = {
         'algo_name': 'MARL',
+        'experiment_id': cfg.get('experiment_id'),
+        'experiment_name': cfg.get('experiment_name'),
+        'experiment_variant': cfg.get('experiment_variant'),
+        'experiment_variant_name': cfg.get('experiment_variant_name'),
+        'method': cfg.get('method'),
         'seed': cfg['seed'],
         'train_eps': cfg['train_eps'],
+        'train_day_indices': cfg.get('train_day_indices'),
+        'test_day_indices': cfg.get('test_day_indices'),
+        'fleet_size': cfg.get('fleet_size', 200),
+        'use_zone_embedding': cfg.get('use_zone_embedding', True),
+        'use_global_context': cfg.get('use_global_context', True),
+        'share_policy': cfg.get('share_policy', True),
+        'exploration_schedule': cfg.get('exploration_schedule', 'adaptive'),
+        'charging_assignment_mode': cfg.get('charging_assignment_mode', 'p1'),
+        'charger_ratio': cfg.get('charger_ratio', 0.30),
         'n_agents': cfg.get('n_agents', 50),
         'batch_size': cfg['batch_size'],
         'actor_lr': cfg.get('actor_lr', 'N/A'),
@@ -647,7 +724,11 @@ def main():
     # print("开始测试")
     # print("="*80)
     # ======修改结束
-    test_rewards = marl_test(env, agent, cfg, path=path)
+    test_results = marl_test_days(
+        env, agent, cfg, output_root=path,
+        experiment=cfg.get('evaluation_experiment', 'review-evaluation'),
+    )
+    np.save(path + 'test_day_summaries.npy', test_results, allow_pickle=True)
 
     # =========2026.3.3修改，恢复完成标题==========
     print("\n" + "="*80)

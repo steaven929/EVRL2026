@@ -15,14 +15,16 @@ import numpy as np
 matplotlib.use("Agg")
 
 REPO_ROOT = Path(__file__).resolve().parent
-MAIN_REPO_ROOT = REPO_ROOT.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from gym.envs.registration import register, registry
 
 from core.environment import env_agent_config
+from core.output_paths import result_run_directory
+from core.run_provenance import write_run_provenance
 from core.marl_training import marl_test, marl_train
+from core.reward_components import REWARD_COMPONENT_KEYS, write_reward_components_csv
 from core.util import get_args, plot_critic_losses, plot_rewards, smooth
 
 
@@ -46,7 +48,7 @@ def build_cfg():
 
 
 def build_output_path(train_eps, timestamp):
-    return MAIN_REPO_ROOT / "outputs" / f"marl_nooptim_{train_eps}ep_{timestamp}"
+    return result_run_directory(f"marl_nooptim_{train_eps}ep_{timestamp}")
 
 
 def prepare_output_path(train_eps, timestamp):
@@ -97,6 +99,7 @@ EPISODE_HISTORY_KEYS = [
     "dispatch_efficiency_history",
     "effective_dispatch_rate_history",
     "dispatch_roi_history",
+    *(f"{key}_history" for key in REWARD_COMPONENT_KEYS),
 ]
 
 TIMESTEP_KEYS = [
@@ -140,6 +143,7 @@ TIMESTEP_KEYS = [
     "parking_used_timestep_zone_mean",
     "charger_available_timestep_zone_mean",
     "charger_used_timestep_zone_mean",
+    *(f"{key}_by_timestep" for key in REWARD_COMPONENT_KEYS),
 ]
 
 
@@ -511,8 +515,13 @@ def _plot_charging_metrics(path, res_dic):
 
 
 def save_training_artifacts(path, res_dic, cfg):
+    write_run_provenance(path, cfg)
     _save_available_arrays(path, res_dic, EPISODE_HISTORY_KEYS)
     _save_available_arrays(path, res_dic, TIMESTEP_KEYS)
+    write_reward_components_csv(
+        os.path.join(path, 'reward_components_by_timestep.csv'),
+        {key: res_dic[f'{key}_by_timestep'] for key in REWARD_COMPONENT_KEYS},
+    )
     _save_training_metadata(path, res_dic, cfg)
     plot_rewards(res_dic["rewards"], cfg, path=os.path.join(path, "train_rewards.png"), tag="train")
     plt.savefig(os.path.join(path, "train_rewards.png"), dpi=300, bbox_inches="tight")

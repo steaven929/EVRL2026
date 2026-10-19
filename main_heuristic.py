@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 from gym.envs.registration import register, registry
 
 from core.improved_metrics import compute_all_improved_metrics
+from core.output_paths import result_run_directory
 from core.marl_metrics import compute_all_metrics
 from core.util import get_args
 from main_marl_nooptim import save_training_artifacts
@@ -38,7 +39,7 @@ def build_cfg():
 
 
 def build_output_path(train_eps, timestamp):
-    return f"./outputs/heuristic_{train_eps}ep_{timestamp}/"
+    return os.fspath(result_run_directory(f"heuristic_{train_eps}ep_{timestamp}")) + os.sep
 
 
 def _apply_runtime_env_config(env, cfg, epoch=None):

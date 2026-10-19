@@ -9,16 +9,55 @@ import numpy as np
 import gurobipy as gp
 from gurobipy import GRB
 import copy
+from time import perf_counter
+
+
+LAST_SOLVE_STATS = {}
+
+
+def get_last_solve_stats():
+    return copy.deepcopy(LAST_SOLVE_STATS)
+
+
+def _status_name(status):
+    names = {
+        GRB.OPTIMAL: 'OPTIMAL',
+        GRB.INFEASIBLE: 'INFEASIBLE',
+        GRB.INF_OR_UNBD: 'INF_OR_UNBD',
+        GRB.UNBOUNDED: 'UNBOUNDED',
+        GRB.TIME_LIMIT: 'TIME_LIMIT',
+        GRB.INTERRUPTED: 'INTERRUPTED',
+    }
+    return names.get(status, f'STATUS_{status}')
 
 
 def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_reward, detail, revise, pre_avail):
+    global LAST_SOLVE_STATS
+    started_at = perf_counter()
     available = copy.deepcopy(avail[1])
     x = len(available)
     m = len(car)
     real_reward_back = np.array([0] * x)
     
     # 创建问题实例
-    model = gp.Model("Vehicle_Assignment")
+    try:
+        model = gp.Model("Vehicle_Assignment")
+    except Exception as exc:
+        LAST_SOLVE_STATS = {
+            'optimizer': 'P0',
+            'status_code': None,
+            'status_name': 'SOLVER_UNAVAILABLE' if 'license' in str(exc).lower() else 'SOLVER_ERROR',
+            'build_time_seconds': perf_counter() - started_at,
+            'solve_time_seconds': 0.0,
+            'total_time_seconds': perf_counter() - started_at,
+            'objective_value': None,
+            'best_bound': None,
+            'mip_gap': None,
+            'node_count': None,
+            'time_limit_reached': False,
+            'error': str(exc),
+        }
+        raise
     
     # =========2026.3.3修改，优化Gurobi求解器性能==========
     # 设置输出标志，关闭求解输出
@@ -87,10 +126,11 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
                     model.addConstr(car_assignment[k][j] == 0)
     
     for i in range(m):
-        if car[i][2] <= 0:
-            model.addConstr(gp.quicksum(car_assignment[i]) <= 1)  # 不在路上的分配一个位置
+        has_charging_reservation = len(car[i]) > 3 and car[i][3] != -1
+        if car[i][2] <= 0 and not has_charging_reservation:
+            model.addConstr(gp.quicksum(car_assignment[i]) <= 1)  # 空闲且未预订充电桩
         else:
-            model.addConstr(gp.quicksum(car_assignment[i]) == 0)  # 在路上的不分配
+            model.addConstr(gp.quicksum(car_assignment[i]) == 0)  # 在路上或已进入充电流程
     
     for i in range(x):
         model.addConstr(available_assignment[i] == available[i] + gp.quicksum(
@@ -105,7 +145,41 @@ def solveproblem(dist, avail, demand, car, reward, re, car_mem, timestep, real_r
                 )
     
     # 求解问题
-    model.optimize()
+    build_done = perf_counter()
+    try:
+        model.optimize()
+    except Exception as exc:
+        LAST_SOLVE_STATS = {
+            'optimizer': 'P0',
+            'status_code': None,
+            'status_name': 'SOLVER_UNAVAILABLE' if 'license' in str(exc).lower() else 'SOLVER_ERROR',
+            'build_time_seconds': build_done - started_at,
+            'solve_time_seconds': perf_counter() - build_done,
+            'total_time_seconds': perf_counter() - started_at,
+            'objective_value': None,
+            'best_bound': None,
+            'mip_gap': None,
+            'node_count': None,
+            'time_limit_reached': False,
+            'error': str(exc),
+        }
+        raise
+    solve_done = perf_counter()
+    has_solution = int(model.SolCount) > 0
+    LAST_SOLVE_STATS = {
+        'optimizer': 'P0',
+        'status_code': int(model.Status),
+        'status_name': _status_name(int(model.Status)),
+        'build_time_seconds': build_done - started_at,
+        'solve_time_seconds': solve_done - build_done,
+        'total_time_seconds': solve_done - started_at,
+        'objective_value': float(model.ObjVal) if has_solution else None,
+        'best_bound': float(model.ObjBound) if has_solution else None,
+        'mip_gap': float(model.MIPGap) if has_solution else None,
+        'node_count': float(model.NodeCount),
+        'time_limit_reached': int(model.Status) == GRB.TIME_LIMIT,
+        'error': None,
+    }
     
     # 处理解
     

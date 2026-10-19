@@ -18,6 +18,8 @@ import gym
 from gym.envs.registration import register
 
 from core.util import cp, get_args, plot_critic_losses, plot_rewards, plot_vehicle_battery_heatmap, smooth
+from core.output_paths import RESULTS_ROOT
+from core.run_provenance import write_run_provenance
 import core.environment as dclilyenv
 
 
@@ -303,13 +305,15 @@ def main():
     cp("..\\" + cfg['data_folder'])
     os.chdir('..')
 
-    output_root = os.path.join(current_dir, 'output')
+    output_root = os.fspath(RESULTS_ROOT)
     os.makedirs(output_root, exist_ok=True)
     run_stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     run_dir = os.path.join(output_root, f"{run_stamp}_{str(cfg['algo_name']).upper()}_{int(cfg['train_eps'])}ep")
     os.makedirs(run_dir, exist_ok=True)
     cfg['run_output_dir'] = run_dir
     print(f"运行输出目录: {run_dir}")
+    write_run_provenance(run_dir, cfg)
+    print(f"完整参数与Git版本已保存到: {run_dir}")
 
     def out_file(filename):
         return os.path.join(run_dir, filename)

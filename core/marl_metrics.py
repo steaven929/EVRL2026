@@ -6,11 +6,13 @@ import numpy as np
 
 
 def _battery_capacity(env):
-    return getattr(env, 'BATTERY_CAPACITY', None) or getattr(env.unwrapped, 'BATTERY_CAPACITY', 3000)
+    unwrapped = getattr(env, 'unwrapped', env)
+    return getattr(env, 'BATTERY_CAPACITY', None) or getattr(unwrapped, 'BATTERY_CAPACITY', 3000)
 
 
 def _time_length(env):
-    return float(getattr(env, 'TIME_LENGTH', None) or getattr(env.unwrapped, 'TIME_LENGTH', 10))
+    unwrapped = getattr(env, 'unwrapped', env)
+    return float(getattr(env, 'TIME_LENGTH', None) or getattr(unwrapped, 'TIME_LENGTH', 10))
 
 
 def compute_charging_efficiency(env):
@@ -143,6 +145,19 @@ def compute_charge_shift_success_rate(env):
 
 
 def compute_all_metrics(env, info):
+    if not hasattr(env, 'car'):
+        return {
+            'charging_efficiency': np.nan,
+            'vehicle_utilization': np.nan,
+            'fleet_health': np.nan,
+            'zone_coordination': np.nan,
+            'response_readiness': np.nan,
+            'charger_occupancy_rate': compute_charger_occupancy_rate(env),
+            'charger_queue_delay': np.nan,
+            'energy_not_served': compute_energy_not_served(info),
+            'safety_soc_violation_count': np.nan,
+            'charge_shift_success_rate': compute_charge_shift_success_rate(env),
+        }
     return {
         'charging_efficiency': compute_charging_efficiency(env),
         'vehicle_utilization': compute_vehicle_utilization(env),

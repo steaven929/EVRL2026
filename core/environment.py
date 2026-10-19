@@ -112,6 +112,13 @@ def all_seed(env,seed = 1):
     
 def env_agent_config(cfg):
     env = NormalizedActions(gym.make(cfg['env_name'])) # 装饰action噪声
+    if hasattr(env, 'set_day_split'):
+        env.set_day_split(
+            cfg.get('train_day_indices', range(1, 26)),
+            cfg.get('test_day_indices', range(26, 31)),
+        )
+    if hasattr(env, 'set_fleet_size'):
+        env.set_fleet_size(int(cfg.get('fleet_size', 200)))
     if cfg['seed'] !=0:
         all_seed(env,seed=cfg['seed'])
     n_states = env.observation_space.shape[0]
@@ -150,7 +157,10 @@ def env_agent_config(cfg):
             tau=cfg['tau'],
             batch_size=cfg['batch_size'],
             memory_capacity=cfg['memory_capacity'],
-            device=cfg['device']
+            device=cfg['device'],
+            use_zone_embedding=cfg.get('use_zone_embedding', True),
+            use_global_context=cfg.get('use_global_context', True),
+            share_policy=cfg.get('share_policy', True),
         )
         return env, agent
     # ======修改结束

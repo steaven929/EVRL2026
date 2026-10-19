@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 from gym.envs.registration import register, registry
 
 from core.util import get_args
+from core.output_paths import result_run_directory
 from main_marl_nooptim import save_training_artifacts
 from main_rule_gap_plus import run_rule_gap_plus, run_rule_gap_plus_test
 
@@ -35,7 +36,7 @@ def build_cfg():
 
 
 def build_output_path(train_eps, timestamp):
-    return f"./outputs/rule_gap_plus_v2_{train_eps}ep_{timestamp}/"
+    return os.fspath(result_run_directory(f"rule_gap_plus_v2_{train_eps}ep_{timestamp}")) + os.sep
 
 
 def main():
