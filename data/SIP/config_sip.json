@@ -63,7 +63,9 @@
     44,
     45,
     46,
-    47
+    47,
+    48,
+    49
   ],
   "ZONES": [
     {
@@ -467,8 +469,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -476,8 +477,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -485,8 +485,7 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
@@ -494,19 +493,24 @@
       "num_parking_slots": 5,
       "charging_slots": [
         0,
-        1,
-        2
+        1
       ]
     },
     {
       "zone_id": 48,
       "num_parking_slots": 5,
-      "charging_slots": []
+      "charging_slots": [
+        0,
+        1
+      ]
     },
     {
       "zone_id": 49,
       "num_parking_slots": 5,
-      "charging_slots": []
+      "charging_slots": [
+        0,
+        1
+      ]
     }
   ],
   "TRAIN_DAY_INDICES": [

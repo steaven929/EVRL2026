@@ -39,6 +39,15 @@ def _convert_one_day(raw_path, output_path, raw_day, zone_count, timestep_count)
     wide = wide.reindex(columns=range(timestep_count)).reset_index()
     wide.columns = ["O", "D", *[str(t) for t in range(timestep_count)]]
     wide = wide.astype(int)
+    empty_timesteps = [
+        timestep for timestep in range(timestep_count)
+        if int(wide[str(timestep)].sum()) == 0
+    ]
+    if empty_timesteps:
+        raise ValueError(
+            f"{raw_path.name}: not a complete demand day; zero-demand timesteps "
+            f"{empty_timesteps}. Refusing to overwrite the validated day files."
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")

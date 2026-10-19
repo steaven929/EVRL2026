@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from specific.dclily_elec import dclily
 
@@ -15,6 +16,20 @@ class MultiDayDataSplitTests(unittest.TestCase):
         self.assertEqual(config["TEST_DAY_INDICES"], list(range(26, 31)))
         # V4.7 historical main-method baseline: 144 chargers / 250 spaces.
         self.assertEqual(sum(len(zone["charging_slots"]) for zone in config["ZONES"]), 144)
+
+    def test_all_thirty_days_have_positive_demand_in_every_timestep(self):
+        data_root = Path(__file__).parent / "data" / "SIP"
+        totals = []
+        for day in range(1, 31):
+            frame = pd.read_csv(data_root / f"od_demand_{day}.csv")
+            demand = frame.iloc[:, 2:].to_numpy(dtype=float)
+            totals.append(float(demand.sum()))
+            self.assertGreater(demand.sum(), 0.0, f"day {day} has zero demand")
+            self.assertTrue(
+                np.all(demand.sum(axis=0) > 0),
+                f"day {day} contains a zero-demand timestep",
+            )
+        self.assertGreater(np.std(totals), 0.0, "all daily demand totals are identical")
 
     def test_environment_loads_selected_distinct_test_day(self):
         env = dclily()

@@ -52,6 +52,15 @@ class RuntimeConfigurationTest(unittest.TestCase):
             self.assertEqual(sum(map(len, CHARGER_PER_ZONE)), total)
             self.assertTrue(all(count <= 5 for count in allocation))
 
+    def test_144_charger_baseline_covers_every_zone_nearly_uniformly(self):
+        env = dclily.__new__(dclily)
+        env.config = {}
+        allocation = env.set_charger_ratio(0.576)
+        self.assertEqual(allocation.count(3), 44)
+        self.assertEqual(allocation.count(2), 6)
+        self.assertEqual(min(allocation), 2)
+        self.assertEqual(sum(allocation), 144)
+
     def test_assignment_mode_rejects_unknown_value(self):
         env = dclily.__new__(dclily)
         env.set_charging_assignment_mode("legacy")
