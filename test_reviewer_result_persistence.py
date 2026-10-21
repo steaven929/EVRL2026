@@ -8,7 +8,7 @@ from unittest.mock import patch
 import numpy as np
 
 from core.evaluation_logging import write_exploration_history
-from core.marl_training import marl_test_days
+from core import marl_training
 from core.reward_components import build_reward_components
 
 
@@ -71,6 +71,9 @@ class _Env:
             "served_orders": 8.0,
             "total_demand": 10.0,
             "operating_profit": 85.0,
+            "svc": 0.8,
+            "rld": 12.0 * self.step_index,
+            "srd": 6.0 * self.step_index,
             "demand_matrix": np.ones((2, 2)),
             "demand_orders": np.eye(2),
             "charging_actions": {0: 1},
@@ -80,6 +83,12 @@ class _Env:
             "charger_used_by_zone": np.array([1.0, 0.0]),
             "charging_events": [],
             "solver_stats": [],
+            "charging_grid_energy_kwh": 2.0 * self.step_index,
+            "charging_battery_energy_kwh": 1.8 * self.step_index,
+            "charging_energy_cost": 3.0 * self.step_index,
+            "charging_travel_distance_km": 4.0 * self.step_index,
+            "charging_travel_cost": 5.0 * self.step_index,
+            "charging_completion_count": self.step_index,
         })
         return np.zeros(11, dtype=np.float32), reward, self.step_index == 2, info
 
@@ -136,7 +145,7 @@ class ReviewerResultPersistenceTests(unittest.TestCase):
             },
         ]
         with tempfile.TemporaryDirectory() as temp_dir:
-            marl_test_days(
+            marl_training.marl_test_days(
                 _Env(), _Agent(),
                 {
                     "test_day_indices": [26],
@@ -154,6 +163,9 @@ class ReviewerResultPersistenceTests(unittest.TestCase):
             with (day_dir / "timestep_metrics.csv").open(encoding="utf-8", newline="") as handle:
                 timestep_rows = list(csv.DictReader(handle))
             summary = json.loads((day_dir / "summary.json").read_text("utf-8"))
+            with (day_dir / "vehicle_charging_events.csv").open(encoding="utf-8", newline="") as handle:
+                empty_event_reader = csv.DictReader(handle)
+                empty_event_rows = list(empty_event_reader)
 
         self.assertEqual([float(row["scaled_training_reward"]) for row in reward_rows], [10.0, 20.0])
         self.assertEqual([float(row["charging_efficiency"]) for row in timestep_rows], [0.4, 0.6])
@@ -169,6 +181,34 @@ class ReviewerResultPersistenceTests(unittest.TestCase):
         self.assertAlmostEqual(summary["reward_minus_PFT"], 120.0)
         self.assertAlmostEqual(summary["pft_identity_error"], 0.0)
         self.assertAlmostEqual(summary["reward_scaling_error"], 0.0)
+        self.assertAlmostEqual(summary["svc"], 0.8)
+        self.assertAlmostEqual(summary["rld"], 18.0)
+        self.assertAlmostEqual(summary["srd"], 9.0)
+        self.assertEqual(empty_event_rows, [])
+        self.assertIn("event", empty_event_reader.fieldnames)
+        self.assertIn("charging_cost_rmb", empty_event_reader.fieldnames)
+
+    def test_training_charging_summary_aggregates_each_episode(self):
+        self.assertTrue(hasattr(marl_training, "summarize_training_charging"))
+        summary = marl_training.summarize_training_charging(
+            episode=3,
+            demand_days=[7, 7],
+            step_metrics=[
+                {"charging_grid_energy_kwh": 2.0, "charging_travel_distance_km": 1.5,
+                 "charging_travel_cost": 4.0, "charging_completion_count": 1},
+                {"charging_grid_energy_kwh": 3.0, "charging_travel_distance_km": 2.5,
+                 "charging_travel_cost": 6.0, "charging_completion_count": 2},
+            ],
+            events=[{"event": "reserved"}, {"event": "charging"}, {"event": "charging"}],
+        )
+        self.assertEqual(summary["episode"], 3)
+        self.assertEqual(summary["demand_day"], 7)
+        self.assertAlmostEqual(summary["charging_grid_energy_kwh"], 5.0)
+        self.assertAlmostEqual(summary["charging_travel_distance_km"], 4.0)
+        self.assertAlmostEqual(summary["charging_travel_cost"], 10.0)
+        self.assertEqual(summary["charging_completion_count"], 3)
+        self.assertEqual(summary["charging_reservation_count"], 1)
+        self.assertEqual(summary["charging_event_count"], 3)
 
 
 if __name__ == "__main__":

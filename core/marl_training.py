@@ -78,6 +78,39 @@ def _aggregate_episode_metric(values):
     return float(np.mean(finite)), float(finite[-1])
 
 
+TRAINING_CHARGING_METRIC_KEYS = (
+    'charging_grid_energy_kwh',
+    'charging_battery_energy_kwh',
+    'charging_energy_cost',
+    'charging_travel_distance_km',
+    'charging_travel_cost',
+    'charging_completion_count',
+)
+
+
+def summarize_training_charging(episode, demand_days, step_metrics, events):
+    """Aggregate charging activity for one training episode."""
+    unique_days = []
+    for day in demand_days:
+        if day is not None and day not in unique_days:
+            unique_days.append(day)
+    if len(unique_days) == 1:
+        demand_day = unique_days[0]
+    else:
+        demand_day = "|".join(str(day) for day in unique_days)
+
+    summary = {'episode': int(episode), 'demand_day': demand_day}
+    for key in TRAINING_CHARGING_METRIC_KEYS:
+        values = np.asarray([row.get(key, 0.0) for row in step_metrics], dtype=float)
+        total = float(np.nansum(values)) if values.size else 0.0
+        summary[key] = int(total) if key == 'charging_completion_count' else total
+    summary['charging_reservation_count'] = sum(
+        1 for event in events if event.get('event') == 'reserved'
+    )
+    summary['charging_event_count'] = len(events)
+    return summary
+
+
 def marl_train(env, agent, cfg, path=None):
     """多智能体训练循环。"""
     # =========2026.3.3修改，注释掉详细信息，只保留关键日志==========
@@ -130,6 +163,7 @@ def marl_train(env, agent, cfg, path=None):
     reward_component_by_timestep = {key: [] for key in REWARD_COMPONENT_KEYS}
     training_solver_rows = []
     training_charging_event_rows = []
+    training_charging_summary_rows = []
 
     # 时间片级(0~TIME_NUM-1)指标：用于后续按26时间片分析
     time_num = int(getattr(env, 'TIME_NUM', cfg.get('TIME_NUM', 26)))
@@ -230,6 +264,9 @@ def marl_train(env, agent, cfg, path=None):
         ep_reward_components = {
             key: np.full(time_num, np.nan, dtype=float) for key in REWARD_COMPONENT_KEYS
         }
+        ep_charging_step_metrics = []
+        ep_charging_events = []
+        ep_demand_days = []
 
         noise_state = compute_exploration_noise(
             episode=i_ep,
@@ -262,6 +299,10 @@ def marl_train(env, agent, cfg, path=None):
             if isinstance(info, dict):
                 info['environment_reward'] = float(reward)
                 info['scaled_training_reward'] = float(scaled_reward)
+                ep_demand_days.append(info.get('demand_day'))
+                ep_charging_step_metrics.append({
+                    key: info.get(key, 0.0) for key in TRAINING_CHARGING_METRIC_KEYS
+                })
                 for component_key in REWARD_COMPONENT_KEYS:
                     if component_key in info:
                         ep_reward_components[component_key][step_idx] = float(info[component_key])
@@ -271,6 +312,7 @@ def marl_train(env, agent, cfg, path=None):
                         'demand_day': info.get('demand_day'), **dict(solver),
                     })
                 for event in info.get('charging_events', []):
+                    ep_charging_events.append(dict(event))
                     training_charging_event_rows.append({
                         'episode': i_ep + 1, 'timestep': ep_step,
                         'demand_day': info.get('demand_day'), **dict(event),
@@ -482,6 +524,13 @@ def marl_train(env, agent, cfg, path=None):
                 float(np.sum(finite_values)) if finite_values.size else np.nan
             )
 
+        training_charging_summary_rows.append(summarize_training_charging(
+            episode=i_ep + 1,
+            demand_days=ep_demand_days,
+            step_metrics=ep_charging_step_metrics,
+            events=ep_charging_events,
+        ))
+
         rewards.append(ep_reward)
         raw_rewards.append(ep_reward_raw)
         if ma_rewards:
@@ -527,6 +576,7 @@ def marl_train(env, agent, cfg, path=None):
         'info_missing_counts': info_missing_counts,
         'training_solver_rows': training_solver_rows,
         'training_charging_event_rows': training_charging_event_rows,
+        'training_charging_summary_rows': training_charging_summary_rows,
         'charging_efficiency_history': charging_efficiency_history,
         'vehicle_utilization_history': vehicle_utilization_history,
         'fleet_health_history': fleet_health_history,
@@ -688,6 +738,7 @@ def marl_test_days(env, agent, cfg, output_root, experiment="review-evaluation")
         daily_served = 0.0
         daily_demand = 0.0
         daily_operating_profit = 0.0
+        daily_standard_metrics = {key: [] for key in ('svc', 'rld', 'srd')}
         actor_times = []
         environment_times = []
         decision_times = []
@@ -733,6 +784,9 @@ def marl_test_days(env, agent, cfg, output_root, experiment="review-evaluation")
             daily_served += float(info.get('served_orders', 0.0))
             daily_demand += float(info.get('total_demand', 0.0))
             daily_operating_profit += float(info.get('operating_profit', 0.0))
+            for key in daily_standard_metrics:
+                if key in info:
+                    daily_standard_metrics[key].append(float(info[key]))
 
             step_row = {
                 'test_day': day,
@@ -801,6 +855,9 @@ def marl_test_days(env, agent, cfg, output_root, experiment="review-evaluation")
             'total_decision_time_max_seconds': float(np.max(decision_times)),
             'environment_step_time_mean_seconds': float(np.mean(environment_times)),
         }
+        for key, values in daily_standard_metrics.items():
+            metric_mean, _ = _aggregate_episode_metric(values)
+            summary[key] = metric_mean
         for key, values in daily_marl_metrics.items():
             array = np.asarray(values, dtype=float)
             finite = array[np.isfinite(array)]

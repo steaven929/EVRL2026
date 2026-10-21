@@ -32,7 +32,12 @@ from core.reward_components import (
     write_reward_components_csv,
     write_reward_formula_summary,
 )
-from core.evaluation_logging import write_exploration_history, write_records_csv
+from core.evaluation_logging import (
+    TRAINING_CHARGING_EVENT_COLUMNS,
+    TRAINING_CHARGING_SUMMARY_COLUMNS,
+    write_exploration_history,
+    write_records_csv,
+)
 
 from gym.envs.registration import register
 register(id='dclily', entry_point='specific.dclily_elec:dclily')
@@ -114,7 +119,16 @@ def main():
     if 'raw_rewards' in res_dic:
         np.save(path + 'raw_rewards.npy', res_dic['raw_rewards'])
     write_records_csv(path + 'training_solver_stats.csv', res_dic.get('training_solver_rows', []))
-    write_records_csv(path + 'training_charging_events.csv', res_dic.get('training_charging_event_rows', []))
+    write_records_csv(
+        path + 'training_charging_events.csv',
+        res_dic.get('training_charging_event_rows', []),
+        fieldnames=TRAINING_CHARGING_EVENT_COLUMNS,
+    )
+    write_records_csv(
+        path + 'training_charging_summary.csv',
+        res_dic.get('training_charging_summary_rows', []),
+        fieldnames=TRAINING_CHARGING_SUMMARY_COLUMNS,
+    )
     np.save(path + 'ma_rewards.npy', res_dic['ma_rewards'])
     if 'rld_history' in res_dic:
         np.save(path + 'rld_history.npy', res_dic['rld_history'])

@@ -17,7 +17,7 @@ import seaborn as sns
 # Command-line values still override the selected preset when needed.
 # =============================================================================
 ACTIVE_EXPERIMENT = "E2"
-ACTIVE_VARIANT = "full"
+ACTIVE_VARIANT = "no_adaptive_exploration"
 ACTIVE_SEED = 1
 
 RECOMMENDED_SEEDS = (1, 11, 21, 31, 41)
@@ -225,7 +225,7 @@ def get_args():
     parser.add_argument('--data_folder', default='data\\SIP\\', type=str, help="name of environment")  # SIP数据路径
 
     # 与 results_v1/marl_20260222-230455- 主方法保持一致：正式训练 1200 轮。
-    parser.add_argument('--train_eps', default=1200, type=int, help="episodes of training")  # 训练轮数
+    parser.add_argument('--train_eps', default=1000, type=int, help="episodes of training")  # 训练轮数
     # ====== 修改结束
 
     parser.add_argument('--test_eps', default=10, type=int, help="episodes of testing")  # 测试轮数
@@ -289,7 +289,7 @@ def get_args():
     parser.add_argument('--marl_service_ema_alpha', default=0.2, type=float, help="EMA update rate for service-driven exploration")  # 探索噪声衰减前的预热轮数
     parser.add_argument('--marl_service_target', default=0.85, type=float, help="target svc used for MARL adaptive exploration")  # MARL自适应探索的服务率目标
     parser.add_argument('--marl_noise_service_boost', default=0.05, type=float, help="extra noise when svc is below target")  # 当服务率低于目标值时额外增加的探索噪声
-    parser.add_argument('--marl_updates_per_step', default=4, type=int, help="number of gradient updates per env step for MARL")  # MARL每个环境步对应的梯度更新次数
+    parser.add_argument('--marl_updates_per_step', default=2, type=int, help="number of gradient updates per env step for MARL")  # MARL每个环境步对应的梯度更新次数
     parser.add_argument('--marl_learning_starts', default=2048, type=int, help="minimum replay size before MARL updates")  # 开始MARL训练更新前所需的最小经验池样本量
     parser.add_argument('--marl_policy_delay', default=2, type=int, help="delayed actor update frequency for MARL twin-critic")  # MARL双Critic结构下的延迟Actor更新频率
     parser.add_argument('--marl_target_policy_noise', default=0.08, type=float, help="target action smoothing noise std for MARL")  # MARL目标动作平滑噪声标准差

@@ -19,6 +19,43 @@ EXPLORATION_HISTORY_COLUMNS = (
     ("exploration_sigma_history", "final_sigma"),
 )
 
+CHARGING_EVENT_COLUMNS = (
+    "test_day",
+    "timestep",
+    "vehicle_id",
+    "event",
+    "origin_zone",
+    "target_zone",
+    "zone",
+    "charger_id",
+    "travel_distance_internal",
+    "soc_before_internal",
+    "soc_after_internal",
+    "grid_energy_kwh",
+    "battery_energy_kwh",
+    "charging_cost_rmb",
+)
+
+TRAINING_CHARGING_EVENT_COLUMNS = (
+    "episode",
+    "timestep",
+    "demand_day",
+    *CHARGING_EVENT_COLUMNS[2:],
+)
+
+TRAINING_CHARGING_SUMMARY_COLUMNS = (
+    "episode",
+    "demand_day",
+    "charging_grid_energy_kwh",
+    "charging_battery_energy_kwh",
+    "charging_energy_cost",
+    "charging_travel_distance_km",
+    "charging_travel_cost",
+    "charging_completion_count",
+    "charging_reservation_count",
+    "charging_event_count",
+)
+
 
 @dataclass(frozen=True)
 class EvaluationIdentity:
@@ -67,9 +104,15 @@ def _ordered_fieldnames(rows: Sequence[Mapping[str, Any]]) -> Sequence[str]:
     return names
 
 
-def _write_csv(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
+def _write_csv(
+    path: Path,
+    rows: Iterable[Mapping[str, Any]],
+    fieldnames: Sequence[str] = (),
+) -> None:
     materialized = [dict(row) for row in rows]
-    fieldnames = _ordered_fieldnames(materialized)
+    detected_names = _ordered_fieldnames(materialized)
+    ordered_names = list(fieldnames)
+    ordered_names.extend(name for name in detected_names if name not in ordered_names)
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
         mode="w",
@@ -83,8 +126,8 @@ def _write_csv(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
     temp_path = Path(handle.name)
     try:
         with handle:
-            if fieldnames:
-                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            if ordered_names:
+                writer = csv.DictWriter(handle, fieldnames=ordered_names)
                 writer.writeheader()
                 writer.writerows(materialized)
             handle.flush()
@@ -123,9 +166,13 @@ def write_exploration_history(output_dir, result_data: Mapping[str, Any]) -> Non
     _write_csv(output_dir / "exploration_history.csv", rows)
 
 
-def write_records_csv(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
+def write_records_csv(
+    path: Path,
+    rows: Iterable[Mapping[str, Any]],
+    fieldnames: Sequence[str] = (),
+) -> None:
     """Atomically persist arbitrary experiment records."""
-    _write_csv(Path(path), rows)
+    _write_csv(Path(path), rows, fieldnames=fieldnames)
 
 
 class EvaluationWriter:
@@ -161,7 +208,11 @@ class EvaluationWriter:
         _write_json(day_dir / "summary.json", {**identity_fields, **dict(summary)})
         _write_csv(day_dir / "timestep_metrics.csv", timestep_rows)
         _write_csv(day_dir / "zone_timestep_metrics.csv", zone_timestep_rows)
-        _write_csv(day_dir / "vehicle_charging_events.csv", charging_event_rows)
+        _write_csv(
+            day_dir / "vehicle_charging_events.csv",
+            charging_event_rows,
+            fieldnames=CHARGING_EVENT_COLUMNS,
+        )
         _write_csv(day_dir / "reward_components.csv", reward_rows)
         _write_csv(day_dir / "solver_stats.csv", solver_rows)
         self._mark_complete(identity, summary, day_dir)
